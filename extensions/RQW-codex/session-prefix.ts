@@ -1,12 +1,12 @@
 // RQW-codex: pending system-section patch of the next run, for the idle prewarm only (never sent as a turn, never stored).
-// Pi 1.4.0 keeps the prompt as named sections; its pure builders are not exported from the package root, so the pure logic
+// Pi 1.5.0 keeps the prompt as named sections; its pure builders are not exported from the package root, so the pure logic
 // is ported here, with the source attribution below. No Pi module is imported beyond the package roots.
-// Ported (MIT, Pi 1.4.0, LICENSE-PI; source dist/core/system-prompt.js of the installed npm package @earendil-works/pi-coding-agent
-// 1.4.0, whose repository is github.com/earendil-works/pi, packages/coding-agent; no upstream tag or commit was verified): normalizeBuildSystemPromptOptions, renderProjectContext,
+// Ported (MIT, Pi 1.5.0, LICENSE-PI; source dist/core/system-prompt.js of the installed npm package @earendil-works/pi-coding-agent
+// 1.5.0, whose repository is github.com/earendil-works/pi, packages/coding-agent; no upstream tag or commit was verified): normalizeBuildSystemPromptOptions, renderProjectContext,
 // buildRules, buildSystemPromptSections, diffSystemPromptSections. Only the sections the prewarm needs are kept verbatim.
 // The replay of the transcript's current sections uses the public getCurrentSystemMessage of @earendil-works/pi-ai.
 // The tool declarations use the public getCurrentTools, getToolStateChanges and toToolDeclaration of @earendil-works/pi-ai, as
-// Pi 1.4.0 agent-loop declareToolChanges and agent-session _installHiddenDeclarationsProjection do.
+// Pi 1.5.0 agent-loop declareToolChanges and agent-session _installHiddenDeclarationsProjection do.
 import {
 	formatSkillsForPrompt,
 	getDocsPath,
@@ -18,7 +18,7 @@ import { getCurrentSystemMessage, getCurrentTools, getToolStateChanges, toToolDe
 
 const SYSTEM_PROMPT_SECTION_NAME = /^[a-z][a-z0-9_-]*$/;
 
-/** Normalize prompt input into the mutable, collection-complete shape (Pi 1.4.0 normalizeBuildSystemPromptOptions). */
+/** Normalize prompt input into the mutable, collection-complete shape (Pi 1.5.0 normalizeBuildSystemPromptOptions). */
 export function normalizeRunOptions(input: NormalizedBuildSystemPromptOptions): NormalizedBuildSystemPromptOptions {
 	return {
 		customPrompt: input.customPrompt,
@@ -75,7 +75,7 @@ function buildRules(selectedTools: string[], toolGuidelines: Record<string, stri
 	return rules.map((rule) => `- ${rule}`).join("\n");
 }
 
-/** Ordered, independently replaceable sections of the structured system prompt (Pi 1.4.0 buildSystemPromptSections). */
+/** Ordered, independently replaceable sections of the structured system prompt (Pi 1.5.0 buildSystemPromptSections). */
 export function buildSystemPromptSectionsOf(input: NormalizedBuildSystemPromptOptions): Record<string, string> {
 	const options = normalizeRunOptions(input);
 	const { customPrompt, selectedTools, hiddenTools, toolSnippets, toolGuidelines, promptGuidelines, appendSystemPrompt, sections: customSections, cwd, contextFiles, skills } = options;
@@ -88,19 +88,18 @@ export function buildSystemPromptSectionsOf(input: NormalizedBuildSystemPromptOp
 		promptSections.preamble = customPrompt;
 	} else {
 		promptSections.preamble =
-			"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+			"You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.";
 		const visibleTools = declaredTools.filter((name) => !!toolSnippets[name]);
 		const tools = visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
-		promptSections.tools = `${tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
+		promptSections.tools = `${tools}\n\nAdditional tools may be available.`;
 		promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);
-		promptSections.docs = `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+		promptSections.docs = `Pi documentation (read only when the user asks about the harness itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: ${getReadmePath()}
 - Additional docs: ${getDocsPath()}
 - Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
 - When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
-- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
+- Before implementing harness changes, read the relevant docs and examples in full, following related cross-references.`;
 	}
 	if (appendSystemPrompt) promptSections.addendum = appendSystemPrompt;
 	if (contextFiles.length > 0) promptSections.project_context = renderProjectContext(contextFiles);
@@ -122,7 +121,7 @@ export function buildSystemPromptSectionsOf(input: NormalizedBuildSystemPromptOp
 	return sections;
 }
 
-/** Pi 1.4.0 diffSystemPromptSections: the patch of the sections the transcript has, or undefined when nothing changed. */
+/** Pi 1.5.0 diffSystemPromptSections: the patch of the sections the transcript has, or undefined when nothing changed. */
 function diffSections(previous: Record<string, string | null>, current: Record<string, string>): Record<string, string | null> | undefined {
 	const patch: Record<string, string | null> = {};
 	for (const [name, text] of Object.entries(current)) {
@@ -135,7 +134,7 @@ function diffSections(previous: Record<string, string | null>, current: Record<s
 }
 
 /**
- * The tool declarations the next run declares (Pi 1.4.0 agent-loop declareToolChanges): the executable catalog against the
+ * The tool declarations the next run declares (Pi 1.5.0 agent-loop declareToolChanges): the executable catalog against the
  * tools the transcript replays. Hidden names are dropped as Pi's request projection drops them.
  */
 export function pendingToolChanges(messages: readonly unknown[], catalog: readonly Tool[], hidden: ReadonlySet<string>): ToolStateChanges {
@@ -146,7 +145,7 @@ export function pendingToolChanges(messages: readonly unknown[], catalog: readon
 	};
 }
 
-/** Pi 1.4.0 _installHiddenDeclarationsProjection: system messages without the hidden names in their tool fields. */
+/** Pi 1.5.0 _installHiddenDeclarationsProjection: system messages without the hidden names in their tool fields. */
 export function withHiddenTools<M extends { role: string }>(messages: readonly M[], hidden: ReadonlySet<string>): M[] {
 	if (hidden.size === 0) return [...messages];
 	return messages.map((message) => {
@@ -160,7 +159,7 @@ export function withHiddenTools<M extends { role: string }>(messages: readonly M
 }
 
 /**
- * The system message Pi's next run adds after the transcript (Pi 1.4.0 _preparePromptAndToolLoadout and declareToolChanges): the
+ * The system message Pi's next run adds after the transcript (Pi 1.5.0 _preparePromptAndToolLoadout and declareToolChanges): the
  * sections patch against the sections the transcript replays, plus the tool delta, or undefined when neither changed. Input is the
  * physical transcript messages (converted to the LLM form); the result is a transient request-time message, never stored.
  */

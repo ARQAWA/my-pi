@@ -1,6 +1,6 @@
 # RQW-naming
 
-Independent native session naming for stock Pi 1.4.0. No Pi patches, wrappers,
+Independent native session naming for stock Pi 1.5.0. No Pi patches, wrappers,
 private fields, cross-extension imports, settings changes, or display components.
 Registered in `package.json` under `pi.extensions`, so normal package loading
 enables it. Switch it independently through Pi's package filter and `/reload`.

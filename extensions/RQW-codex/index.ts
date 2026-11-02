@@ -28,9 +28,9 @@ export type CodexExtensionOptions = {
 	agentDir?: string;
 };
 
-/** Exact Pi 1.4.0 guard, run before anything is read or written. */
+/** Exact Pi 1.5.0 guard, run before anything is read or written. */
 export function assertSupportedPi(version: string): void {
-	if (version !== "1.4.0") throw new Error(`RQW-codex: incompatible Pi ${version}; requires Pi 1.4.0. Nothing was written or registered.`);
+	if (version !== "1.5.0") throw new Error(`RQW-codex: incompatible Pi ${version}; requires Pi 1.5.0. Nothing was written or registered.`);
 }
 
 /**

@@ -1,20 +1,16 @@
 // A tool call still unsettled after the threshold returns as job#N and keeps running.
-import { appendFileSync, createWriteStream, rmSync, writeFileSync, type WriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
+import { rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { steeringWait } from "./steering-wait.ts";
 
 export const BACKGROUND_AFTER_MS = 12_000;
-export const DEFAULT_WAIT_MS = 300_000;
 const DEFAULT_LINES = 20;
 const TAIL_CHARS = 64 * 1024;
 const PENDING_BYTES = 1024 * 1024;
 const MAX_TIMER_MS = 2_147_483_647;
-const SETTLE_MS = 250;
 
 export type JobState = "running" | "exited" | "failed" | "killed" | "timed_out";
 export type JobsOptions = {
@@ -43,7 +39,6 @@ type Job = {
 	started: number;
 	ended?: number;
 	exitCode?: number;
-	killable: boolean;
 	controller: AbortController;
 	done: Promise<void>;
 	finish: () => void;
@@ -56,8 +51,9 @@ type Job = {
 	pendingBytes: number;
 	path?: string;
 	stream?: WriteStream;
+	outputStatus?: "writing" | "ready" | "failed";
+	logClosed?: Promise<void>;
 	spec: RunSpec;
-	listeners: Set<() => void>;
 };
 
 const textOf = (result: any): string =>
@@ -86,12 +82,6 @@ export function lineCount(value?: number | null): number {
 	return value;
 }
 
-export function waitTimeout(value?: number | null): number {
-	if (value == null) return DEFAULT_WAIT_MS;
-	if (!Number.isSafeInteger(value) || value <= 0) throw new Error("timeout_ms must be a positive finite safe integer");
-	return value;
-}
-
 function sleep(ms: number, stop: Promise<unknown>): Promise<void> {
 	const deadline = performance.now() + ms;
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -110,7 +100,7 @@ function sleep(ms: number, stop: Promise<unknown>): Promise<void> {
 
 export type Jobs = ReturnType<typeof createJobs>;
 
-export function createJobTool(jobs: Jobs, description: string, events?: ExtensionAPI["events"]): any {
+export function createJobTool(jobs: Jobs, description: string): any {
 	const json = (details: Record<string, unknown>) => ({
 		content: [{ type: "text" as const, text: JSON.stringify(details) }],
 		details,
@@ -120,14 +110,12 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 		label: "job",
 		description,
 		parameters: Type.Object({
-			action: StringEnum(["wait", "status", "kill"]),
-			ids: Type.Optional(Type.Array(Type.String(), { description: "job#N ids; wait needs them, status without them lists all your jobs" })),
+			action: Type.Unsafe<"status" | "kill">({ type: "string", enum: ["status", "kill"] }),
+			ids: Type.Optional(Type.Array(Type.String(), { description: "job#N ids; status without them lists all your jobs" })),
 			id: Type.Optional(Type.String({ description: "job#N; kill" })),
-			timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than the estimated remaining work; default 300000 only when omitted" })),
 			lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Output lines shown per job; default 20" })),
-			until: Type.Optional(Type.String({ description: "wait: also return when a job's output matches this JavaScript regular expression (readiness); a leading (?i) ignores case" })),
 		}),
-		async execute(toolCallId: string, raw: any, signal: AbortSignal | undefined, _onUpdate: unknown, ctx?: ExtensionContext) {
+		async execute(_toolCallId: string, raw: any) {
 			const params = Object.fromEntries(Object.entries(raw ?? {}).filter(([, value]) => value !== null)) as any;
 			const lines = lineCount(params.lines);
 			const ids = (value: unknown, required: boolean): string[] | undefined => {
@@ -137,22 +125,6 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 				return [...new Set(value as string[])];
 			};
 			switch (params.action) {
-				case "wait": {
-					let until: RegExp | undefined;
-					if (typeof params.until === "string" && params.until) {
-						const insensitive = /^\(\?i\)/.test(params.until);
-						try { until = new RegExp(insensitive ? params.until.slice(4) : params.until, insensitive ? "mi" : "m"); }
-						catch (error) { throw new Error(`until is not a valid regular expression: ${(error as Error).message}`); }
-					}
-					const waitIds = ids(params.ids, true)!;
-					const timeout = waitTimeout(params.timeout_ms);
-					const steering = steeringWait(ctx, events, toolCallId);
-					try {
-						if (steering.reason) return json({ reason: steering.reason, timed_out: false, statuses: jobs.status(waitIds, lines) });
-						return json(await jobs.wait(waitIds, timeout, lines, signal, until, steering.signal));
-					}
-					finally { steering.close(); }
-				}
 				case "status": return json({ statuses: jobs.status(ids(params.ids, false), lines) });
 				case "kill": {
 					if (typeof params.id !== "string") throw new Error("id is required: job#N");
@@ -161,7 +133,14 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 				default: throw new Error(`Unknown action: ${params.action}`);
 			}
 		},
-		jobs: { abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose(), hasJobs: () => jobs.size > 0 },
+		// A job keeps its owner awake only while it runs or its result has not been delivered.
+		jobs: {
+			abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose(),
+			hasJobs: () => jobs.backgroundCount() > 0 || jobs.undelivered() > 0,
+			backgroundCount: () => jobs.backgroundCount(),
+			subscribeActivity: (listener: () => void) => jobs.subscribeActivity(listener),
+			autoSource: () => jobs.autoSource(),
+		},
 	};
 }
 
@@ -181,26 +160,29 @@ export function createJobs(options: JobsOptions = {}) {
 	function openLog(job: Job) {
 		if (job.stream) return;
 		job.path = join(tmpdir(), `rqw-job-${randomUUID()}.log`);
-		try {
-			writeFileSync(job.path, "");
-			for (const chunk of job.pending) appendFileSync(job.path, chunk);
-		} catch {}
-		job.stream = createWriteStream(job.path, { flags: "a" });
-		job.stream.on("error", () => {});
+		job.stream = createWriteStream(job.path, { flags: "w" });
+		job.outputStatus = "writing";
+		job.stream.on("error", () => { job.outputStatus = "failed"; });
+		job.logClosed = new Promise((resolve) => job.stream!.once("close", () => {
+			if (job.outputStatus !== "failed") job.outputStatus = "ready";
+			resolve();
+		}));
+		for (const chunk of job.pending) job.stream.write(chunk);
 		job.pending = [];
 		job.pendingBytes = 0;
 	}
 
-	function closeLog(job: Job, remove: boolean) {
-		const { stream, path } = job;
+	async function closeLog(job: Job, remove: boolean) {
+		const { stream, path, logClosed } = job;
 		job.stream = undefined;
 		if (!stream) return;
-		stream.end(() => {
-			if (remove && path) try { rmSync(path, { force: true }); } catch {}
-		});
+		stream.end();
+		await logClosed;
+		if (remove && path) await rm(path, { force: true }).catch(() => {});
 	}
 
 	const idOf = (job: Job) => `job#${job.number}`;
+	const deliveryOf = (job: Job) => !job.autoDelivery ? "pending" : job.autoDelivery === "delivered" ? "delivered" : "claimed";
 	function status(job: Job, lines = DEFAULT_LINES) {
 		const now = job.ended ?? performance.now();
 		return {
@@ -212,14 +194,17 @@ export function createJobs(options: JobsOptions = {}) {
 			elapsed_seconds: Math.round((now - job.started) / 100) / 10,
 			tail: lastLines(job.tail || job.latest, lines),
 			output_path: job.path,
+			output_status: job.outputStatus,
 			output_bytes: job.bytes,
+			// A finished job's result reaches its owner once; `pending` means it has not yet.
+			...(job.ended !== undefined ? { result_delivery: deliveryOf(job) } : {}),
 		};
 	}
 	function kill(job: Job) {
 		if (job.ended === undefined) job.controller.abort();
 	}
 	function abortAll() {
-		for (const job of jobs.values()) if (job.killable) kill(job);
+		for (const job of jobs.values()) kill(job);
 	}
 	function find(id: string): Job {
 		const match = /^job#([1-9]\d*)$/.exec(id);
@@ -238,8 +223,8 @@ export function createJobs(options: JobsOptions = {}) {
 			`elapsed: ${current.elapsed_seconds} s`,
 			`output so far (last ${DEFAULT_LINES} lines):`,
 			current.tail || "(no output yet)",
-			`full output: ${job.path}`,
-			"Check it with the job tool: wait (returns when it ends), status, kill.",
+			`full output: ${job.path} (log is written asynchronously and may not be ready yet)`,
+			"Its final result arrives automatically in one message when it ends: end your turn to receive it. The job tool offers status and kill.",
 		].join("\n");
 	}
 
@@ -262,7 +247,6 @@ export function createJobs(options: JobsOptions = {}) {
 			command,
 			state: "running",
 			started: performance.now(),
-			killable: spec.process,
 			controller,
 			done,
 			finish: () => {
@@ -278,15 +262,13 @@ export function createJobs(options: JobsOptions = {}) {
 			pending: [],
 			pendingBytes: 0,
 			spec,
-			listeners: new Set(),
 		};
-		const notify = () => { for (const listener of job.listeners) listener(); };
 		let attached = true;
 		const handle: JobHandle = {
 			signal: controller.signal,
 			onUpdate: (update) => {
 				const text = textOf(update);
-				if (text) { job.latest = text; notify(); }
+				if (text) job.latest = text;
 				if (attached) onUpdate?.(update);
 			},
 			data(chunk) {
@@ -299,7 +281,6 @@ export function createJobs(options: JobsOptions = {}) {
 					job.pendingBytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
 					if (job.pendingBytes > PENDING_BYTES) openLog(job);
 				}
-				notify();
 			},
 		};
 		const work$ = work(handle).then((value) => ({ value }), (error) => ({ error }));
@@ -309,7 +290,7 @@ export function createJobs(options: JobsOptions = {}) {
 		clearTimeout(timer);
 		if (first !== "handoff") {
 			signal?.removeEventListener("abort", onAbort);
-			closeLog(job, true);
+			void closeLog(job, true);
 			if ("error" in first) throw first.error;
 			return first.value;
 		}
@@ -320,8 +301,8 @@ export function createJobs(options: JobsOptions = {}) {
 		jobs.set(job.number, job);
 		activityChanged();
 		openLog(job);
-		if (!job.bytes && job.latest) try { appendFileSync(job.path!, job.latest + "\n"); } catch {}
-		void work$.then((outcome) => {
+		if (!job.bytes && job.latest) job.stream?.write(job.latest + "\n");
+		void work$.then(async (outcome) => {
 			signal?.removeEventListener("abort", onAbort);
 			if (job.ended !== undefined) return closeLog(job, false);
 			let state: JobState;
@@ -329,8 +310,10 @@ export function createJobs(options: JobsOptions = {}) {
 			let exitCode: number | undefined;
 			if ("error" in outcome) {
 				const text = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
-				result = text;
-				state = controller.signal.aborted ? "killed" : /Command timed out after/.test(text) ? "timed_out" : "failed";
+				state = controller.signal.aborted && (outcome.error?.name === "AbortError" || /abort/i.test(text))
+					? "killed" : /Command timed out after/.test(text) ? "timed_out" : "failed";
+				result = state === "killed" && (job.tool === "edit" || job.tool === "write")
+					? `Possibly changed: ${job.command}: ${text}. Read this file before retrying.` : text;
 			} else {
 				const value: any = outcome.value;
 				result = textOf(value);
@@ -342,66 +325,14 @@ export function createJobs(options: JobsOptions = {}) {
 			job.state = state;
 			if (exitCode !== undefined) job.exitCode = exitCode;
 			if (!job.bytes) job.stream?.write(result + "\n");
+			void closeLog(job, false);
 			job.finish();
-			notify();
-			closeLog(job, false);
 		});
 		return { content: [{ type: "text", text: handoffText(job) }], details: { job: status(job) } };
 	}
 
-	function report(selected: Job[], lines: number, until: RegExp | undefined, finished: Job[]) {
-		const hits = until ? selected.filter((job) => job.ended === undefined && until.test(job.tail || job.latest)) : [];
-		if (!finished.length && hits.length) return {
-			reason: "match",
-			timed_out: false,
-			matched: hits.map((job) => ({ id: idOf(job), line: (job.tail || job.latest).split("\n").reverse().find((line) => until!.test(line)) ?? "" })),
-			statuses: selected.map((job) => status(job, lines)),
-		};
-		if (!finished.length) return { reason: "timeout", timed_out: true, statuses: selected.map((job) => status(job, lines)) };
-		return {
-			reason: "exit",
-			timed_out: false,
-			results: finished.map((job) => ({ ...status(job, lines), result: job.result ?? "" })),
-			statuses: selected.filter((job) => !finished.includes(job)).map((job) => status(job, lines)),
-		};
-	}
-	const endedOf = (selected: Job[]) => selected.filter((job) => job.ended !== undefined);
-	const matchingOf = (selected: Job[], until?: RegExp) => until ? selected.filter((job) => job.ended === undefined && until.test(job.tail || job.latest)) : [];
-
-	async function wait(ids: string[], timeoutMs: number, lines: number, signal?: AbortSignal, until?: RegExp, steering?: AbortSignal) {
-		const selected = ids.map(find);
-		const ended = () => endedOf(selected);
-		const matching = () => matchingOf(selected, until);
-		if (!ended().length && !matching().length) {
-			const aborted = new Promise<void>((resolve) => {
-				if (signal?.aborted) resolve();
-				signal?.addEventListener("abort", () => resolve(), { once: true });
-			});
-			const steered = new Promise<void>((resolve) => {
-				if (steering?.aborted) resolve();
-				else steering?.addEventListener("abort", () => resolve(), { once: true });
-			});
-			const matched = Promise.withResolvers<void>();
-			const check = () => { if (matching().length) matched.resolve(); };
-			if (until) for (const job of selected) job.listeners.add(check);
-			try {
-				const any = Promise.race([...selected.map((job) => job.done), aborted, steered, matched.promise]);
-				await sleep(timeoutMs, any);
-				signal?.throwIfAborted();
-				if (!steering?.aborted && ended().length && ended().length < selected.length)
-					await sleep(SETTLE_MS, Promise.race([Promise.all(selected.map((job) => job.done)), aborted, steered]));
-				signal?.throwIfAborted();
-				if (steering?.aborted) return { reason: "steered", timed_out: false, statuses: selected.map((job) => status(job, lines)) };
-			} finally {
-				for (const job of selected) job.listeners.delete(check);
-			}
-		}
-		return report(selected, lines, until, ended());
-	}
-
 	async function killJob(id: string) {
 		const job = find(id);
-		if (job.ended === undefined && !job.killable) return { ...status(job), cannot_kill: "a running file tool call finishes on its own" };
 		kill(job);
 		await sleep(5000, job.done);
 		return status(job);
@@ -409,6 +340,7 @@ export function createJobs(options: JobsOptions = {}) {
 
 	return {
 		backgroundCount,
+		undelivered: () => [...jobs.values()].filter(job => job.ended !== undefined && !job.autoDelivery).length,
 		autoSource() {
 			let ended = false;
 			const listeners = new Set<(value: true | null) => void>();
@@ -439,7 +371,7 @@ export function createJobs(options: JobsOptions = {}) {
 					owned.set(token, selected);
 					return { token, results: selected.map(job => ({ id: idOf(job), outcome: job.state,
 						...(job.exitCode !== undefined ? { exit_code: job.exitCode } : {}),
-						text: job.result ?? "", ...(job.path ? { output_path: job.path } : {}) })) };
+						text: job.result ?? "", ...(job.path ? { output_path: job.path, output_status: job.outputStatus } : {}) })) };
 				},
 				commit: (token: string) => {
 					const selected = owned.get(token);
@@ -463,14 +395,13 @@ export function createJobs(options: JobsOptions = {}) {
 			return () => { activityListeners.delete(listener); };
 		},
 		run,
-		wait,
 		kill: killJob,
 		status: (ids: string[] | undefined, lines: number) => (ids ? ids.map(find) : [...jobs.values()]).map((job) => status(job, lines)),
 		abortAll,
 		stopBackground() {
 			const active = [...jobs.values()].filter(job => job.ended === undefined);
 			abortAll();
-			return { backgroundProcesses: active.filter(job => job.killable).length, unstoppable: active.filter(job => !job.killable).length };
+			return { backgroundProcesses: active.length, unstoppable: 0 };
 		},
 		dispose() { disposed = true; activityChanged(); activityListeners.clear(); abortAll(); },
 		seen(n: number) { if (Number.isSafeInteger(n) && n > counter) counter = n; },

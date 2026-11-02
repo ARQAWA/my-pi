@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -6,23 +7,24 @@ import { join } from "node:path";
 import { FakeRipgrep } from "./rg-fake.ts";
 import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { installRqwTools } from "../../../extensions/RQW-tools/index.ts";
+import { withFileLock } from "../../../extensions/RQW-tools/lock.ts";
 
 test("stop background notice reaches only the owning tools session", async () => {
 	const events = createEventBus();
 	const hooks = new Map<string, Function[]>();
 	const pi: any = { events, registerTool() {}, getActiveTools: () => [], getAllTools: () => [], getSettings: () => ({}), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi);
+	installRqwTools(pi, { descriptions });
 	const ctx = { mode: "tui", sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const replies: any[] = [];
 	events.emit("rqw:stop-background:v1", { sessionId: "other", reply: (part: any) => replies.push(part) });
-	assert.deepEqual(replies, []);
+	assert.deepEqual(replies, [] as unknown[]);
 	events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (part: any) => replies.push(part) });
 	assert.deepEqual(replies, [{ backgroundProcesses: 0, unstoppable: 0 }]);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });
 
-test("main jobs offer finished results once without changing explicit wait", async t => {
+test("main jobs offer finished results exactly once through the source", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-auto-job-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -34,7 +36,7 @@ test("main jobs offer finished results once without changing explicit wait", asy
 	fake.handler = () => ({ hang: true });
 	const events = createEventBus(), hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
 	const pi: any = { events, registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	t.after(async () => { for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx); });
@@ -53,11 +55,11 @@ test("main jobs offer finished results once without changing explicit wait", asy
 	const next = source.claim();
 	source.commit(next.token);
 	assert.equal(source.claim(), undefined);
-	const wait = await tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
-	assert.equal(wait.details.results[0].id, "job#1");
+	const status = await tools.get("job").execute("status", { action: "status", ids: ["job#1"] });
+	assert.equal(status.details.statuses[0].result_delivery, "delivered");
 });
 
-test("stop kills a searched job under an open wait and sends no message", async t => {
+test("stop kills a searched job; its killed result arrives once through the source and no message is sent", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-stop-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -68,24 +70,68 @@ test("stop kills a searched job under an open wait and sends no message", async 
 	const events = createEventBus(), hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
 	const messages: unknown[] = [];
 	const pi: any = { events, registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), sendMessage: (message: unknown) => messages.push(message), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
 	await running; t.mock.timers.tick(12); await pending;
-	const waiting = tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
+	let source: any;
+	events.emit("rqw:auto-wait:request:v1", { sessionId: "main", offer: (value: any) => { source = value; } });
+	const ready = Promise.withResolvers<void>();
+	source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
 	const replies: any[] = [];
 	events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (part: any) => replies.push(part) });
 	assert.deepEqual(replies, [{ backgroundProcesses: 1, unstoppable: 0 }]);
-	const wait = await waiting;
-	assert.equal(wait.details.reason, "exit");
-	assert.equal(wait.details.results[0].state, "killed");
+	await ready.promise;
+	const claim = source.claim();
+	assert.deepEqual(claim.results.map((item: any) => [item.id, item.outcome]), [["job#1", "killed"]]);
+	source.commit(claim.token);
+	assert.equal(source.claim(), undefined);
 	assert.equal(fake.killed, 1);
 	assert.deepEqual(messages, []);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });
 
-test("a job that exits under an open wait sends no chat message", async t => {
+for (const action of ["stop", "kill"] as const) test(`${action} cancels a background write waiting for a file lock`, async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const cwd = await mkdtemp(join(tmpdir(), "rqw-stop-file-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const gate = Promise.withResolvers<void>();
+	const locked = Promise.withResolvers<void>();
+	const path = join(cwd, "file.txt");
+	const holding = withFileLock(path, async () => { locked.resolve(); await gate.promise; });
+	await locked.promise;
+	const events = createEventBus(), hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
+	const pi: any = { events, registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
+	const ctx = { cwd, mode: "tui", sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
+	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
+	const pending = tools.get("write").execute("call", { path, content: "data" }, undefined, undefined, ctx);
+	t.mock.timers.tick(12);
+	await pending;
+	let source: any;
+	events.emit("rqw:auto-wait:request:v1", { sessionId: "main", offer: (value: any) => { source = value; } });
+	const ready = Promise.withResolvers<void>();
+	source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
+	const replies: any[] = [];
+	const killed = action === "kill" ? tools.get("job").execute("kill", { action: "kill", id: "job#1" }) : undefined;
+	if (action === "stop") {
+		events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (value: any) => replies.push(value) });
+		assert.deepEqual(replies, [{ backgroundProcesses: 1, unstoppable: 0 }]);
+	}
+	await ready.promise;
+	if (killed) assert.equal((await killed).details.state, "killed");
+	const claim = source.claim();
+	assert.equal(claim.results[0].outcome, "killed");
+	source.commit(claim.token);
+	assert.equal(source.claim(), undefined);
+	gate.resolve();
+	await holding;
+	await assert.rejects(import("node:fs/promises").then(fs => fs.stat(path)), { code: "ENOENT" });
+	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
+});
+
+test("a job that exits is delivered through the source and sends no chat message itself", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-exit-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -98,17 +144,20 @@ test("a job that exits under an open wait sends no chat message", async t => {
 	const hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
 	const messages: unknown[] = [];
 	const pi: any = { events: createEventBus(), registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), sendMessage: (message: unknown) => messages.push(message), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
 	await fake.started(); t.mock.timers.tick(12); await pending;
-	const waiting = tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
-	await new Promise(resolve => setImmediate(resolve));
+	let source: any;
+	pi.events.emit("rqw:auto-wait:request:v1", { sessionId: "main", offer: (value: any) => { source = value; } });
+	const ready = Promise.withResolvers<void>();
+	source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
 	child.stdout.end(); child.stderr.end(); child.emit("close", 1);
-	const wait = await waiting;
-	assert.equal(wait.details.reason, "exit");
-	assert.equal(wait.details.results[0].state, "exited");
+	await ready.promise;
+	const claim = source.claim();
+	assert.deepEqual(claim.results.map((item: any) => [item.id, item.outcome]), [["job#1", "exited"]]);
+	source.commit(claim.token);
 	await new Promise(resolve => setImmediate(resolve));
 	assert.deepEqual(messages, []);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);

@@ -15,7 +15,7 @@ Windows ignores case, separator kind and a trailing separator. Other systems hav
 
 ## How
 
-Runtime patch of Pi 1.4.0's `InteractiveMode.prototype.init` (`[D-SCOPE-RUNTIME-PATCH]`), installed by the extension
+Runtime patch of Pi 1.5.0's `InteractiveMode.prototype.init` (`[D-SCOPE-RUNTIME-PATCH]`), installed by the extension
 factory, which runs before the interactive mode starts. On the first init in a matching folder:
 
 1. `process.chdir(os.tmpdir())`.

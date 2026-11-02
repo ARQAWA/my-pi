@@ -6,8 +6,21 @@ import { test } from "node:test";
 import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
 import agent from "../../../extensions/RQW-agent/index.ts";
+import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
 
-test("main source shares results with explicit wait and releases reservations", async t => {
+test("auto source exposes titles only for live targets", () => {
+	const coordinator = new Coordinator({ on() {} } as any);
+	let active = true;
+	coordinator.add({ id: "agent#1", run: "one", active: () => active, title: () => "card design", snapshot: () => ({}) });
+	coordinator.add({ id: "agent#2", run: "two", active: () => true, snapshot: () => ({}) });
+	const { source, close } = coordinator.autoSource({} as any);
+	assert.deepEqual(source.snapshot().titles, { "agent#1": "card design" });
+	active = false;
+	assert.deepEqual(source.snapshot().titles, {});
+	close();
+});
+
+test("main source delivers a result once and releases reservations", async t => {
 	const root = await mkdtemp(join(tmpdir(), "auto-wait-agent-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
@@ -15,7 +28,8 @@ test("main source shares results with explicit wait and releases reservations", 
 	const manager = SessionManager.inMemory(root);
 	const core = createFauxCore({ provider: "fake", models: [{ id: "model" }] });
 	const model = core.getModel("model")!;
-	core.setResponses([async () => fauxAssistantMessage("answer", { timestamp: 1 })]);
+	const response = Promise.withResolvers<void>();
+	core.setResponses([async () => { await response.promise; return fauxAssistantMessage("answer", { timestamp: 1 }); }]);
 	const modelRuntime = {
 		getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true,
 		getAuth: async () => ({ apiKey: "fake" }), checkAuth: async () => ({}), isUsingOAuth: () => false,
@@ -38,13 +52,13 @@ test("main source shares results with explicit wait and releases reservations", 
 	assert.equal(source.version, 1);
 	const ready = Promise.withResolvers<void>();
 	const unsubscribe = source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
-	await definition.execute("start", { action: "start", task: "test" }, new AbortController().signal, undefined, ctx);
+	await definition.execute("start", { action: "start", task: "test", title: "card design" }, new AbortController().signal, undefined, ctx);
+	assert.deepEqual(source.snapshot().titles, { "agent#1": "card design" });
+	response.resolve();
 	await ready.promise;
 	unsubscribe();
 	const claim = source.claim();
 	assert.match(claim.results[0].text, /answer/);
-	const wait = await definition.execute("wait", { action: "wait", ids: ["agent#1"] }, new AbortController().signal, undefined, ctx);
-	assert.equal(wait.details.reason, "receipt");
 	source.release(claim.token);
 	const next = source.claim();
 	assert.equal(next.results[0].delivery, claim.results[0].delivery);

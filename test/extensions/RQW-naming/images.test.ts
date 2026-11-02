@@ -8,6 +8,7 @@ it("uses only user and assistant text for the first-message trigger", async () =
 	const named = new Promise<string>((resolve) => { finish = resolve; });
 	let request: any;
 	const pi = {
+		events: { on() {}, emit() {} },
 		on: (event: string, handler: typeof handlers[string]) => { handlers[event] = handler; },
 		registerCommand() {},
 		registerTool() {},

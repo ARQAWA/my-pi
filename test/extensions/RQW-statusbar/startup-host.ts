@@ -55,10 +55,10 @@ export function startupHost(t: TestContext, options: { loaded?: boolean; slowGit
 	const manager = SessionManager.inMemory(dir);
 	const model = { id: "test-model", name: "Test model", provider: "fixture", reasoning: true, contextWindow: 100000 };
 	const session: any = {
-		settingsManager: settings, sessionManager: manager, scopedModels: [], model, thinkingLevel: "medium", state: { model, thinkingLevel: "medium" },
+		settingsManager: settings, sessionManager: manager, scopedModels: [], model, thinkingLevel: "medium", state: { model, thinkingLevel: "medium", messages: [] },
 		autoCompactionEnabled: true, isStreaming: false, isCompacting: false,
 		modelRuntime: { getAvailableSnapshot: () => [], isUsingSubscription: () => false },
-		resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => ({ extensions: [{ handlers, commands }] }) },
+		resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => ({ extensions: [{ handlers, commands, sourceInfo: { origin: "local" } }] }) },
 		getContextUsage: () => undefined,
 	};
 	const runtime = { session, setBeforeSessionInvalidate() {}, setRebindSession() {} };

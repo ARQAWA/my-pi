@@ -1,8 +1,31 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Any, call, chainCall, done, reply, setup, task } from "./run-helper.ts";
+import { pathToFileURL } from "node:url";
+import { type Any, call, chainCall, done, reply, setup as setupRun, task } from "./run-helper.ts";
+
+function setup(...args: Parameters<typeof setupRun>) {
+	const env = setupRun(...args);
+	return {
+		...env,
+		call: (input: Any, signal?: AbortSignal) => env.call(input.action === "run" ? { record: false, ...input } : input, signal),
+		full: (input: Any, signal?: AbortSignal) => env.full(input.action === "run" ? { record: false, ...input } : input, signal),
+	};
+}
+import { startRecording } from "../../../extensions/RQW-browser/recorder.ts";
+
+it("binds the recorder to the selected page rather than another DevTools window", async () => {
+	const events: string[] = [];
+	const recorder = {
+		keyboard: { down: async () => {}, up: async () => {}, press: async () => {}, type: async () => {} },
+		waitForFunction: async (_fn: unknown, _options: unknown, label: string | boolean) => ({ asElement: () => ({ click: async () => events.push(String(label)) }), dispose: async () => {} }),
+	};
+	const page = { openDevTools: async () => { events.push("selected page"); return recorder; } };
+	await startRecording(page as never, new AbortController().signal);
+	assert.deepEqual(events, ["selected page", "Create recording"]);
+});
 
 it("executes the ordered actions in an isolated model context and observes the result", async () => {
 	const env = setup([reply(call(0), call(1), call(2)), reply(call(1)), reply(call(2)), done()]);
@@ -49,6 +72,7 @@ it("does not report success before all actions or with an incomplete view", asyn
 	const earlyResult = await early.call(task);
 	assert.equal(earlyResult.reached, false);
 	assert.equal(earlyResult.stopped, "error");
+	assert.doesNotMatch(earlyResult.summary, /model|executor/i);
 	await early.shutdown();
 	const incomplete = setup([reply(call(0)), reply(call(1)), reply(call(2)), done()], { incomplete: true });
 	const result = await incomplete.call(task);
@@ -56,6 +80,29 @@ it("does not report success before all actions or with an incomplete view", asyn
 	assert.equal(result.reached, false);
 	assert.equal(result.stopped, "limit");
 	await incomplete.shutdown();
+});
+
+it("returns neutral errors for failed or invalid responses", async () => {
+	for (const response of [
+		{ ...reply(), stopReason: "error", errorMessage: "model executor failed" },
+		{ ...reply(), stopReason: "error", errorMessage: "claude-haiku-5-5 failed" },
+		reply({ type: "text", text: "invalid" }),
+		reply({ type: "text", text: "{}" }),
+	]) {
+		const env = setup([response]);
+		const result = await env.call(task);
+		assert.equal(result.stopped, "error");
+		assert.doesNotMatch(result.summary, /model|executor/i);
+		await env.shutdown();
+	}
+	for (const [errorMessage, reason] of [["Account quota exceeded", "Account quota exceeded"], ["Model authentication failed", "authentication failed"], ["claude-haiku-5-5 rate limit reached", "rate limit reached"]]) {
+		const env = setup([{ ...reply(), stopReason: "error", errorMessage }]);
+		const result = await env.call(task);
+		assert.equal(result.stopped, "error");
+		assert.ok(result.summary.includes(reason));
+		assert.doesNotMatch(result.summary, /model|executor|claude-haiku-5-5/i);
+		await env.shutdown();
+	}
 });
 
 it("translates short model ids to current browser ids", async () => {
@@ -217,26 +264,105 @@ it("keeps all page Markdown and preserves targets across read operations in one 
 	await env.shutdown();
 });
 
-it("records a flow through DevTools and reports a missing window", async () => {
+it("exports the selected Recorder flow through both Chrome converters", async () => {
+	const folder = await mkdtemp(join(tmpdir(), "recorder-fixture-"));
+	const panelFolder = join(folder, "panels", "recorder");
+	await mkdir(join(panelFolder, "converters"), { recursive: true });
+	await writeFile(join(panelFolder, "recorder.js"), `export const RecorderPanel = { RecorderPanel: { instance: () => globalThis.recorderFixture.panel } };`);
+	await writeFile(join(panelFolder, "converters", "converters.js"), `
+		export const JSONConverter = { JSONConverter: class { async stringify(flow) {
+			globalThis.recorderFixture.exports.push('json');
+			if (globalThis.recorderFixture.fail === 'json') throw new Error('json export failed');
+			return [JSON.stringify(flow)];
+		} } };
+		export const PuppeteerConverter = { PuppeteerConverter: class { async stringify(flow) {
+			globalThis.recorderFixture.exports.push('script');
+			if (globalThis.recorderFixture.fail === 'script') throw new Error('script export failed');
+			return [\`await page.keyboard.press('\${flow.steps.at(-1).key}');\`];
+		} } };`);
+	const globals = globalThis as Any;
+	const previousLocation = Object.getOwnPropertyDescriptor(globals, "location");
+	const previousFixture = Object.getOwnPropertyDescriptor(globals, "recorderFixture");
 	const events: string[] = [];
-	const flow = { title: "Flow", steps: [{ type: "navigate", url: "https://local.test" }] };
+	const flow: Any = { title: "Flow", steps: [{ type: "navigate", url: "https://local.test" }] };
+	const fixture = { panel: { isRecording: false, isToggling: false, currentRecording: { flow } }, exports: [] as string[], fail: "" };
+	Object.defineProperty(globals, "location", { configurable: true, value: { href: pathToFileURL(join(folder, "inspector.html")).href } });
+	Object.defineProperty(globals, "recorderFixture", { configurable: true, value: fixture });
 	const recorder = {
-		keyboard: { down: async (key: string) => events.push(`down ${key}`), up: async (key: string) => events.push(`up ${key}`), press: async (key: string) => events.push(`press ${key}`), type: async (value: string) => events.push(`type ${value}`) },
-		waitForFunction: async (_fn: unknown, _options: unknown, label: string) => ({ asElement: () => ({ click: async () => events.push(label) }), dispose: async () => {} }),
-		evaluate: async () => JSON.stringify([{ flow }]),
+		keyboard: { down: async () => {}, up: async () => {}, press: async (key: string) => { if (key === "Enter" && events.includes("Create recording")) fixture.panel.isRecording = true; }, type: async () => {} },
+		waitForFunction: async (fn: Any, _options: unknown, value: string | boolean) => {
+			if (typeof value === "boolean") assert.equal(await fn(value), true);
+			return { asElement: () => ({ click: async () => { events.push(String(value)); if (value === "End recording") fixture.panel.isRecording = false; } }), dispose: async () => {} };
+		},
+		evaluate: async (fn: () => Promise<unknown>) => await fn(),
 	};
-	const env = setup([reply(call(0)), done()], { recorder });
-	const result = await env.call({ ...task, actions: ["first"] });
-	assert.deepEqual(events.filter(event => event.includes("recording")), ["Create recording", "End recording"]);
-	assert.deepEqual(JSON.parse(await readFile(result.files.recording, "utf8")), flow);
-	assert.equal(result.files.recording_error, null);
+	const env = setupRun(Array.from({ length: 3 }, () => [reply(call(0)), done()]).flat(), { press: async key => { if (fixture.panel.isRecording) flow.steps.push({ type: "keyDown", key }); } });
+	try {
+		await env.call({ action: "open", name: "other" });
+		await env.call({ action: "open", name: "selected" });
+		env.pages[0].openDevTools = async () => { throw new Error("wrong tab"); };
+		env.pages[1].openDevTools = async () => { events.push("selected page"); return recorder; };
+		const input = { action: "run", name: "selected", actions: ["first"], expected: "Done" };
+		const result = await env.call(input);
+		assert.deepEqual(events, ["selected page", "Create recording", "End recording"]);
+		assert.deepEqual(fixture.exports, ["json", "script"]);
+		assert.deepEqual(JSON.parse(await readFile(result.files.recording, "utf8")).steps.at(-1), { type: "keyDown", key: "0" });
+		assert.match(await readFile(result.files.script, "utf8"), /press\('0'\)/);
+		assert.equal(result.files.recording_error, null);
+		for (const format of ["json", "script"]) {
+			fixture.fail = format;
+			const failed = await env.call(input);
+			assert.equal(failed.reached, false);
+			assert.equal(failed.stopped, "error");
+			assert.match(failed.files.recording_error, new RegExp(`${format} export failed`));
+		}
+		fixture.fail = "";
+		const controller = new AbortController();
+		const cancelled = setupRun([], {
+			openDevTools: async () => recorder,
+			model: async () => { controller.abort(); return done(); },
+		});
+		try {
+			const endCount = events.filter(event => event === "End recording").length;
+			const cancelledResult = await cancelled.call({ ...task, actions: ["first"] }, controller.signal);
+			assert.equal(cancelledResult.stopped, "cancelled");
+			assert.equal(fixture.panel.isRecording, false);
+			assert.equal(events.filter(event => event === "End recording").length, endCount + 1);
+		} finally { await cancelled.shutdown(); }
+	} finally {
+		await env.shutdown();
+		if (previousLocation) Object.defineProperty(globals, "location", previousLocation); else delete globals.location;
+		if (previousFixture) Object.defineProperty(globals, "recorderFixture", previousFixture); else delete globals.recorderFixture;
+		await rm(folder, { recursive: true, force: true });
+	}
+});
+
+it("stops before actions if Recorder startup fails and does not record when disabled", async () => {
+	const recorder = {
+		keyboard: { down: async () => {}, up: async () => {}, press: async () => {}, type: async () => {} },
+		waitForFunction: async (_fn: unknown, _options: unknown, value: string | boolean) => {
+			if (typeof value === "boolean") throw new Error("Recorder start failed");
+			return { asElement: () => ({ click: async () => {} }), dispose: async () => {} };
+		},
+		evaluate: async () => ({ active: false, toggling: false }),
+	};
+	const env = setupRun([reply(call(0)), done()], { openDevTools: async () => recorder });
+	await assert.rejects(env.call({ ...task, actions: ["first"] }), /Recorder start failed/);
+	assert.deepEqual(env.keys, []);
+	assert.deepEqual(env.requests, []);
+	const result = await env.call({ ...task, actions: ["first"], record: false });
+	assert.equal(result.stopped, null);
+	assert.equal(result.files.recording, null);
+	assert.equal(result.files.script, null);
 	await env.shutdown();
-	const missing = setup([reply(call(0)), done()]);
-	const noWindow = await missing.call({ ...task, actions: ["first"] });
-	assert.equal(noWindow.files.recording, null);
-	assert.match(noWindow.files.recording_error, /No DevTools window/);
-	await assert.rejects(missing.call({ ...task, name: noWindow.page.name, url: undefined, actions: ["first"], record: true }), /No DevTools window/);
-	await missing.shutdown();
+});
+
+it("does not act if recording is unavailable by default", async () => {
+	const env = setupRun([reply(call(0)), done()]);
+	await assert.rejects(env.call({ ...task, actions: ["first"] }));
+	assert.deepEqual(env.keys, []);
+	assert.deepEqual(env.requests, []);
+	await env.shutdown();
 });
 
 it("writes the executor transcript from the first request without returning it", async () => {
@@ -384,11 +510,69 @@ it("does not retry a failed mutating action or execute the remaining chain", asy
 it("bounds model requests and rejects unsupported methods before actions", async () => {
 	const view = (id: number) => ({ type: "toolCall", id: `v${id}`, name: "view", arguments: {} });
 	const env = setup(Array.from({ length: 8 }, (_, i) => reply(view(i))));
-	assert.equal((await env.call(task)).stopped, "limit");
+	const result = await env.call(task);
+	assert.equal(result.stopped, "limit");
+	assert.doesNotMatch(result.summary, /model|executor/i);
 	assert.equal(env.requests.length, 8);
 	await env.shutdown();
 	const bad = setup([reply({ type: "toolCall", id: "bad", name: "call", arguments: { action: 0, chain: [{ method: "evaluate", args: ["1"] }] } })]);
 	assert.equal((await bad.call(task)).stopped, "error");
 	assert.deepEqual(bad.keys, []);
 	await bad.shutdown();
+});
+
+it("finds the existing recording toolbar button whose title includes its shortcut", async () => {
+	const globals = globalThis as Any;
+	const originalDocument = Object.getOwnPropertyDescriptor(globals, "document");
+	let clicked = false;
+	const button = { getAttribute: (name: string) => name === "title" ? "Create recording - Ctrl+E" : null, children: [], shadowRoot: null };
+	Object.defineProperty(globals, "document", { configurable: true, value: { querySelectorAll: () => [button] } });
+	const recorder = {
+		keyboard: { down: async () => {}, up: async () => {}, press: async () => {}, type: async () => {} },
+		waitForFunction: async (fn: Any, _options: unknown, value: string | boolean) => {
+			if (typeof value === "string") {
+				const found = fn(value);
+				if (!found) throw new Error("Create button not found");
+				return { asElement: () => ({ click: async () => { clicked = true; } }), dispose: async () => {} };
+			}
+			return { dispose: async () => {} };
+		},
+	};
+	try {
+		await startRecording({ openDevTools: async () => recorder } as never, new AbortController().signal);
+		assert.equal(clicked, true);
+	} finally {
+		if (originalDocument) Object.defineProperty(globals, "document", originalDocument); else delete globals.document;
+	}
+});
+
+it("stops a recording that begins after cancellation during startup", async () => {
+	const controller = new AbortController();
+	const start = deferred<void>();
+	const requested = deferred<void>();
+	const events: string[] = [];
+	let active = false;
+	const recorder = {
+		keyboard: { down: async () => {}, up: async () => {}, type: async () => {}, press: async (key: string) => {
+			if (key === "Enter" && events.includes("Create recording")) { requested.resolve(); controller.abort(); }
+		} },
+		waitForFunction: async (_fn: Any, _options: unknown, value: string | boolean) => {
+			if (value === true) { await start.promise; if (!active) throw new Error("not active"); }
+			return { asElement: () => ({ click: async () => { events.push(String(value)); if (value === "End recording") active = false; } }), dispose: async () => {} };
+		},
+		evaluate: async () => ({ active, toggling: false }),
+	};
+	const env = setupRun([reply(call(0)), done()], { openDevTools: async () => recorder });
+	try {
+		const running = env.call({ ...task, actions: ["first"] }, controller.signal);
+		await requested.promise;
+		const result = await running;
+		assert.equal(result.stopped, "cancelled");
+		active = true;
+		start.resolve();
+		await env.call({ action: "tabs" });
+		assert.equal(active, false);
+		assert.ok(events.includes("End recording"));
+		assert.deepEqual(env.keys, []);
+	} finally { await env.shutdown(); }
 });

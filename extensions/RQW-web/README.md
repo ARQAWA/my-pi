@@ -1,11 +1,11 @@
 # RQW-web
 
-Independent Pi 1.4.0 tool `web`: search independent questions in parallel or read known public URLs with a focus,
+Independent Pi 1.5.0 tool `web`: search independent questions in parallel or read known public URLs with a focus,
 through the saved `openai-codex` subscription. Normal package loading registers it; no shell command, API key,
 second login or enabled RQW-codex/RQW-tools extension is required.
 
 ```json
-{"queries":["Pi 1.4.0 custom tool API documentation","Codex CLI 0.164.0 cached versus live web search"],"mode":"live"}
+{"queries":["Pi 1.5.0 custom tool API documentation","Codex CLI 0.164.0 cached versus live web search"],"mode":"live"}
 ```
 
 ```json

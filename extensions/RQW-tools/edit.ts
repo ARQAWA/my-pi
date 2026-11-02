@@ -1,9 +1,8 @@
-import { resolve } from "node:path";
 import { Type } from "typebox";
 import { nearestMatchHint } from "./hint.ts";
-import { editPathKey, resolvePath } from "./keys.ts";
+import { editCanonicalKey, editPathKey, lockPathKey, resolvePath } from "./keys.ts";
 import { withRetry } from "./retry.ts";
-import { withFileLock } from "./lock.ts";
+import { abortable, withFileLock } from "./lock.ts";
 
 // Multi-file edit over the stock edit definition (design decision 4).
 // Schema = stock schema + optional top-level path + optional path on each edits[] entry (strict-mode safe).
@@ -38,22 +37,39 @@ export function prepareEditArguments(stockPrepare: ((input: any) => any) | undef
 // `indices` holds the position of each edit in the model's call, so errors can cite the model's own numbers.
 type Group = { path: string; abs: string; edits: { oldText: string; newText: string }[]; indices: number[] };
 
-function keyOf(path: string, cwd: string): string {
-	try {
-		const key = editPathKey(path, cwd);
-		if (key !== undefined) return key;
-	} catch {}
-	return resolve(cwd, path);
-}
-
-function groupEdits(params: any, cwd: string): Group[] {
-	const groups = new Map<string, Group>();
-	params.edits.forEach((entry: any, i: number) => {
+async function groupEdits(params: any, cwd: string): Promise<Group[]> {
+	const paths = params.edits.map((entry: any, i: number) => {
 		const path = entry?.path || params.path;
 		if (typeof path !== "string" || path === "") {
 			throw new Error(`edits[${i}] has no path and the call has no top-level path`);
 		}
-		const key = keyOf(path, cwd);
+		return path as string;
+	});
+	const keys = await Promise.all(paths.map(async (path: string) => ({
+		identity: await editPathKey(path, cwd),
+		canonical: await editCanonicalKey(path, cwd),
+	})));
+	// A file can appear between parallel lookups, including under a different casing.
+	await Promise.all(keys.map(async (key: { identity: string | undefined }, i: number) => {
+		if (key.identity === undefined) key.identity = await editPathKey(paths[i], cwd);
+	}));
+	const roots = keys.map((_: unknown, i: number) => i);
+	const root = (i: number): number => {
+		while (roots[i] !== i) i = roots[i];
+		return i;
+	};
+	for (let i = 0; i < keys.length; i++) {
+		for (let j = 0; j < i; j++) {
+			if (keys[i].canonical === keys[j].canonical ||
+				(keys[i].identity !== undefined && keys[i].identity === keys[j].identity)) {
+				roots[root(i)] = root(j);
+			}
+		}
+	}
+	const groups = new Map<number, Group>();
+	params.edits.forEach((entry: any, i: number) => {
+		const path = paths[i];
+		const key = root(i);
 		let group = groups.get(key);
 		if (!group) {
 			group = { path, abs: resolvePath(path, cwd), edits: [], indices: [] };
@@ -84,9 +100,9 @@ export async function executeEdit(stockExecute: any, id: string, params: any, si
 	if (!params || !Array.isArray(params.edits) || params.edits.length === 0) {
 		return stockExecute(id, params, signal, onUpdate, ctx);
 	}
-	const groups = groupEdits(params, base);
-	const runGroup = (group: Group) =>
-		withFileLock(group.abs, () =>
+	const groups = await abortable(() => groupEdits(params, base), signal);
+	const runGroup = async (group: Group) =>
+		withFileLock(await abortable(() => lockPathKey(group.path, base), signal), () =>
 			withRetry<{ details?: unknown }>(() => stockExecute(id, { path: group.path, edits: group.edits }, signal, onUpdate, ctx), signal), signal);
 
 	if (groups.length === 1) {

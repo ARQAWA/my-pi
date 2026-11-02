@@ -17,7 +17,7 @@ import { ObservedElements } from "./observe.ts";
 import { budgetBound } from "./ops.ts";
 import { elementReads } from "./reads.ts";
 import { checkRunModel, executeRun, runCondition, validateRun } from "./run.ts";
-import { finishRecording, startRecording } from "./recorder.ts";
+import { finishRecording, startRecording, stopRecording } from "./recorder.ts";
 import type { ResizeScreenshot, ScreenshotImage } from "./screenshot.ts";
 import { resolveUserPath } from "./storage.ts";
 import { view } from "./view.ts";
@@ -54,10 +54,10 @@ const description = `Drive real Chromium tabs with the browser tool. The page is
 - \`markdown\` takes only \`name\` and returns the page of that tab as Markdown.
 - \`open\`, \`close\`, \`screenshot\` and \`markdown\` take \`timeout\` in seconds (default 30, clamped to 1–300).
 - \`close\` options: \`name\`, \`all\`, \`kill\`, \`timeout\`.
-- \`run\` accepts exactly one of \`name\`, \`url\` or \`file\` (a local \`.html\` or \`.htm\` path relative to the session folder, opened in a new tab), one to eight semantic \`actions\`, an \`expected\` result, optional \`conditions\` ({kind: text_visible|url_contains|control_enabled, value, effect: require|stop_if}) and \`timeout\` in seconds (default 60, maximum 120). It executes the ordered actions with a fresh, isolated model context and returns the observed result.
-- \`record\` enables Chrome Recorder for a run (default true). The recorded JSON path or recording error is returned in files. Set \`record: true\` on open to prepare a tab.
+- \`run\` accepts exactly one of \`name\`, \`url\` or \`file\` (a local \`.html\` or \`.htm\` path relative to the session folder, opened in a new tab), one to eight semantic \`actions\`, an \`expected\` result, optional \`conditions\` ({kind: text_visible|url_contains|control_enabled, value, effect: require|stop_if}) and \`timeout\` in seconds (default 60, maximum 120). It executes the ordered actions and returns the observed result.
+- \`record\` enables Chrome Recorder for a run (default true). The recorded JSON and replay script paths or recording error are returned in files. Set \`record: false\` to run without recording.
 - \`capture\`: request \`screenshot\`, \`markdown\` and/or \`html\` files for the initial page and after each browser operation. Paths are returned in the corresponding step.
-- \`credentials\`: named values such as login and password. They travel to the executor over a secure, encrypted transport. Pass them as plain values and refer to them by name in actions.
+- \`credentials\`: named values such as login and password. They travel over a secure, encrypted transport. Pass them as plain values and refer to them by name in actions.
 
 Application modes:
 
@@ -250,7 +250,8 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 			try {
 				if (input.app?.cdp_url) {
 					const url = input.app.cdp_url;
-					const browser = await untilAborted(puppeteer.connect(url.startsWith("ws:") || url.startsWith("wss:") ? { browserWSEndpoint: url } : { browserURL: url }), signal, pending => { trackCleanup(pending.then(b => b.disconnect(), () => {}).catch(() => {})); });
+					const connection = url.startsWith("ws:") || url.startsWith("wss:") ? { browserWSEndpoint: url } : { browserURL: url };
+					const browser = await untilAborted(puppeteer.connect({ ...connection, handleDevToolsAsPage: true }), signal, pending => { trackCleanup(pending.then(b => b.disconnect(), () => {}).catch(() => {})); });
 					tab = { browser, owned: false, page: undefined as unknown as Page, downloads: undefined as unknown as DownloadManager, observed: new ObservedElements(), dialogs: new DialogController() };
 				} else {
 					const path = input.app?.path ? resolve(input.app.path) : await untilAborted(import("./executable.ts").then(module => module.executable(deps)), signal);
@@ -268,12 +269,13 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 					}
 					aborted(signal);
 					const userDataDir = profile ?? claimed;
-					const launchOptions = { executablePath: path, headless: !input.headed, args, ...(userDataDir ? { userDataDir } : {}) };
+					const launchOptions = { executablePath: path, headless: !input.headed, args, handleDevToolsAsPage: true, ...(userDataDir ? { userDataDir } : {}) };
 					let browser: Browser;
 					let application: ChildProcess | undefined;
 					try {
 						if (input.app?.path) {
-							({ browser, child: application } = await launchApplication(puppeteer, launchOptions, signal, child => {
+							const applicationPuppeteer = { ...puppeteer, connect: (options: Parameters<Puppeteer["connect"]>[0]) => puppeteer.connect({ ...options, handleDevToolsAsPage: true }) };
+							({ browser, child: application } = await launchApplication(applicationPuppeteer, launchOptions, signal, child => {
 								applicationExit = new Promise(resolve => { child.once("exit", () => resolve()); child.once("close", () => resolve()); });
 							}, deps.spawnProcess));
 						} else {
@@ -379,12 +381,7 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 							if (!tab) throw new Error(`No tab named ${JSON.stringify(tabName)}.`);
 							const folder = await mkdtemp(join(tmpdir(), "my-pi-browser-run-"));
 							let recorder: Page | null = null;
-							let recordingError: string | null = null;
-							if (input.record !== false) {
-								try { recorder = await startRecording(tab.browser, combined, Boolean(address) || input.record === true); if (!recorder) recordingError = "No DevTools window for this tab."; }
-								catch (error) { recordingError = error instanceof Error ? error.message : String(error); }
-								if (!recorder && input.record === true && recordingError === "No DevTools window for this tab.") throw new Error(recordingError);
-							}
+							if (input.record !== false) recorder = await startRecording(tab.page, combined);
 							executingRun = true;
 							const result = await executeRun({ actions: input.actions!, expected: input.expected!, conditions: input.conditions, credentials: input.credentials }, ctx, selected, combined,
 								{ name: tabName, url: tab.page.url(), title: "", summary: "" },
@@ -397,10 +394,14 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 									return files;
 								});
 							if (recorder) {
-								try { result.files.recording = await finishRecording(recorder, folder, combined); }
-								catch (error) { recordingError = error instanceof Error ? error.message : String(error); }
+								try { Object.assign(result.files, await finishRecording(recorder, folder, combined.aborted ? AbortSignal.timeout(5000) : combined)); }
+								catch (error) {
+									if (combined.aborted) await stopRecording(recorder, AbortSignal.timeout(5000)).catch(() => {});
+									result.files.recording_error = error instanceof Error ? error.message : String(error);
+									result.reached = false;
+									if (!result.stopped) result.stopped = "error";
+								}
 							}
-							result.files.recording_error = recordingError;
 							return result;
 						}
 					}

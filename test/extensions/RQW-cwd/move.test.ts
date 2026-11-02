@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { afterEach, beforeEach, it } from "node:test";
 import { AgentSessionRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { moveToTemp } from "../../../extensions/RQW-cwd/move.ts";
@@ -56,6 +56,24 @@ it("a chat started in the home folder becomes a new temp chat in the temp histor
 	assert.equal(host.session.sessionManager.getCwd(), resolve(target));
 	assert.equal(host.session.sessionManager.getSessionDir(), defaultDir(target));
 	assert.equal(host.session.sessionManager.isPersisted(), true);
+});
+
+it("recognizes the default history folder without case on Windows only", async () => {
+	const dir = defaultDir(home);
+	const variant = join(agentDir, "sessions", basename(dir).toUpperCase());
+	const original = process.platform;
+	const windows = runtime(SessionManager.create(home, variant));
+	const other = runtime(SessionManager.create(home, variant));
+	try {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		await moveToTemp(windows, { platform, home, target, chdir });
+		assert.equal(windows.session.sessionManager.getSessionDir(), defaultDir(target));
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		await moveToTemp(other, { platform, home, target, chdir });
+		assert.equal(other.session.sessionManager.getSessionDir(), variant);
+	} finally {
+		Object.defineProperty(process, "platform", { value: original });
+	}
 });
 
 it("an explicit history folder and an in-memory chat keep their kind", async () => {

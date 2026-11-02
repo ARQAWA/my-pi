@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { takeFrom } from "./consumer.ts";
 import { runtime, world } from "./fixture.ts";
 
 test("a saved automatic result is not delivered again after hydration", async t => {
@@ -19,6 +20,7 @@ test("a saved automatic result is not delivered again after hydration", async t 
 	const second = runtime(w.cwd, w.base, "off", [], [], SessionManager.open(file));
 	t.after(() => second.live.close());
 	await second.emit("session_start");
-	const waited = await second.execute({ action: "wait", ids: ["agent#1"] });
-	assert.deepEqual(waited.details.results, []);
+	await second.live.resume!(new AbortController().signal, true);
+	const taken = await takeFrom(second.live.autoSource!()!, () => { throw new Error("nothing is left to deliver"); });
+	assert.deepEqual(taken.details.results, []);
 });

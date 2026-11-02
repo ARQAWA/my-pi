@@ -1,6 +1,6 @@
 # RQW-anthropic
 
-Subscription transport for stock Pi 1.4.0. `/login anthropic` still uses Pi's browser or copy-code login.
+Subscription transport for stock Pi 1.5.0. `/login anthropic` still uses Pi's browser or copy-code login.
 The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged,
 including native custom SDK clients. OAuth requests ignore `options.client` and use Pi's OAuth builder with the
 protected subscription fetch, so a custom client's origin or fetch cannot bypass signing, origin checks or recovery.
@@ -63,8 +63,8 @@ Background warming is separately disabled by RQW-settings regardless of user con
 sessions; prompt caching remains on. Built-in policy: [Settings](../../DECISIONS.md#settings).
 Disabling the last adapter owner restores the stream functions; surviving owners keep their runtime's rule.
 
-For Opus 5.5 the catalog TTLs are 300/3600 seconds. With RQW-settings on, no warmer timer is armed; real requests
-alone write and read the cache. If RQW-settings is disabled, stock Pi behavior returns: an enabled warmer schedules
+For Opus 5.5 the catalog TTLs are 300/3600 seconds. With RQW-settings on, Pi's generic warmer is off; real requests
+and the [main-chat warm](#main-chat-cache-warm) below write and read the cache. If RQW-settings is disabled, stock Pi behavior returns: an enabled warmer schedules
 at 90% of TTL (54 minutes, not 4m30s). Its one-hour streaming safety horizon allows at most one such warm;
 the 30-minute idle horizon prevents idle warming with this TTL. Replay safety and Pi's economic decision apply.
 
@@ -79,6 +79,34 @@ The process-wide env alternative is deliberately not used: Pi's `openai-response
 or (for explicit-mode models) 30m, subject to model compatibility and ChatGPT-sign-in field suppression.
 `openai-codex-responses` does not read that env for retention; only explicit option `none` removes its session
 cache key. Neither provider is changed by this adapter's request-local Anthropic default.
+
+## Main chat cache warm
+
+`warm.ts` keeps the main chat's one-hour cache alive: one timer, one isolated replay. Only the session that owns this
+extension is warmed, only for OAuth requests with `long` retention and adaptive or no thinking. Subagents (short
+retention, no extension) and API keys are never warmed; manual extended thinking is skipped because its budget follows
+`max_tokens`, and a request with a hosted (server-side) tool or MCP server is skipped. Owner approval and the accepted quota risk: `DECISIONS.md` `[D-ANTHROPIC-WARM]`.
+
+- The last successful real request is the snapshot (the one `context-fork.ts` already keeps). The deadline is 50 minutes
+  after that request started, not after it ended. Nothing is armed before a first answered request; a new real request
+  replaces the deadline; a failed one ends the cycle.
+- At the deadline the replay goes out once through the isolated one-shot sender of the context fork (no 401 recovery,
+  no version replay, own abort signal). The payload is the saved wire body with `max_tokens: 1` as the only change:
+  same system, tools, cache markers, thinking and effort. No dot, no new message.
+- The answer is dropped. No session call, history entry, usage record (`appendUsage`) or tool execution happens, and
+  the JSONL is unchanged.
+- Cancelled at once, without blocking the real work: a real request of the session (also aborts a replay in flight),
+  agent start, queued input, the owner writing, a model change, the start or end of a branch navigation, a session
+  identity change, a compaction, reload or close. At the deadline a busy session (streaming, compacting, retrying, a
+  running shell command, queued input) or another model sends nothing.
+- A timer more than 5 minutes late (sleep) is skipped, since the entry is gone and a replay would be a cold write; the
+  next real request starts a new cycle. An error ends the cycle with no retry and no notice.
+- After a replay that read the cache (`cache_read` above zero) the next one is due 50 minutes after that replay
+  started. A miss ends the cycle.
+
+Limits: each warm spends subscription quota. The replay uses the access token saved with the request; if it was
+rotated or expired the request fails and the cycle ends. A cache hit is best effort (the billing block has no checksum
+and server routing can differ) and is not proven on a live subscription. Pi's generic warmer stays off.
 
 ## On-demand subscription quota
 
@@ -213,11 +241,12 @@ The registration guard (`registration.ts`) is a version-guarded, reversible in-m
 methods: it rejects a second Anthropic overlay in either order, binds the runtime credential store to this overlay,
 and checks the auth boundary before each request. No node_modules file is patched. It is limited to runtimes with this
 marked overlay. The hooks are reference-counted and removed on shutdown, reload or SDK
-dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.4.0 has no public SDK pre-dispose
+dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.5.0 has no public SDK pre-dispose
 event, and `_bindExtensionCore` to associate cleanup with the exact owning session, even without `session_start`.
 Recovery hooks preserve native `stream` versus `streamSimple` options and OAuth provenance. Only visible main-turn
 recovery is guarded; native summary retry is not wrapped. Unrelated SDK runtimes retain stock Pi behavior.
 
 Attribution: `THIRD-PARTY-NOTICES.md`.
 Tests: `test/extensions/RQW-anthropic/adapter.test.ts`, `test/extensions/RQW-anthropic/quota.test.ts`,
-`test/extensions/RQW-anthropic/retry.test.ts`, `test/extensions/RQW-anthropic/context-fork.test.ts`.
+`test/extensions/RQW-anthropic/retry.test.ts`, `test/extensions/RQW-anthropic/context-fork.test.ts`,
+`test/extensions/RQW-anthropic/main-warm.test.ts`.

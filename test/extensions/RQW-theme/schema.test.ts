@@ -36,12 +36,12 @@ const expectedColors: Record<string, string> = {
 		success: "#00ff88",
 		error: "#ff4757",
 		warning: "#ffb347",
-		muted: "#adadac",
-		dim: "#7f7e7c",
+		muted: "#b8b3aa",
+		dim: "#96918a",
 		text: "",
 		thinkingText: "#adadac",
 		selectedBg: "#2a2826",
-		userMessageBg: "#232120",
+		userMessageBg: "#36312c",
 		userMessageText: "",
 		customMessageBg: "",
 		customMessageText: "",
@@ -85,7 +85,16 @@ const expectedColors: Record<string, string> = {
 
 it("every theme colour keeps its agreed value", () => {
 	const theme = JSON.parse(readFileSync(join(import.meta.dirname, "../../../extensions/RQW-theme/theme.json"), "utf8"));
+	assert.equal(theme.colors.userMessageBg, "#36312c");
+	assert.equal(theme.colors.muted, "#b8b3aa");
+	assert.equal(theme.colors.dim, "#96918a");
+	assert.equal(theme.vars.card, "#232120");
+	assert.equal(theme.vars.smoke, "#adadac");
+	assert.equal(theme.vars.steel, "#7f7e7c");
 	const resolved: Record<string, string> = {};
 	for (const [token, value] of Object.entries<string>(theme.colors)) resolved[token] = theme.vars[value] ?? value;
 	assert.deepEqual(resolved, expectedColors);
+	const resolvedExport: Record<string, string> = {};
+	for (const [token, value] of Object.entries<string>(theme.export)) resolvedExport[token] = theme.vars[value] ?? value;
+	assert.deepEqual(resolvedExport, { pageBg: "#141414", cardBg: "#232120", infoBg: "#1c1b1a" });
 });

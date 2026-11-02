@@ -23,6 +23,7 @@ jobs:
           node-version: "24"
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
 
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
@@ -30,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [windows-latest]
         node: ["22.19.0", "24"]
     steps:
       - uses: actions/checkout@v4

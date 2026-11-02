@@ -59,7 +59,7 @@ Messages go out one turn at a time. A message that never started when everything
 queue, a failed send) is released as `unknown`, never delivered, its model override is undone and the next message
 goes. If Pi still delivers it later, the stored entry turns it into `delivered`.
 
-Delivery limits, as Pi 1.4.0 gives no public signal for them:
+Delivery limits, as Pi 1.5.0 gives no public signal for them:
 
 1. After an aborted run Pi may still hold a released message in its own queue, so it can arrive after a later one.
    `ctx.hasPendingMessages()` counts only user-text queues (`pi-coding-agent/dist/core/agent-session.js:1954-1955,2826`);

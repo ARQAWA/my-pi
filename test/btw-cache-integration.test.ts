@@ -80,9 +80,10 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 		main.push({ model, context, options });
 		return overlay ? overlay.streamSimple(model, normalizeContext(context), { ...options, apiKey: "sk-ant-oat01-fake", fetch: transport }).result() : "main stream";
 	};
-	const agent = { streamFunction: original as unknown };
+	const runtime = { stream: original, streamSimple: original };
+	const agent = { streamFunction: (model: Model<Api>, context: Context, options: Record<string, unknown>) => runtime.streamSimple(model, context, options) };
 	const session = Object.create(AgentSession.prototype) as AgentSession;
-	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent } });
+	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent }, _modelRuntime: { value: runtime }, _cacheWarmer: { value: { models: runtime } } });
 	if (startup) Object.defineProperties(session, {
 		_baseSystemPromptOptions: { value: { selectedTools: [], hiddenTools: [] } },
 		_runSystemPromptOptions: { value: undefined, writable: true },
@@ -132,7 +133,7 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 		setModel(model: Model<Api>) { ctx.model = model; },
 		switchTo(id: string) { fire("session_shutdown"); sessionId = id; fire("session_start", { reason: "new" }); },
 		request: (context: Context, options: Record<string, unknown> = { sessionId: "main", reasoning: "high" }) =>
-			(agent.streamFunction as typeof original)(ctx.model, context, options),
+			agent.streamFunction(ctx.model, context, options),
 		async btw(args: string) { await commands.get("btw")!.handler(args, ctx); await settle(); },
 		key(data: string) { popup.panel!.handleInput(data); },
 		async say(value: string) { for (const char of value) h.key(char); h.key("\r"); await settle(); },

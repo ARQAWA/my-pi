@@ -14,7 +14,7 @@ import type { ContextForkRequest } from "./context-fork.ts";
 import { createQuotaCache, QUOTA_EVENT, type QuotaRequest } from "./quota.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
-	if (VERSION !== "1.4.0") throw new Error("RQW-anthropic requires Pi 1.4.0; nothing was changed");
+	if (VERSION !== "1.5.0") throw new Error("RQW-anthropic requires Pi 1.5.0; nothing was changed");
 	const base = builtinProviders().find(provider => provider.id === "anthropic");
 	if (!base?.auth.oauth) throw new Error("RQW-anthropic: Pi's built-in Anthropic OAuth provider is missing");
 	const version = versionState();
@@ -48,6 +48,7 @@ export default function anthropic(pi: ExtensionAPI) {
 		releaseQuota();
 		releaseWarning?.();
 		quota.dispose();
+		overlay.warm.dispose();
 		overlay.forks.clear();
 		try { lifecycle?.release(); }
 		finally {
@@ -60,12 +61,13 @@ export default function anthropic(pi: ExtensionAPI) {
 	try {
 		releaseRecovery = installRecoveryHooks();
 		lifecycle = installLifecycle(cleanup);
-		// Pi 1.4.0's native handler map carries this private exact-session binder.
+		// Pi 1.5.0's native handler map carries this private exact-session binder.
 		pi.on(SESSION_BIND as "session_start", (event, ctx) => {
 			if (!cleaned) {
 				const session = (event as unknown as { session: AgentSession }).session;
 				lifecycle!.bindSession(ctx.sessionManager, session);
 				sessionId = session.sessionId;
+				overlay.warm.bind(session);
 				releaseWarning?.();
 				releaseWarning = bindRetryWarning(session, () => pi.events.emit("rqw:background-warning:v1", {
 					sessionId: session.sessionId, text: "anthropic: no retry",
@@ -112,6 +114,12 @@ export default function anthropic(pi: ExtensionAPI) {
 				throw new Error(`${LOGIN_HELP} Adapter registration is unavailable.`);
 			}
 		});
+		// The owner writing, a new model or branch, or a compaction ends the main cache-warm cycle; the next real request starts one.
+		pi.on("input", () => { overlay.warm.cancel(); });
+		pi.on("model_select", () => overlay.warm.cancel());
+		pi.on("session_before_tree", () => { overlay.warm.cancel(); });
+		pi.on("session_tree", () => overlay.warm.cancel());
+		pi.on("session_compact", () => overlay.warm.cancel());
 		pi.on("session_shutdown", cleanup);
 	} catch (error) { cleanup(); throw error; }
 }

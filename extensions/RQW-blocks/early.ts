@@ -11,12 +11,23 @@ const normalize = (path: string) => {
 };
 const ownPath = normalize(fileURLToPath(new URL("./index.ts", import.meta.url)));
 
-type Binding = { shutdown: (event: any, ctx: any) => void };
+type InstallStyles = (theme: () => Theme, supported: { compaction: boolean; branch: boolean; bash: boolean; thinking: boolean }) => () => void;
+/** Everything the host hook runs that a newer module may change. */
+type Parts = { installStyles: InstallStyles; installHistory: typeof installHistory; startWithHistory: typeof startWithHistory; rebindWithHistory: typeof rebindWithHistory };
+type Binding = { shutdown: (event: any, ctx: any) => void; update?: (next: Parts) => void };
 
-/** One host hook survives extension reloads. A factory alone never changes the visible host. */
-export function installEarly(installStyles: (theme: () => Theme, supported: { compaction: boolean; branch: boolean; bash: boolean; thinking: boolean }) => () => void): Binding {
+/**
+ * One host hook survives extension reloads: a factory alone never changes the visible host, and a gap would draw stock
+ * blocks. A reloaded module hands its styles, history and start code to the running binding, which swaps them in one
+ * step, so /reload applies the new code. A binding of an earlier release has no `update` and stays until a restart.
+ */
+export function installEarly(installStyles: InstallStyles): Binding {
+	let parts: Parts = { installStyles, installHistory, startWithHistory, rebindWithHistory };
 	const existing = (globalThis as any)[ACTIVE] as Binding | undefined;
-	if (existing) return existing;
+	if (existing) {
+		existing.update?.(parts);
+		return existing;
+	}
 	const proto = InteractiveMode.prototype as any;
 	const names = ["init", "stop", "rebindCurrentSession", "renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];
 	const mutable = (target: any, name: string) => {
@@ -29,7 +40,7 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 	};
 	const optional = (target: any, name: string) => typeof target[name] === "function" ? mutable(target, name) : !(name in target) && Object.isExtensible(target);
 	const valid = (target: any, names: string[]) => names.every(name => mutable(target, name));
-	if (VERSION !== "1.4.0" || !valid(proto, names)) return { shutdown() {} };
+	if (VERSION !== "1.5.0" || !valid(proto, names)) return { shutdown() {} };
 	const summary = (target: any) => valid(target, ["render", "invalidate", "setExpanded", "updateDisplay"]) && optional(target, "handleMouse");
 	const supported = {
 		compaction: summary(CompactionSummaryMessageComponent.prototype),
@@ -59,7 +70,7 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 			}
 			const nextUi = next.createExtensionUIContext();
 			if (typeof nextUi?.theme?.fg !== "function" || typeof nextUi.theme.getColorMode !== "function") throw new Error("unsupported theme");
-			if (!releaseStyles) releaseStyles = installStyles(() => ui!.theme, supported);
+			if (!releaseStyles) releaseStyles = parts.installStyles(() => ui!.theme, supported);
 			ui = nextUi; host = next; session = current; generation = extensions.runtime;
 			return true;
 		} catch {
@@ -68,13 +79,13 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 			return false;
 		}
 	};
-	const history = installHistory(proto, prepare);
+	let history = parts.installHistory(proto, prepare);
 	const init = Object.getOwnPropertyDescriptor(proto, "init")!;
 	const stop = Object.getOwnPropertyDescriptor(proto, "stop")!;
 	const rebind = Object.getOwnPropertyDescriptor(proto, "rebindCurrentSession")!;
-	const rebindWrapper = function (this: any, ...args: unknown[]) { return prepare(this) ? rebindWithHistory(this, () => rebind.value.apply(this, args)) : rebind.value.apply(this, args); };
+	const rebindWrapper = function (this: any, ...args: unknown[]) { return prepare(this) ? parts.rebindWithHistory(this, () => rebind.value.apply(this, args)) : rebind.value.apply(this, args); };
 	const initWrapper = function (this: any, ...args: unknown[]) {
-		return prepare(this) ? startWithHistory(this, () => init.value.apply(this, args)) : init.value.apply(this, args);
+		return prepare(this) ? parts.startWithHistory(this, () => init.value.apply(this, args)) : init.value.apply(this, args);
 	};
 	const stopWrapper = function (this: any, ...args: unknown[]) {
 		try { return stop.value.apply(this, args); }
@@ -94,6 +105,15 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 	proto.stop = stopWrapper;
 	proto.rebindCurrentSession = rebindWrapper;
 	const binding: Binding = {
+		update(next) {
+			parts = next;
+			if (releaseStyles) {
+				releaseStyles();
+				try { releaseStyles = parts.installStyles(() => ui!.theme, supported); } catch { releaseStyles = undefined; }
+			}
+			// The new history hook restores the old one, then installs itself in the same step.
+			history = parts.installHistory(proto, prepare);
+		},
 		shutdown(event, ctx) {
 			if (event?.reason !== "quit" && host && ctx?.sessionManager === session?.sessionManager) history.reset?.(host);
 		},

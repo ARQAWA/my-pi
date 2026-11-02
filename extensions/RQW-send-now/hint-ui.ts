@@ -21,7 +21,7 @@ function withoutKey(line: string): string {
  * main editor when this extension's start widget is set, so a replaced editor is found.
  */
 export function installHintUI(identity: object, editorChanged: (editor: unknown) => void, supported: () => boolean) {
-	if (VERSION !== "1.4.0") return { release() {}, refresh() {} };
+	if (VERSION !== "1.5.0") return { release() {}, refresh() {} };
 	const proto = InteractiveMode.prototype as unknown as Target;
 	const undo: (() => void)[] = [];
 	const hosts = new Set<Target>();

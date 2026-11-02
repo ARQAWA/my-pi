@@ -8,4 +8,4 @@ Text returned by `rqw_readfile` prefixes every tenth absolute line with its righ
 
 The `rqw:stop-background:v1` notice stops process jobs in the matching session. Running file calls finish on their own.
 
-A call still running after 12 seconds returns `job#N`. The `job` tool waits, checks status and kills process jobs. `job wait` is one open tool call that returns the result itself on exit, timeout or `until` match; an abort cancels only the wait. No later completion message is sent. Counts expose handed-off running jobs through `rqw:running-counts:*`.
+A call still running after 12 seconds returns `job#N`. The `job` tool checks status and kills process jobs; it has no wait. A finished job's result arrives once and automatically through the registry's source (`autoSource`: claim, commit, release): RQW-auto-wait consumes it for the main chat and a subagent's own loop for a child. `job status` provides details, including `result_delivery` (`pending`, `claimed`, `delivered`) of a finished job. Counts expose handed-off running jobs through `rqw:running-counts:*`.

@@ -27,9 +27,9 @@ The compact terminal chooser has the title, one empty line and a five-row model 
 The selected model is bold in the status bar's model colour; neighbours are muted. The efforts of the selected model
 follow its name after one space: inactive ones dim, the active one bold in its thinking-level colour, no marker.
 Up/Down move models; Left/Right move effort. Below the width the selected row needs (the efforts plus a 4-column name,
-36 columns for the longest list), the chooser reports `Effort needs N columns` instead of hiding levels.
+32 columns for the longest list), the chooser reports `Effort needs N columns` instead of hiding levels.
 The target VDI width is not yet verified.
-OK is confirmed with Enter; Esc closes the chooser.
+OK is confirmed with Enter, or with Shift+Enter when Shift is still held from the last Shift+arrow; Esc closes the chooser.
 Opening, navigation and Esc call no model/thinking setters and send no requests. Nothing needs restoring on Esc:
 the session was never changed. An already-running turn continues on the live session, not the draft.
 Duplicate shortcut presses cannot create stacked dialogs; session replacement, reload and shutdown cancel the draft.
@@ -38,7 +38,7 @@ Enter commits once. An unchanged model needs only the thinking setter. A changed
 and a synchronous, session-scoped pending-effort `model_select` handler, with fallback and cleanup. No settings
 or credentials are written; no request fences, aborts or scheduling changes are added.
 
-**Commit is not atomic.** Pi 1.4.0 applies its model-switch effort before emitting `model_select` and awaiting
+**Commit is not atomic.** Pi 1.5.0 applies its model-switch effort before emitting `model_select` and awaiting
 listeners. A listener before ours, or concurrent work, can observe/request that intermediate combination.
 The pending-effort handler reduces this window; it does not provide a global request lock. An already-prepared
 request may retain its previous model/effort snapshot. The guarantee is that draft navigation never changes the

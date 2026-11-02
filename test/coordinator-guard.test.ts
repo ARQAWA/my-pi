@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { createCoordinatorGuard } from "../.pi/extensions/coordinator-guard/index.ts";
+import { createCoordinatorGuard, promptSection } from "../.pi/extensions/coordinator-guard/index.ts";
 import { loadRules, parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
 import { Slots } from "../.pi/extensions/coordinator-guard/slots.ts";
 import { registerSessionRuntime } from "../extensions/RQW-agent/index.ts";
@@ -44,10 +44,32 @@ function fixture(randomInt: (max: number) => number, callerModel?: { provider: s
 		end(made.toolCallId, `agent#${++agents} started`);
 		return made.args.model as string;
 	};
-	// A wait that delivers the final results of these agents.
-	const delivered = (...ids: string[]) => end(`wait-${++calls}`, "wait", { results: ids.map((id) => ({ id, outcome: "completed" })) });
+	// The automatic message that delivers the final results of these agents.
+	const delivered = (...ids: string[]) => handlers.get("message_end")!({
+		message: { role: "custom", customType: "rqw-auto-wait-results", details: { results: ids.map((id) => ({ id, outcome: "completed" })) } },
+	});
 	return Object.assign(call, { end, started, delivered });
 }
+
+test("only coordinator disables todo on session start", () => {
+	const key = Symbol.for("my-pi.coordinator-guard.shared");
+	const globals = globalThis as Record<symbol, unknown>;
+	const old = globals[key];
+	try {
+		for (const role of ["coordinator", "direct"] as const) {
+			globals[key] = { role };
+			let start: Function = () => {};
+			const events: unknown[] = [];
+			const pi = { on(name: string, handler: Function) { if (name === "session_start") start = handler; }, events: { emit(name: string, value: unknown) { events.push({ name, value }); } } } as unknown as ExtensionAPI;
+			createCoordinatorGuard({ root: "/not-a-git-repository" })(pi);
+			const ctx = { hasUI: false };
+			start({ reason: "startup" }, ctx);
+			assert.deepEqual(events, role === "coordinator" ? [{ name: "rqw-todo:disable:v1", value: { ctx } }] : []);
+		}
+	} finally {
+		if (old === undefined) delete globals[key]; else globals[key] = old;
+	}
+});
 
 test("schema-valid category calls reach the guard and receive the drawn pair", () => {
 	const expected = [
@@ -141,7 +163,7 @@ test("a slot is freed when the agent's final result is delivered, failure includ
 	call.delivered("agent#2");
 	assert.equal(call.started(analysis), SOL);
 	assert.equal(call(analysis).result.block, true);
-	call.end("wait-failed", "wait", { results: [{ id: "agent#7", outcome: "error" }] });
+	call.delivered("agent#7");
 	assert.equal(call.started(analysis), OPUS);
 });
 
@@ -289,4 +311,11 @@ test("a bad slots entry is a rules error", () => {
 	const block = (slots: string) => '```json coordinator-rules\n{"agentModels":{"a":[["p/m","low"]]},"slots":' + slots + "}\n```";
 	assert.deepEqual(parseRules(block('{"p/m":2}')).slots, { "p/m": 2 });
 	for (const bad of ['{"p/m":0}', '{"p/m":1.5}', '{"m":1}', "[]"]) assert.throws(() => parseRules(block(bad)), /slots/);
+});
+
+test("the prompt says Main performs no action itself and works only with tasks, BACKLOG.md, context and subagents", () => {
+	const section = promptSection(loadRules(`${root}PROCESS.md`), "PROCESS.md");
+	assert.ok(section.includes("Main performs no action itself."));
+	assert.ok(section.includes("running commands, opening files for the owner and every other action go to a subagent"));
+	assert.ok(section.includes("Main works only with tasks, BACKLOG.md, its context and subagents."));
 });

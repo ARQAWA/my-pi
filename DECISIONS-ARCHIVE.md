@@ -2,7 +2,7 @@
 
 Append-only record of superseded and obsolete entries removed from [DECISIONS.md](DECISIONS.md). Current rules are
 in `DECISIONS.md`; this file is only for checking history. Each block is the text exactly as it was in
-`DECISIONS.md` at `30952e6`, with `> ` added at the start of each line. Do not edit a block after it is added.
+`DECISIONS.md` at `30952e6`, with `> ` added at the start of each line. Do not edit a block after it is added, except the owner-ordered clean-up of 2026-11-02 (`[D-WORK-NO-REMOVED-WORD]` in `DECISIONS.md`: owner «1»).
 
 ## A-0001 · archived 2026-10-23 · Work policy · Old development worker models (Sonnet medium/high/xhigh, Opus low only)
 
@@ -6148,11 +6148,11 @@ Replacement: repo-code-index second delivery; commit provenance:
 >   Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
 >   detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
 
-## Kimi model order and provider visibility - superseded 2026-10-25
+## Model order and provider visibility - superseded 2026-10-25
 
-Replaced by `[D-MODELS-KIMI]` and updated `[D-MODELS-ORDER]` / `[D-PROVIDERS-ALLOW]`.
+Replaced by a later decision and updated `[D-MODELS-ORDER]` / `[D-PROVIDERS-ALLOW]`.
 Verbatim superseded clauses from `61b81a3:DECISIONS.md`; replacement commit:
-`git log -S'D-MODELS-KIMI' -- DECISIONS.md`.
+the commit that replaced it in `DECISIONS.md`.
 
 > - **Model order and availability** `[D-MODELS-ORDER]`. `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
 >   `gpt-6.1-sol`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first.
@@ -6246,7 +6246,7 @@ Replacement: anthropic-model-ban delivery; commit provenance:
 
 ## Automatic naming model chain - superseded 2026-10-25
 
-Replaced by the owner's Kimi K2.8 Preview low direction in `[D-UI-NAMING]`.
+Replaced by the owner's later low-effort direction in `[D-UI-NAMING]`.
 Verbatim superseded clause from `99f69e5:DECISIONS.md`; replacement commit:
 `git log -S'Owner correction' -- DECISIONS.md`.
 
@@ -6424,7 +6424,7 @@ Verbatim text as it was in DECISIONS.md at `1633d50`:
 >   Owner (`16-27-59:7665`, entry `29908fc1`, 2026-10-25):
 >   «Возобнови полный запрет использования антропиков»
 >   Reason: restore the owner's full model prohibition, superseding the later Haiku allowance and the
->   Anthropic/GPT balance rule. Earlier separately owner-ordered Kimi benchmark work remains historical evidence,
+>   Anthropic/GPT balance rule. Earlier separately owner-ordered benchmark work remains historical evidence,
 >   not new model permission. This is model-use policy for Main and subagents, not a ban on Anthropic transport or
 >   subscription quota implementation, auth, provider visibility or product model settings.
 >   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
@@ -6433,12 +6433,12 @@ Verbatim text as it was in DECISIONS.md at `1633d50`:
 ## A-0362 · archived 2026-10-25 · Development executor models · D-WORK-MODELS
 
 Status: SUPERSEDED in executor selection and rotation by `[D-WORK-MODELS]` (DECISIONS.md#work-policy); Anthropic ban retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `967769a`.
+Superseded and archived by: the executors-only process squash. Source commit: `967769a`.
 Verbatim text as it was in DECISIONS.md at `967769a`:
 
 > - **Development executor models** `[D-WORK-MODELS]`. Future executor starts and restarts repeat two
->   `kimi-coding/k3.1-pro` assignments, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
->   either model; hardest work uses Kimi high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
+>   assignments of the other model, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
+>   either model; hardest work uses that model high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
 >   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
 >   The sequence is across assignments, not three simultaneous tasks; [D-WORK-PARALLEL]'s two-main-task cap stays.
 >   Main carries its next position and last counted assignment in the existing operational task-list decision context
@@ -6448,9 +6448,9 @@ Verbatim text as it was in DECISIONS.md at `967769a`:
 >   and do not consume the executor sequence. Recursive delegation and reviewer lifecycle stay unchanged; no new
 >   nested non-review helper restriction is added.
 >   Owner (`16-27-59:10630`, entry `6bb24615`, 2026-10-25):
->   «Пожалуйста в будущих задачах используй Kimi K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 кими к 1 гпт.»
+>   «Пожалуйста в будущих задачах используй [удалено по просьбе владельца] K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 [удалено по просьбе владельца] к 1 гпт.»
 >   Owner (`16-27-59:10759`, entry `8e9d2b57`, 2026-10-25):
->   «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с Kimi. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
+>   «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с [удалено по просьбе владельца]. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
 >   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
 >   The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
 >   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
@@ -6463,7 +6463,7 @@ Verbatim text as it was in DECISIONS.md at `967769a`:
 ## A-0363 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL
 
 Status: SUPERSEDED in numeric cap and test-lane exception by `[D-WORK-PARALLEL]` and `[D-PIPELINE-SINGLE-QUEUE]`; queue priority and the HTML-artifact exception are retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Superseded and archived by: the executors-only process squash. Source commit: `4c66755`.
 Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 
 > - **Two active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most two main tasks
@@ -6485,7 +6485,7 @@ Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 ## A-0364 · archived 2026-10-25 · Active-execution slots · D-PIPELINE-SLOTS
 
 Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]`; waiting and resume rules are retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Superseded and archived by: the executors-only process squash. Source commit: `4c66755`.
 Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 
 > - **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the two main slots under [D-WORK-PARALLEL]. A task
@@ -6505,7 +6505,7 @@ Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 ## A-0365 · archived 2026-10-25 · Separate test lane · D-PIPELINE-TEST-LANE
 
 Status: SUPERSEDED by `[D-PIPELINE-SINGLE-QUEUE]`; test purpose, triage and evidence rules are retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Superseded and archived by: the executors-only process squash. Source commit: `4c66755`.
 Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 
 > - **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
@@ -7254,3 +7254,672 @@ Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
 >   VS Code settings; strict TLS fails and `http.proxyStrictSSL: false` works; CONNECT with proxy credentials; paths with
 >   Cyrillic, spaces and an apostrophe; no `pi.exe` left after closing tabs, `/quit` or VS Code. Not covered: a real model
 >   call and the corporate VDI restrictions. Since: `3b6d6c1`.
+
+## A-0416 · Tools · background job waits
+
+Status: SUPERSEDED by `[D-TOOLS-BG]` and `[D-TOOLS-NOTIFY]` in DECISIONS.md#tools. Source: `c740dadf:DECISIONS.md`. Verbatim replaced text:
+
+> - **Background jobs** `[D-TOOLS-BG]`. A call still running after 12 seconds returns `job#N` with output and a log path. `job wait`, `status` and `kill` return results, status and exit codes; `job wait` stays open until the result, its timeout or an interruption, and no later completion notification is sent (`[D-AGENT-REAL-FINAL]`). Jobs survive Esc and new messages, and end on kill, child interrupt or session shutdown. Running file-tool calls finish on their own. There are no execution claims, resource holds, file snapshots or effects reports. Carriers: `extensions/RQW-tools/{index.ts,jobs.ts,codemode.ts,counts.ts}`.
+>
+> - **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Superseded in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`): `job wait` is an ordinary tool call that blocks until the job ends, its timeout or an interruption. It returns no `waiting` receipt and sends no later notification. A newer wait on the same job replaces the older one. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.
+
+## A-0417 · archived 2026-11-02 · PROCESS rule 1 · delete only after the owner answers
+
+Status: SUPERSEDED by PROCESS.md rule 1 and `[D-DELETE-UNORDERED]` (DECISIONS.md#quality-control): never-ordered things are deleted at once with the proof in the report; only disputed ones are asked first.
+Source: `1172461c:PROCESS.md`, rule 1, verbatim:
+
+> 1. делай только заказанное и согласованное. несогласованное покажи с доказательством, спроси владельца. удаляй только после ответа владельца. оставляй только с его явного разрешения.
+
+## A-0418 · archived 2026-11-02 · Unordered elements · scope of the decision
+
+Status: SUPERSEDED by `[D-DELETE-UNORDERED]` (DECISIONS.md#quality-control): the rule is general, not only for extension audits.
+Source: `1172461c:DECISIONS.md`, the replaced opening of the Decision paragraph, verbatim:
+
+> Decision: what the extension audits prove unordered, and no owner source or active decision asks for, is deleted. Deleted: 
+
+## A-0419 · archived 2026-11-02 · Settings · D-SETTINGS-WARMING before the main cache warm
+
+Status: SUPERSEDED in its reason by `[D-ANTHROPIC-WARM]` (DECISIONS.md#anthropic-subscription-adapter): the main Anthropic chat may send one background warm request; Pi's generic warmer stays off.
+Source: `a407e8f3:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
+>   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
+>   Reason: no synthetic keepalive inference before the first real request.
+>   Carrier: `extensions/RQW-settings/cache-warming.ts`. Since: `b91f832`.
+
+## A-0420 · archived 2026-11-02 · PROCESS rules 2, 4 and 5 · approval above and up to 2 SP
+
+Status: SUPERSEDED by `[D-WORK-NO-REASK]` (DECISIONS.md#work-policy): up to and including 2 SP is done without approval; a plan above 2 SP is shown task by task and started after the owner accepts it; ordered or approved work is not asked again.
+Source: `a407e8f3:PROCESS.md`, rules 2, 4 and 5, verbatim:
+
+> 2. прямой заказ разрешает простую работу. её предел: два SP. все требования должны быть выполнимы. обсуждение разрешением не считается. спорное оставь до ответа владельца.
+>
+> 4. спроектируй любую задачу сначала. простая задача до двух SP? все требования выполнимы? тогда делай сразу. задача больше двух SP? принеси проект, обоснование и план. предложи самый лёгкий вариант. проект держит всё заказанное и ничего сверх. лишнее считаешь критичным? спроси владельца и пометь критом. проект проверяет spotty до показа. не влезаешь в заказанный объём SP? скажи почему, предложи лёгкий вариант. всё общение строго по правилу дислексии.
+>
+> 5. план и макет показывай по заказу. свыше двух SP показывай всегда. согласование не нужно только до двух SP. неясный объём сначала уточни.
+
+## A-0421 · archived 2026-11-02 · Agent · caller-chosen wait and status
+
+Status: SUPERSEDED by `[D-AUTO-WAIT-EVERYWHERE]` and `[D-AGENT-STATUS]` (DECISIONS.md#agent): the `wait` action is removed; status stays.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Caller-chosen wait and status** `[D-AGENT-WAIT]`. The `agent` tool provides caller-local mechanical wait/status for direct-child IDs; `timeout_ms` defaults to 300000 only when omitted, and expiry never cancels a child. `until: "first"` is the default; `"all"` holds early completions until every selected target has a result, receipt or inactive state, releasing held results to the message path on alert, timeout or caller abort. `wake_on_alert` defaults to false (it was true until `[D-AGENT-WAIT-LEAN]`); when set it wakes only for alerts created on selected children after wait registration, without consuming a result. Status uses `messages` 5-10, default 8; `depth` defaults to 0, with positive safe-integer depth adding compact read-only descendant snapshots without message previews or descendant management. Waiting makes no caller model turns; results still arrive exactly once through wait or messages with receipts for delivery races. No execution, turn, token, output-growth, child-count or automatic-management limits are added; Pi provider timeouts and retries still apply.
+>   Owner: «Если они работают долго, пусть работают.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 1849.
+>   Reason: the caller decides how to manage work, not a watchdog.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/activity.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management). Since: `fe0e375`; all-target waits, alert wakes and descendant status since `dc4f32e`.
+
+## A-0422 · archived 2026-11-02 · Agent · a wait is a signal and costs no tokens
+
+Status: SUPERSEDED by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the `wait` action is removed; the same lean text rules the automatic result message.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **A wait is a signal and costs no tokens** `[D-AGENT-WAIT-LEAN]`. The model-visible result of `agent` `wait` carries only real final answers (`id`, `title`, `outcome`, `text`) or, when nothing finished (user steering, timeout, changed target, receipt, opt-in alert), one short line such as `interrupted; still running: agent#1, agent#2`. No `statuses`, alerts, tool or argument previews or token counts are returned; they stay behind the explicit `status` action. `wake_on_alert` defaults to false, so alerts never wake a wait; with it on, the return is one short line too. `details` (not sent to the model) keep `reason`, `timed_out`, `results` with `run`, `delivery` and `display`, `receipts` and `changed` for the cards and for delivery bookkeeping. Rule for the project: mechanical waits and checks spend no model tokens (`PROCESS.md`), and reviewers check it.
+>   Owner (verbatim): «Погоди, какая утечка? У нас не должно быть такого. Мы же специально это делаем, чтобы не тратить токены основного агента на все такие штуки. Надо знаешь как делать? Надо делать так, что await — это как сигнал. И только если есть answer реальный, то только тогда ответ этот answer получается сам. Надо как-то супер инженерно это сделать: эффективно, производительно, легковесно, и чтобы токены не тратились.»
+>   Earlier owner words (verbatim): «Ты ведь не тратишь токены на это wait, я надеюсь? ... там, где мы можем не тратить токены, мы их тратить не должны. За этим надо следить очень жёстко и очень строго. Через reviewer даже.»
+>   Reason: every wait return used to put full statuses of every target (alerts, current tools, argument previews, tokens), 30-80K characters, into the main model's context.
+>   Carrier: `extensions/RQW-agent/coordinator.ts` (`waitLine`, `selection().output`), `extensions/RQW-agent/index.ts` (description, `wake_on_alert`); [RQW-agent README](extensions/RQW-agent/README.md#a-wait-is-a-signal-not-a-report). Tests: `test/extensions/RQW-agent/unit.test.ts`, `description.test.ts`.
+
+## A-0423 · archived 2026-11-02 · Agent · native activity and running background
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): there is no open wait any more; the rest of the entry stands in `[D-AGENT-REAL-FINAL]`.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Native activity and running background** `[D-AGENT-REAL-FINAL]`. An open wait is a native active run. After a final, agents and jobs continue without holding input; herdr and terminal indicators show native activity or running counts. Receipts and unanswered notifications do not hold the indicator. The adapters keep shape checks and stock fallback. `terminal.showTerminalProgress` is not enabled.
+>   Owner (verbatim): «Да, и follow-up должен писаться тогда, когда основной агент что-то делает. Если основной агент ждёт агента либо ждёт background, но он не занят никакой активной работой, ничего не генерирует, у него нет запроса, то follow-up должен сразу срабатывать, а не потом, когда уже он доделает. Понимаешь, о чём я или нет?»
+>   Owner (verbatim): «Тут надо как-то сделать хитро по простому, чтобы waiting one agent, waiting процессов, чтобы ожидание этих подкапотных процессов и агентов было нормальным, нативным, чтобы это не было оверхедом переусложнённым, жёстко сложным. Надо сделать так, чтобы это ожидание было как tool call, как вызов tool. Я не знаю, имеет ли это смысл, или сейчас уже это хорошо и просто реализовано. Мне важно, чтобы в этом моменте не было какого-то жёсткого переусложнения, не было миллионов corner cases из-за этого и так далее.» «Да, надо лишний код браузера удалять нахуй. У нас всё должно быть суперминималистично, суперлегковесно, супертопорно и прямолинейно»
+>   Owner (verbatim) answering «Что делать с фоном, который агент не дождался к концу хода? 1. Останавливать автоматически ... 2. Оставлять работать ...»: «Я хочу, чтобы оставался работать. Надо просто упростить эту всю механику, чтобы это было как в Codex. В Codex, если агент работает, если subagent работает, то в чате висит tooling. Сам по себе агент ничего не делает, он просто ждёт, пока доработает tooling. Если я что-то пишу, то tooling прерывается и уходит сообщение. А tooling простой, он называется wait subagent или wait answer. Он может ждать фоновый процесс, ответ subagent, subagent, ответ в соседнем чате. Посмотри, как это сделано в Codex AI. Надо всю эту механику максимально упростить, чтобы она была максимально простая, легковесная, топорная и, самое главное, понятная. Там не должно быть никаких скрытых сущностей сложных. Всё должно быть супер просто, супер прямолинейно, супер легко, легковесно, производительно, быстро и реактивно. Я к тому, что сам по себе агент может не работать в этот момент. Основной агент может просто стоять AFK, но сам процесс именно в самом чате, в ветке самой, должен крутиться. Наш hardness должен распознавать его как действующую работу. Я не знаю, как это ещё объяснить. Мне кажется, если ты посмотришь, как это устроено в кодексе CLI, сразу станет ясно.»
+>   Approval: «1» to the ten-part decomposition of `my-pi-evidence/designs/wait-as-tool/DESIGN.md`.
+>   Carriers: `extensions/RQW-agent/{running-counts,herdr-state,terminal-progress,index}.ts`, `extensions/RQW-send-now/`; [contract](extensions/RQW-agent/README.md#background-activity-indicators).
+
+## A-0424 · archived 2026-11-02 · Tools · background jobs
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]`: `job` has no `wait`.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Background jobs** `[D-TOOLS-BG]`. A call still running after 12 seconds returns `job#N` with output and a log path. `job wait` returns finished results or a short reason and running IDs; `status` provides details and `kill` stops process jobs. Jobs survive Esc and new messages, and end on kill, child interrupt or session shutdown. Running file-tool calls finish on their own. There are no execution claims, resource holds, file snapshots or effects reports. Carriers: `extensions/RQW-tools/{index.ts,jobs.ts,codemode.ts,counts.ts}`.
+
+## A-0425 · archived 2026-11-02 · Tools · waits and independent jobs
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]`: `job wait` is removed.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Waits and independent jobs** `[D-TOOLS-NOTIFY]`. `job wait` is an ordinary tool call that blocks until a job ends, timeout, interruption or an `until` match. It sends no later completion notification. Independent waits do not replace each other. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414 and A-0416.
+
+## A-0426 · archived 2026-11-02 · Agent · API fields with wait
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]`: the `wait` action and its `timeout_ms`, `until`, `wake_on_alert` fields are removed.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+>   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
+>   Carrier: `extensions/RQW-agent/index.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`.
+
+## A-0427 · archived 2026-11-02 · Agent · native supervision
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Native supervision** `[D-AGENT-SUPERVISION]`. The `agent` tool supports native wait/status options and optional `alert_after_ms` on start/restart; prompt-file and caller-message options remain agent configuration. Status alerts are `{kind, at, detail}`: `error`, `repetition`, `long_turn` and `schema_rejection_repeated`; the latest 32 are presentation history, not an execution limit. The optional positive finite safe-integer threshold is disabled by default and inherited on restart; it reports a long native turn without stopping it, and turn end, logical run end and close cancel the timer, leaving none while idle. Repetition is diagnostic suspicion; schema alerts require a second matching detectable Pi argument-parsing/schema rejection. This F1/F3 work adds no F5 guard or sandbox, `stalled_tool` alert, F2 run manifest or F4 structured-output feature.
+>   Coordinator text: technical realization of the native-supervision agreement in `[D-AGENT-PROMPT-FILES]`.
+>   Reason: make supervision caller-controlled without polling wrappers or automatic cancellation.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/activity.ts`, `extensions/RQW-agent/coordinator.ts` and descriptions; [supervision contract](extensions/RQW-agent/README.md#wait-status-and-management). Since: `dc4f32e`.
+
+## A-0428 · archived 2026-11-02 · Agent · steering and interrupting sends
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Steering and interrupting sends** `[D-AGENT-SEND]`. Sending to a running child uses `session.steer`, arriving after the current assistant turn's tool calls and before the next request without abort; an idle child starts a new run with history. `send` with `interrupt: true` clears queued steering/follow-ups, aborts the run and records one next task that starts when cancellation settles; later sends join in order. An uncooperative tool can delay that start, shown as `pending_sends`; wait remains running and reports `target_changed` when the run changes. Plain send during cancellation is rejected unless an interrupting send is already pending. `interrupt` retains history without a result message; stop forgets the session; restart creates a fresh session with retained or explicitly replaced configuration. Interrupt/stop/restart discard pending tasks and cascade cancellation to descendants.
+>   Coordinator text: the steering proposal was accepted by the owner; the quoted proposal is not an owner quotation.
+>   Reason: follow-ups should steer promptly without forcing cancellation, while redirection remains explicit.
+>   Carrier: `extensions/RQW-agent/index.ts` (`requestInterrupt`, `Agent.next`). Since: `029160d`.
+
+## A-0429 · archived 2026-11-02 · Agent · ordered management and shutdown
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Agent management calls register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. External print/json hosts use a caller-wide non-consuming fallback wait in `agent_end`, bounded by the default `timeout_ms` and subordinate to explicit waits. A native-idle child waits for its active subagents by their completion events with no implicit timeout, and only when no run is active does it use the bounded wait. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
+>   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`. Since: `fe0e375`.
+
+## A-0430 · archived 2026-11-02 · Agent · notification waits for children
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Superseded in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`): `wait` on `agent` is an ordinary blocking tool call; it returns no `waiting` receipt with `terminate: true` and sends no later wake-up notification (`[D-AGENT-WAIT]`). No model request is made merely to wait. Owner messages reach the agent
+>   without cancelling accepted children. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.
+>   Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `descriptions/*.md`. Since: the final squash of branch `agent-async`.
+>   Old `rqw-agent-wait` records stay in the session but are never resumed ([RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume)).
+
+## A-0431 · archived 2026-11-02 · Agent · fork for self-check
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into a child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the blind loop (spotty, medium, fresh clean reviewers) on its own and gives the caller one report; the caller waits and does not touch the checked object meanwhile. A persisted caller stores its fork under its own `.children` tree, linked by `parentSession`, with the copied branch; descendants use the same layout and resume works after restart. A caller without a session file keeps its fork in memory. Previously created in-memory forks cannot recover missing history. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
+>   Coordinator question, 2026-11-02: the owner asked for a real subagent rather than RAM; the coordinator explained that the fork is a real subagent with its own ID and resumable session file on disk, while all subagents run inside the Pi process. Option 1: keep it as is. Owner: «Ну да, так и должно работать, как ты писал. Ничего не меняем поэтому сыл в чеку.»
+>   Owner: «Это так не должно быть! Все саб агенты должны быть на диске и должны быть прилинкованы к родителям Вне диска только редчайшые кейсы»; to «1. Форк сохранять на диск, как обычного ребёнка, со ссылкой на родителя. Тогда и все его ревьюеры лягут в .children. Это 1–2 SP.»: «ДА».
+>   Owner (2026-10-31, verbatim excerpts): «Погоди! Смотри, мы возвращаем blind на medium. Эта тема, что исполнитель чинит себя сам без нового круга, мне нравится.» … «Исполнитель выполнил работу свою полностью от начала до конца, потом forked самого себя и в этом форке сам себя перепроверил. Context засрался. Потом он поднял reviewer, reviewer перепроверил его вслепую, выдал ему ответ. Тот сам себя починил. После этого снова поднял blind reviewer, и так они довели всё это дело до конца. Потом он написал огромный отчёт основному агенту в ответ: «Так мы зафинализировали работу. Было столько-то проблем, столько-то исправлений. Статус clean».» … «Но самая главная здесь не оптимизация, а чтобы он качественно проверял, при этом без фанатизма.» … «Мы в теории можем вообще P3 отбросить и оставить только P0, P1, P2»
+>   Coordinator answered that dropping P3 keeps every P0-P2, with one condition: «риск для данных или безопасности считается не ниже P2», and proposed: «P3 и вкусовщина не считаются замечаниями. исполнитель сам ведёт цикл до clean и сдаёт один отчёт. повторный круг смотрит только правки. blind остаётся на medium.» and the fork of the main chat later, separately. Owner: «Ну я к тому, что мы по три просто можем отбросить и даже про них не говорить.» «А там защита ссылок я понял окей»
+>   Owner correction: «Погоди, какую ты правку запустил? Я же это самое сказал что я понял, что там защита отсылок. Сказал окей типа мы не отбрасываем. Мы отбрацываем только если кроме МП3 ничего нету тогда мы отбрасываем»
+>   Owner (in order): «окей, давай, после проверки сразу выкатывай и потом сделаем форк главного чата для самопроверки» … «нельзя 5 сп задачи, декомпозируй» … coordinator split into 4 tasks: «1 | agent получает fork_turns: "all". Ребёнок стартует с копией текущей ветки в памяти, с той же моделью и теми же инструментами. | 2» «2 | Доработка форка. Он не шлёт отчёты о ходе работы. Если после перезапуска история пропала, он сообщает явную ошибку. Вложенный запуск тоже работает. | 1» «3 | Навык самопроверки ... | 1» «4 | Исключение в guard для форка и документы. | 1» … owner: «А вижу уже давай тогда делай»
+>   Owner: «Нет нет форк идет эксклюзивно основной агент ждет так что кеш должен в этой схеме участвовать»
+>   Owner answered «да» to «Кеш делаем двумя задачами по 2 SP?» (2: Кеш codex: форк получает ключ кеша родителя и тот же запрос. 3: Кеш anthropic: тот же системный промпт, те же инструменты, те же метки кеша.) and «да» to «предлагаю поднять ширину до трёх. запускаю обе свободные задачи?» (selfcheck skill and PROCESS step; guard exception and docs).
+>   Reason: the executor finishes, checks and fixes itself in a fork that reuses the caller's cached prefix, so the caller's context stays small and no new review round is needed per fix.
+>   Carriers: `extensions/RQW-agent/` (`fork_turns`), `extensions/RQW-review/skills/selfcheck/`, `.pi/extensions/coordinator-guard/` with `test/coordinator-guard.test.ts`, `AGENTS.md`; contract: [RQW-agent README](extensions/RQW-agent/README.md#forking-the-callers-branch).
+
+## A-0432 · archived 2026-11-02 · Agent · child progress notifications
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Automatic child progress notifications** `[D-AGENT-PROGRESS]`. A step is one non-final assistant response containing one or more tool calls, not an individual tool execution. After 50 such responses or 30 minutes without communication, whichever comes first, deterministic code starts one background one-shot summary of the child's own context. Parent `send` and a delivered report reset the count and the 30 minutes; `status` and `wait` do not. The 30 minutes are one `setTimeout` per running child in `progress.ts`: no model tokens, polling or per-frame work; it does not survive a Pi restart. The child never waits for the summary and receives no report prompt, skill or session entry. The summary uses an isolated cache fork, with the same model, effort and prompt/tool prefix; Codex owns a separate transport and ledger, never the child's controller or socket continuation. No tools execute in the fork. Cache affinity is preserved where supported, not a promise of a server cache hit.
+>   Model selection and compaction discard an in-flight snapshot without moving the existing timer deadline. Synthetic hook tests protect this behavior; owner approved fixes «1-2» and «ага».
+>   The direct parent receives a notification through the existing notification delivery mechanism, not a subagent answer or final result. Fixed short wording asks it to check for work outside the assigned task and whether the child still follows the plan in its brief; the parent alone decides whether to send a correction. The notification triggers the supplied skill's reminder of the workflow-manifest principles. Counter, trigger, cancellation, staleness and delivery are code, not model judgments; only the summary prose is generated. Obvious lifecycle, communication, compaction/model, persistence/resume, concurrent/nested and inference-failure intersections are covered by focused tests. No automatic child interrupt, retry or new child execution limit is added.
+>   Owner, session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry `a15f7172`, physical line 6895:
+>   «Под шагом я имею в виду каждый раз, когда агент шлёт запрос с вызовом tool call.»
+>   «Факт загрузки отчёта не регистрируется в чате ребёнка. Это просто как fork на кэше.»
+>   «Родитель должен получать сообщение как notification от notification tool.»
+>   «Родитель это читает и сам решает, надо ли ему как-то коммуницировать с ребёнком или нет.»
+>   «Давай 50 шлемов сделаем»
+>   Skill source: USER entry `635e9341`, physical line 6877: «Можно сделать какой-то скилл для этого, чтобы этот отчёт триггерил скилл, а этот скилл напоминал агенту, что мы работаем по принципам из моего workflow-манифеста.»
+>   Engineering source: USER entry `b3bc9466`, physical line 6900: «Главное, чтобы это всё работало максимально инженерно: не на токенах, а на инженерии стопроцентной.» «Соответственно, надо будет предусмотреть все очевидные corner case и сценарии пересечений.»
+>   Notification wording source: USER entry `985e611a`, physical line 6907: «сообщение notification для основного агента должно быть сформулировано таким образом, чтобы основной агент задумался: а не начал ли заниматься какой-то хуйнёй саб-агент? Точно ли он соответствует, но всё ещё движется плану, который ему передали вот»
+>   Timer and card, owner order: «Либо 50 шагов с последнего сообщения, либо 30 минут с последнего сообщения... оно приходилось свернуто, и там была кнопочка ... клик for show ... когда я нажимаю он его разворачивает нажимаю по тексту развернутому он его сворачивает обратно».
+>   Light plan, owner approval: «Так, ну, короче, это по облегченному плану отчетов. 3 сторипоинта. Отличное решение. На два сторипоинта и свернутая карточка на один сторипоинт и клик. Мне нравится. Вот. Таймер и не должен переживать перезапуск пи, блядь. Я этого не просил. Все так, все хорошо. Вот. Делаем на три сторипоинта.»
+>   The `agent_progress` card is collapsed as `agent#N progress [click to show]`; a left click expands the whole summary, a left click on it collapses it (state per message in `extensions/RQW-agent-ui/notification.ts`, the same click mechanism as `worked for`, no cross-extension import). Ctrl+O keeps the full original.
+>   Reason: let the parent spot task drift during long work without pausing the child, polling it or asking it to spend a working turn writing a report. Ready-made progress/heartbeat packages did not establish the required cache-fork isolation, so the owner authorized this addition to the existing runtime.
+>   Carriers: `extensions/RQW-agent/` (`progress.ts`), `extensions/RQW-agent-ui/notification.ts`, `extensions/RQW-codex/`, `extensions/RQW-anthropic/`; [runtime contract](extensions/RQW-agent/README.md). This completes the progress-report part of TIMEBOX-PRACTICES, not its remaining professional-practices research.
+
+## A-0433 · archived 2026-11-02 · Agent · completed-child restore
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Demand-driven completed-child restore** `[D-AGENT-LAZY-RESTORE]`. Completed durable children stay saved during parent hydration and wait; send materializes only its target with its original history, file, configuration and identity. Status retains an eager target-only fallback for exact diagnostics absent from saved records. Wait snapshots of saved slots contain saved identity, model, title and idle state, not invented runtime diagnostics. Unfinished recovery stays eager; hot sessions are reused. Per-generation restore promises and cancellation prevent stale construction from reviving a replaced branch. No new metadata format.
+>   Owner: «поднимать агентов после перезапуска ... суперэффективно и производительно»; approved lazy completed-child direction. Source: accepted RELEASE-PLAN P05 and sleep-cache DESIGN section 5 part 2; execution clarification: “Exact-status fallback stays eager where needed”.
+>   Carrier: `extensions/RQW-agent/index.ts`; contract: `extensions/RQW-agent/README.md#persistence-and-resume`.
+
+## A-0434 · archived 2026-11-02 · Agent · native prompt files
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Native prompt files** `[D-AGENT-PROMPT-FILES]`. Agent start/restart accepts `system_file` or `role_file` instead of the corresponding inline prompt; paths resolve relative to the caller's cwd. A regular file supplies exact UTF-8 text, including whitespace and a literal BOM; invalid UTF-8, matching inline/file options, or mixing any system option with any role option is rejected. Restart inherits the prompt choice and re-reads a file before replacing the child, so failed validation leaves the old child intact. Push `details.prompt_file` and wait `details.results[i].display.prompt_file` carry the same `{kind, path, sha256}` for the absolute resolved path and bytes actually loaded. Profile prompt defaults use this same explicit override API (`[D-AGENT-PROFILES]`).
+>   Owner: «Всё должно быть нативно. Подумай, как можно максимально интеллектуально прокачать этот функционал.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at physical line 3963, requested at 2026-10-23T13:01:47.145Z.
+>   Reason: native prompt inputs replace manually copied prompt text without losing byte provenance.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts`, `extensions/RQW-agent/prompt.ts`; [file contract](extensions/RQW-agent/README.md#prompt-files-and-caller-messages). Since: `dc4f32e`.
+
+## A-0435 · archived 2026-11-02 · Agent · optional RQW-tools offer
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Optional RQW-tools offer** `[D-AGENT-TOOLS-OFFER]`. RQW-agent emits `rqw-tools:subagent-tools`; loaded RQW-tools answers with fresh definitions and a child-local job registry, otherwise stock tools are used. The factory is `(cwd, settings, options?)`; `options.codemode` adds background-job support and the optional notification hooks bridge child waits.
+
+## A-0436 · archived 2026-11-02 · Work policy · model slots
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Model slots** `[D-WORK-SLOTS]`. The coordinator guard keeps a live list of Main's direct `agent` starts, with the agent id
+>   and the resolved model. One slot is one direct start with all its own helpers; helpers are not counted. Limits per model sit in
+>   the `slots` object of the `coordinator-rules` block of [PROCESS.md](PROCESS.md#subagent-models): `openai-codex/gpt-6.1-sol` 5,
+>   `anthropic/claude-opus-5-5` 5, `openai-codex/gpt-6.1-terra` 10, `anthropic/claude-sonnet-5-5` 10. A category start draws randomly
+>   among the pair's models that have a free slot and is refused with `slots full: <model> n/n` when none is free. Reviewer-profile
+>   starts count on their fixed model and are refused when full; `fork_turns: "all"` starts count on the caller's model. An agent leaves
+>   the list when its final result is delivered (wait) or it is stopped; `restart` and `send` keep its slot. No polling and no tokens:
+>   the guard reads `tool_call` and `tool_execution_end` events of Main. Owner: «Я хочу сделать очередь для выполнения задач более интеллектульной / Т.е. смотри для моделей / 5 слотов для сол md/hi / 5 слотов для opus md/hi / 10 слотов для terra и 10 для sonnet / как думаешь, получится у тебя таким образом следить за этим? / Нужно самое простое решение инжинерное не на базе токенов, подумай как следует»; to the question what a slot is (one task with all its helpers, or every agent, even nested): «1».
+>   Reason: spread the work over the model pools within their capacity by a mechanical rule instead of model attention.
+>   Carriers: `.pi/extensions/coordinator-guard/` with `test/coordinator-guard.test.ts`, [PROCESS.md](PROCESS.md).
+
+## A-0437 · archived 2026-11-02 · Agent cards · delivered results
+
+Status: SUPERSEDED in part by `[D-AUTO-WAIT-EVERYWHERE]` (DECISIONS.md): the explicit `wait` action is removed; results arrive automatically.
+Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Delivered results, not an agent board** `[D-UI-AGENT-CARDS]`. Owner: "Да с сабагентами +".
+>   Source: the `18-16-12` session file named above, USER entry `96231cbd`, line 243. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
+>   Delivered agent results (a current result is the `wait` result of `agent`; stored older `agent` messages and `child_wait` notifications keep their cards) show compact cards: ID, outcome, available actual
+>   model/effort/duration, then the tail of the answer: its last 400 characters as plain text on one line, no Markdown parsing,
+>   cut at the front with `…`, rows cached per card and width. Owner: «Вообще не надо отрисовывать. Что там агент пишет? Мне вообще поебать, что там написано. [...] Эти карточки, которые ты отрисовываешь, во-первых, должны занимать ноль CPU. И для их отрисовки тебе не надо весь текст, тебе надо только конец текста. Последние символы текста должны быть. Ты должен всё сделать супер просто, супер оптимально, супер легко.» Missing metadata stays omitted. Reviewer profiles
+>   use these same ordinary `agent#N` cards; there is no separate review delivery or review card.
+>   The card shows the model as its picker label (`Sonnet 5.5`, `GPT-6.1 Terra`, plain `text` colour, unknown models by id) and the effort as the status-bar short label (`md`, `xh`). Owner: «Я хочу что бы в интерфейсе отображалась модель как алиса в пикере так же красиво и пиздато» «и что бы ризонинг так же писался кратко и цветом тем же». Coordinator mockup: «было: agent#1638 Reviewer efforts finished · sonnet-5-5 medium · 1m 10s / станет: agent#1638 Reviewer efforts finished · Sonnet 5.5 md · 1m 10s / gpt: agent#1629 Codex agent texts finished · GPT-6.1 Terra xh · 4m 02s. 1. имя модели берётся из пикера. Sonnet 5.5, Opus 5.5, GPT-6.1 Terra. 2. имя станет ярким, как в строке состояния. сейчас оно серое. 3. ризонинг кратко, как в строке состояния. lo, md, hi, xh, mx. 4. цвет ризонинга тот же, что в пикере. с medium и выше он жирный. делаем так? 1. да. 2. имя жирное, как выбранная строка в пикере.» Owner: «1».
+>   Delivered wait results: with both agent-ui and tool-ui loaded, the collapsed result is tool-ui's (summary part
+>   `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
+>   id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
+>   collapsed wait cards. Stored content, execution and delivery do not change. A card shows one delivered
+>   result as finished or failed, never a live agent state. There is no agent list, board or child-log view.
+>   Running agent counts, the activity indicator and its shimmer are RQW-statusbar's, not the cards' ([D-STATUSBAR-ACTIVITY](#status-bar)).
+>   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
+>   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
+
+## A-0438 · archived 2026-11-02 · History edit · old compaction limitation
+
+Status: SUPERSEDED by [D-HISTORY-BIG-SESSION] (DECISIONS.md#history-edit): the shared bypass fixes the limitation.
+Introduced: `666b803c`. Source: `8a0cab5d:DECISIONS.md`, lines 85-85. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Before the huge-tail fix, the limitation was: Pi's own compaction preparation, `prepareCompaction` in `dist/core/compaction/compaction.js`, calls the projection through a module binding that cannot be patched; it keeps the stock behaviour: compacting a session with such a tail is not a crash: manual compaction shows Pi's error, and automatic compaction fails in `prepareCompaction` before Pi starts reporting, so `_runAutoCompaction` returns without a message and the session is not compacted. Fixing it needs a copy of Pi's two compaction entry points and is outside this decision; it is reported to the owner as an open question.
+
+
+## A-0439 · archived 2026-11-02 · Scope · web model mapping
+
+Status: MERGED by [D-WEB-MAPPING] (DECISIONS.md#web-search): the model rule is consolidated.
+Introduced: `b0b36729`. Source: `8a0cab5d:DECISIONS.md`, lines 435-458. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Web-search model follows the caller** `[D-SCOPE-WEB-SEARCH-MODEL]`. The search-side GPT model matches the
+>   calling agent, independently of the coordinator's development subagent table. GPT callers use the same model and
+>   thinking; Claude callers use a fixed GPT counterpart from the product-side search mapping. Reviewer profiles
+>   are independent and have no cross-provider fallback. The owner's confirmed model/thinking table is in [D-WEB-MAPPING](#web-search).
+>   Search consumes the owner's ChatGPT
+>   subscription usage like any Codex message; the subagent matrix is unchanged.
+>   ...
+>   ...
+>   ...
+>   ...
+>   ...
+>   Coordinator text, interpretation before the owner's follow-up at line 4928: same GPT model/thinking for a GPT
+>   caller; product-side fixed GPT counterpart for a Claude caller, not the coordinator's subagent classes;
+>   searches spend subscription usage.
+>   ...
+>   ...
+>   ...
+>   ...
+>   The shipped tool applies the mapping automatically from its calling agent's model/thinking, without model
+>   arguments for the agent. ...
+>   ...
+>   Reason: search follows the caller's capability instead of a universal cheap backend. Carrier: `extensions/RQW-web/core/model-map.ts`,
+>   table in [D-WEB-MAPPING](#web-search).
+>   Since: process-rules-oct23 squash.
+
+
+## A-0440 · archived 2026-11-02 · Scope · reviewers
+
+Status: MERGED by [D-REVIEW-PROFILES] (DECISIONS.md#review): the contract is consolidated.
+Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 492-495. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Reviewers** `[D-SCOPE-REVIEWERS]`. `RQW-review` supplies Codex TOML role profiles and native Agent Skills,
+>   while RQW-agent supplies their ordinary execution lifecycle. The contract and models are in [Review](#review).
+>   Owner source: `[D-AGENT-PROFILES]`; reason: one shared runtime for every specialized role.
+>   Carriers: `extensions/RQW-review/`, `extensions/RQW-agent/`. Since: subagent-profiles.
+
+
+## A-0441 · archived 2026-11-02 · Scope · providers
+
+Status: MERGED by [D-PROVIDERS-ALLOW] (DECISIONS.md#providers): the provider rule is consolidated.
+Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 496-499. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Two visible providers** `[D-SCOPE-PROVIDERS]`. `/login` and model lists show only `anthropic` and `openai-codex`;
+>   the rule and its carriers are in [Providers](#providers). Coordinator text (historical unverified attribution, see
+>   `C:3171` there): "Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и
+>   авторизация через Anthropic, которую ты сейчас делаешь. И всё". Since: `c8434b0`.
+
+
+## A-0442 · archived 2026-11-02 · UI activation · changed circumstances
+
+Status: OBSOLETE by [D-UI-AGENT-CARDS] (DECISIONS.md#agent-cards): delivery is complete.
+Introduced: `005fac9d`. Source: `8a0cab5d:DECISIONS.md`, lines 508-511. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Change of circumstances, coordinator text, not an owner answer: the owner answered 1а while the new reviewer was
+>   still open. Since then the new reviewer has landed on `main` (`11b0fe2`), so the review card T14 is no longer
+>   deferred. It is part of the same switch-on and is delivered with `RQW-agent-ui`: cards for `agent`
+>   including ordinary reviewer-profile results.
+
+
+## A-0443 · archived 2026-11-02 · UI activation · wait card rendering
+
+Status: MERGED by [D-UI-AGENT-CARDS] (DECISIONS.md#agent-cards): card rendering is stated there.
+Introduced: `005fac9d`. Source: `8a0cab5d:DECISIONS.md`, lines 518-523. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
+>   tool-ui's: the summary part `Waited for N agents` and the live block `wait <ids>`, per the owner's wait amendment
+>   ... agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
+>   cards: header with id, status, model, effort and seconds, then the full answer verbatim. With tool-ui off,
+>   agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
+>   gives the same result.
+
+
+## A-0444 · archived 2026-11-02 · Scope · tool implementations
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the model uses our file tools with stock fallback.
+Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 475-476. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
+>   tools
+
+## A-0445 · archived 2026-11-02 · Compact tool display · final marker writes
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `4d770408` (opening sentence), `0fcab111` (background condition and marker design). Source: `8bc85e26:DECISIONS.md`, lines 541-548. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles,
+>   unless agents or background processes are still running. ...
+>   The extension reads `rqw:running-counts:request/offer` and writes invisible `rqw-tool-ui-final` entries with
+>   `{ key, final: false }` for such answers. When the idle session remains quiet for 500 ms after background work
+>   ends, it writes `{ key, final: true }` if no message or card followed; a new run can close the span instead.
+>   Marks preserve the verdict in history; sessions without marks keep the earlier behavior. A pending mark is not
+>   restored after exit or session switch, so it can remain unclosed on resume.
+
+## A-0446 · archived 2026-11-02 · Compact tool display · real-final timer
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `0fcab111`. Source: `8bc85e26:DECISIONS.md`, lines 573-575. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> The real-final
+>   check uses the 500 ms timer described above.
+
+## A-0447 · archived 2026-11-02 · Compact tool display · old open arrow
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `1a451132`. Source: `8bc85e26:DECISIONS.md`, lines 558-558. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   The earlier `˅` of the open state is superseded by this order.
+
+## A-0448 · archived 2026-11-02 · Compact tool display · repeated patch restriction
+
+Status: MERGED by [D-SCOPE-RUNTIME-PATCH] (DECISIONS.md#scope): the restriction is already addressed.
+Introduced: `a9873f64`. Source: `8bc85e26:DECISIONS.md`, line 516. Verbatim replaced text:
+
+> The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`;
+
+## A-0449 · archived 2026-11-02 · Tools · wrapped stock tools
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `7666300c`. Source: `c27f7c49:DECISIONS.md`, lines 694-694. Verbatim replaced text:
+
+> - **Wrapped stock tools** `[D-TOOLS-WRAPPERS]`. RQW-tools wraps read, bash, edit, write, grep and find. Read, write, edit, find and grep use stock parallel execution; bash and codemode run independently. Multi-file edit and write, bounded Windows retry, our descriptions and background jobs stay in `extensions/RQW-tools/`.
+
+## A-0450 · archived 2026-11-02 · Tools · search limits
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `8889fdf3`. Source: `c27f7c49:DECISIONS.md`, lines 707-710. Verbatim replaced text:
+
+> - **Search and output limits** `[D-TOOLS-LIMITS]`. grep and find get no match cap by default (`limit` 100000 when unset);
+>   the stock 50KB output cap stays; read and bash keep the stock 2000 lines / 50KB. Reason: Pi's default 100 grep matches
+>   cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for ASCII. Carriers:
+>   `extensions/RQW-tools/index.ts`, the descriptions. Since: `8889fdf`.
+
+## A-0451 · archived 2026-11-02 · Tools · read description
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `3430f322`. Source: `c27f7c49:DECISIONS.md`, lines 730-732. Verbatim replaced text:
+
+> - **read description** `[D-TOOLS-READ-DESC]`. Read a needed file whole in one call and read every file needed next in
+>   one response; bash does not read or search files. Carriers: `extensions/RQW-tools/descriptions/read.md`, `bash.md`.
+>   Since: `a0bd1b1`.
+
+## A-0452 · archived 2026-11-02 · Tools · description precision
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `3430f322`. Source: `c27f7c49:DECISIONS.md`, lines 733-737. Verbatim replaced text:
+
+> - **Description precision** `[D-TOOLS-DESC-PRECISION]`. grep respects .gitignore inside a git repository only; a grep
+>   glob with "/" matches from path; find also returns directories; the edit hint may be absent; a cut grep line is read
+>   around instead of narrowing; a tool result that names cat or sed overrides the ban; a long file written in parts is
+>   the one exception to one edit call per file. Carriers: the six descriptions in `extensions/RQW-tools/descriptions/`.
+>   Since: `a56e291`.
+
+## A-0453 · archived 2026-11-02 · Tools · conditional tool instructions
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `7666300c`. Source: `c27f7c49:DECISIONS.md`, lines 868-868. Verbatim replaced text:
+
+> - **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies the search-method section only when read, grep and find are visible, and the independent-execution/background-job section only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
+
+## A-0454 · archived 2026-11-02 · Tools · shipped delivery
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `fd1ea75c`. Source: `c27f7c49:DECISIONS.md`, lines 754-754. Verbatim replaced text:
+
+> Shipped delivery: release and main `5b12cd329638bb78f2666fd58aebf9fb653e0cc3`.
+
+## A-0455 · archived 2026-11-02 · Tools · scope pointer
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `fd1ea75c`. Source: `c27f7c49:DECISIONS.md`, lines 754-754. Verbatim replaced text:
+
+> Narrows the grep and find parts of `[D-TOOLS-WRAPPERS]`, `[D-TOOLS-LIMITS]`, `[D-TOOLS-READ-DESC]`, `[D-TOOLS-DESC-PRECISION]` and `[D-PROMPT-TOOL-ISOLATION]`, which still describe edit, write, bash and the stock fallback.
+
+## A-0456 · archived 2026-11-02 · Tools · answered coordinator question
+
+Status: SUPERSEDED by [D-AGENT-CODEX-TEXT] (DECISIONS.md#agent): the question was answered and the text was delivered.
+Introduced: `fe606648`. Source: `c27f7c49:DECISIONS.md`, lines 784-784. Verbatim replaced text:
+
+> Also pending: «Принимаешь диффы? 1. Да, делаем. 2. Нет, сначала посмотрю страницу.» (Codex 0.165.0 agent texts, ~/Downloads/codex-agent-diffs.html).
+
+## A-0457 · archived 2026-11-02 · PCLI · old version pin
+
+Status: SUPERSEDED by [D-SCOPE-PI-VERSION] (DECISIONS.md#scope): the bundled Pi pin is 1.4.0.
+Introduced: `3b6d6c12`. Source: `d1f2b7e5:DECISIONS.md`, lines 1294-1295. Verbatim replaced text:
+
+> Как есть 1.3 версия, так и есть.
+
+## A-0458 · archived 2026-11-02 · Session commands · path measurement
+
+Status: OBSOLETE by [D-SESSION-TESTS] (DECISIONS.md#session-commands): the measurement is historical.
+Introduced: `cdddfe72`. Source: `d1f2b7e5:DECISIONS.md`, lines 1835-1840. Verbatim replaced text:
+
+> - **Measured session paths** `[D-SESSION-MEASURE]`. Small fixed temp sessions through the real entry points (stock
+>   `SessionSelectorComponent` for list and Remove Session, our registered `/remove` handler, fake `trash`), median of 5
+>   (design 6.2.1, chunk «отложенное»). Input wait, median with the maximum seen: our `/remove` 1.6 ms (2.1) at 40 sessions and
+>   2.3 ms (2.3) at 200; stock Remove Session 7.1 ms (7.7) and 11.0 ms (11.4); stock list 2.5 ms (3.0) and 10.7 ms (13.3);
+>   `SessionManager.open` alone waits 1.2 ms (1.2) at both sizes; the full runtime switch was not measured. Our `/remove` total grows with the other sessions (64 ms at 40, 299 ms at 200). No change to Pi or to
+>   `/remove`. Evidence: `my-pi-evidence/designs/deferred/session-paths-measurement.md`.
+
+## A-0459 · archived 2026-11-02 · Codex compatibility · trust-gate pointer
+
+Status: MERGED by [D-AGENT-PROFILES] (DECISIONS.md#agent): the profile rule already states the trust gate.
+Introduced: `61f850da`. Source: `d1f2b7e5:DECISIONS.md`, lines 2107-2108. Verbatim replaced text:
+
+> ; this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers
+
+## A-0460 · archived 2026-11-02 · Send now · follow-up hold pointer
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `c8e8ceee`. Source: `cdaae4c8:DECISIONS.md`, lines 1839-1840. Verbatim replaced text:
+
+> (`extensions/RQW-agent/README.md`
+>   describes the hold)
+
+## A-0461 · archived 2026-11-02 · Send now · held follow-ups
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `acc4a0a7`. Source: `cdaae4c8:DECISIONS.md`, lines 1887-1887. Verbatim replaced text:
+
+> Follow-ups held for the real final (`extensions/RQW-agent/followup-hold.ts`) are taken too.
+
+## A-0462 · archived 2026-11-02 · Send now · superseded public API restriction
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `a9873f64`. Source: `cdaae4c8:DECISIONS.md`, lines 1846-1846. Verbatim replaced text:
+
+> The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
+
+## A-0463 · archived 2026-11-02 · Quality control · retired timer
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): background work no longer holds the fold open.
+Introduced: `80732f36`. Source: `c8355adc:DECISIONS.md`, line 1984. Verbatim replaced text:
+
+> RQW-tool-ui 500 ms real-final timer (the active record above, «When the idle session remains quiet for 500 ms»);
+
+## A-0464 · archived 2026-11-02 · Work policy · review workflow
+
+Status: SUPERSEDED by [D-AGENT-FORK-SELFCHECK] (DECISIONS.md#agent): the selfcheck fork owns the blind loop.
+Introduced: `8413081c` (records exception), `a79812e4` (Spotty and Bossy selection). Source: `1c0c0b4e:DECISIONS.md`, lines 398-399. Verbatim replaced text:
+
+> - **Independent review** `[D-WORK-FINAL-CHECK]`. Every task except records gets one independent review, short for small tasks.
+>   Use `spotty` by default and `bossy` for an owner-requested high review.
+
+## A-0465 · archived 2026-11-02 · Compact tool display · old final condition source
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the settled-answer rule replaced the real-final condition.
+Introduced: `0fcab111`. Source: `733143f1:DECISIONS.md`, line 544. Verbatim replaced text:
+
+>   when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).
+
+## A-0466 · archived 2026-11-02 · Settings · duplicate default tools
+
+Status: SUPERSEDED by [D-SETTINGS-DEFAULT-TOOLS] (DECISIONS.md#settings): the live decision states the current rule.
+Introduced: `bbc27ca0`. Source: `e4a7aafd:DECISIONS.md`, lines 864-864. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Default tools** `[D-SETTINGS-DEFAULT-TOOLS]`. `RQW-settings` enables `codemode` and `tool_search` by default. Coordinator question, 2026-11-02: retain the defaults despite the lost original source? ... Carrier: `extensions/RQW-settings/`.
+
+## A-0467 · archived 2026-11-02 · Settings · unverified source
+
+Status: SUPERSEDED by [D-SETTINGS-DEFAULT-TOOLS] (DECISIONS.md#settings): the live decision states the current rule.
+Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 871-871. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
+
+## A-0468 · archived 2026-11-02 · Settings · theme supersession
+
+Status: SUPERSEDED by [D-SETTINGS-SETUP] (DECISIONS.md#settings): the live decision states the current rule.
+Introduced: `5c52247b`. Source: `e4a7aafd:DECISIONS.md`, lines 884-884. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Supersedes in part `[D-UI-NATIVE-THEME]` (manual one-time theme selection, "no activation code", "unrelated settings stay untouched") and the `INSTALL.md` rule "change nothing else: no unrelated packages, settings, credentials or files".
+
+## A-0469 · archived 2026-11-02 · Subscription limits · refresh cadence
+
+Status: SUPERSEDED by [D-STATUSBAR-SUBSCRIPTION-LIMITS] (DECISIONS.md#subscription-limits): the live decision states the current rule.
+Introduced: `8ccc8e51`. Source: `e4a7aafd:DECISIONS.md`, lines 897-897. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Refresh immediately and every five minutes while active.
+
+## A-0470 · archived 2026-11-02 · Subscription limits · failed data
+
+Status: SUPERSEDED by [D-STATUSBAR-SUBSCRIPTION-LIMITS] (DECISIONS.md#subscription-limits): the live decision states the current rule.
+Introduced: `8ccc8e51`. Source: `e4a7aafd:DECISIONS.md`, lines 898-899. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Missing or failed data is `???`, never an invented 0% or 100%; failed reads
+>   discard displayed stale data.
+
+## A-0471 · archived 2026-11-02 · Subscription limits · old refresh description
+
+Status: SUPERSEDED by [D-STATUSBAR-SUBSCRIPTION-LIMITS] (DECISIONS.md#subscription-limits): the live decision states the current rule.
+Introduced: `8ccc8e51`. Source: `e4a7aafd:DECISIONS.md`, lines 902-903. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> five-minute refresh and partial delivery when a source cannot be read in this runtime.
+
+## A-0472 · archived 2026-11-02 · Status bar · old compaction label
+
+Status: SUPERSEDED by [D-STATUSBAR-ANIMATION] (DECISIONS.md#status-bar): the live decision states the current rule.
+Introduced: `d4bf9a6c`. Source: `e4a7aafd:DECISIONS.md`, lines 1699-1699. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Gold compaction has one left-to-right glint across each full strip and the `Compaction` label.
+
+## A-0473 · archived 2026-11-02 · Anthropic package integration · old package count
+
+Status: SUPERSEDED by [D-ANTHROPIC-PKG] (DECISIONS.md#anthropic-package-integration): the live decision states the current rule.
+Introduced: `97f7e9a2`. Source: `e4a7aafd:DECISIONS.md`, lines 1756-1756. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> RQW-anthropic is the ninth of the 30 `pi.extensions` entries;
+
+## A-0474 · archived 2026-11-02 · Anthropic adapter · benchmark pointer
+
+Status: SUPERSEDED by [D-ANTHROPIC-PROOF] (DECISIONS.md#anthropic-subscription-adapter): the live decision states the current rule.
+Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 1456-1458. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> The status of old Claude benchmark campaigns is recorded once in
+>   [Work policy](#work-policy).
+
+## A-0475 · archived 2026-11-02 · Models · thinking shortcut
+
+Status: SUPERSEDED by [D-COMMAND-CLEANUP] (DECISIONS.md#command-cleanup): the live decision states the current rule.
+Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 1557-1557. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Shift+Tab and provider definitions stay stock.
+
+## A-0476 · archived 2026-11-02 · Agent profiles · fork wording
+
+Status: SUPERSEDED by [D-AGENT-PROFILES] (DECISIONS.md#agent): the current decision states the rule.
+Introduced: `689da9c9`. Source: `0a00468c:DECISIONS.md`, lines 970-971. Verbatim replaced text:
+
+> Async work, tools, settings, caching, steering,
+>   interrupt and durable recovery stay on RQW-agent; no new engine, parent-history fork or sibling messaging is added.
+
+## A-0477 · archived 2026-11-02 · Agent · child settings fork
+
+Status: SUPERSEDED by [D-AGENT-CHILD-SETTINGS] (DECISIONS.md#agent): the current decision states the rule.
+Introduced: `9033f24b`. Source: `0a00468c:DECISIONS.md`, lines 1063-1063. Verbatim replaced text:
+
+> Parent-history fork and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features; child web access and durable resume are delivered
+
+## A-0478 · archived 2026-11-02 · Agent · history repair
+
+Status: SUPERSEDED by [D-AGENT-PERSIST] (DECISIONS.md#agent): the current decision states the rule.
+Introduced: `7cff2f5d`. Source: `0a00468c:DECISIONS.md`, lines 1100-1101. Verbatim replaced text:
+
+> a tool call without a result gets an explicit interrupted/error result, never a
+>   replay.
+
+## A-0479 · archived 2026-11-02 · Prompt · wait wording
+
+Status: SUPERSEDED by [D-PROMPT-ZORD] (DECISIONS.md#prompt): the current decision states the rule.
+Introduced: `761b310d`. Source: `0a00468c:DECISIONS.md`, lines 851-851. Verbatim replaced text:
+
+> no wait ends a turn, a wait is an ordinary blocking tool call (`[D-AGENT-REAL-FINAL]`, `[D-AGENT-WAIT]`).
+
+## A-0480 · archived 2026-11-02 · Send now · old wait receipts
+
+Status: SUPERSEDED by [D-KEYS-RESUME] (DECISIONS.md#send-now): the current decision states the rule.
+Introduced: `3343b55f`. Source: `0a00468c:DECISIONS.md`, lines 1917-1917. Verbatim replaced text:
+
+> (the receipt of `extensions/RQW-agent/coordinator.ts` and `extensions/RQW-tools/jobs.ts`)
+
+## A-0481 · archived 2026-11-02 · Agent · notification stub
+
+Status: SUPERSEDED by [D-AUTO-WAIT-EVERYWHERE] (DECISIONS.md#auto-wait): the current decision states the rule.
+Introduced: `e77acd0f`. Source: `0a00468c:DECISIONS.md`, lines 1135-1138. Verbatim replaced text:
+
+> - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Superseded in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`): the `wait` action of `agent` is removed (`[D-AUTO-WAIT-EVERYWHERE]`); results arrive automatically as one message, and no model request is made merely to wait. Owner messages reach the agent
+>   without cancelling accepted children. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.
+>   Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `descriptions/*.md`. Since: the final squash of branch `agent-async`.
+>   Old `rqw-agent-wait` records stay in the session but are never resumed ([RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume)).
+
+## A-0482 · archived 2026-11-02 · Statusbar · per-agent list
+
+Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner rejected the list; the status bar shows one dim idle-agent count line.
+Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, lines 1629-1633. Verbatim replaced text:
+
+>   RQW-agent gives every agent of the tree one state. `working`: Pi runs the child or a queued send is about to.
+>   `waiting`: its assignment (`a.run`) stays open for its jobs or children. `afk`: paused or interrupted, no assignment.
+>   `idle`: the rest, including a finished child kept in memory or asleep. The count is only `working` plus `waiting`,
+>   recursively; a waiting parent and its working descendant each count. Completed undelivered results count zero,
+>   and genuine idle or AFK with no pending work counts nothing.
+
+## A-0483 · archived 2026-11-02 · Statusbar · per-agent list
+
+Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner rejected the list; the status bar shows one dim idle-agent count line.
+Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, lines 1638-1643. Verbatim replaced text:
+
+>   The source's optional `agentList` holds one line `{ id, title?, state, depth }` per agent, nested agents right after their parent
+>   (a nested id is its path, `agent#1/agent#2`). The status bar draws it under the status text, `agent#3 Title · working`,
+>   indented two spaces per level, all agents, never cut to a few; id `muted`, title `dim`, `working` `text`, `waiting` `dim`,
+>   `idle` and `afk` rows wholly `dim`. When everything is idle the list stays, dim, with no status text. Narrow width cuts the
+>   title, then the indent, then the id; the state stays. The rows are cached and redrawn only when the list changes; no timer.
+>   The consumer accepts optional `backgroundProcesses` and `agentList`, treating their absence in older v1 sources as zero and empty.
+
+## A-0484 · archived 2026-11-02 · Statusbar · owner answers on the agent list
+
+Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner's later words reject the list.
+Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, line 1646. Verbatim replaced text:
+
+>   agent list when everything is idle: «1» = показывать тусклым; list length: «1» = все агенты.
+
+## A-0485 · archived 2026-11-02 · Work policy · superseded reply and reviewer notes
+
+Status: SUPERSEDED by `[D-WORK-SHORT-REPLIES]`, `[D-DYSLEXIA-COMMUNICATION]` and `[D-REVIEW-PROFILES]`. Source: `c2ce4822:DECISIONS.md`, lines 373, 403-404 and 1996. Verbatim replaced text:
+
+>   Coordinator note: the three-paragraph, two-line reply limit in this quote was replaced by [D-WORK-SHORT-REPLIES] and [D-DYSLEXIA-COMMUNICATION].
+>   Coordinator note: the Sol 6.1 Low model in this quote was replaced by the reviewerProfiles table in [PROCESS.md](PROCESS.md#subagent-models).
+>   The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
+> - **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner source: [D-WORK-CODE-PROFILE]. Owner: «без перфекционизма, без удушья, без жёсткой ёбки». The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
+
+## A-0486 · archived 2026-11-02 · Models · Terra off
+
+Status: SUPERSEDED by `[D-MODELS-EFFORT]`: the owner chose to remove Terra off.
+Introduced: `80732f36`. Source: `ed10109e:DECISIONS.md`, line 2005. Verbatim replaced text:
+
+> RQW-models permanent `off` for Terra (`[D-WEB-MAPPING]` passes `off` as native `none`; the audit itself asks for an owner decision)

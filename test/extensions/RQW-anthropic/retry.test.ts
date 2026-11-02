@@ -91,10 +91,11 @@ describe("RQW-anthropic retry planning", () => {
 			{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } }, { type: "message_stop" }]);
 		const modelRuntime = {
 			getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true, checkAuth: async () => ({}),
-			getAuth: async () => { const wait = gate; gate = undefined; await wait; return { auth: { apiKey: ACCESS }, env: {}, source: "OAuth" }; }, isUsingOAuth: () => true,
+			getAuth: async () => ({ auth: { apiKey: ACCESS }, env: {}, source: "OAuth" }), isUsingOAuth: () => true,
 			getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [], getProviderHeaders: () => undefined,
 			getRegisteredProviderConfig: () => ({ streamSimple: overlay.streamSimple }),
 			streamSimple: (m: typeof model, c: Parameters<typeof overlay.streamSimple>[1], o: object) => overlay.streamSimple(m, c, { ...o, apiKey: (o as { apiKey?: string }).apiKey ?? ACCESS, fetch: async () => {
+				const wait = gate; gate = undefined; await wait;
 				times.push(Date.now());
 				return statuses.shift() ?? summary();
 			} } as never),
@@ -113,7 +114,7 @@ describe("RQW-anthropic retry planning", () => {
 		const { session } = await createAgentSession({ cwd: process.cwd(), modelRuntime: modelRuntime as never, model: model as never, resourceLoader,
 			settingsManager, sessionManager, tools: [] });
 		session.subscribe(event => events.push(event as never));
-		// The next authentication waits until the returned function is called.
+		// The next network response waits until the returned function is called.
 		const hold = () => { const held = Promise.withResolvers<void>(); gate = held.promise; return held.resolve; };
 		return { session, events, times, hold };
 	}

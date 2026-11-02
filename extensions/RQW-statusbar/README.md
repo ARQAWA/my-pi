@@ -4,7 +4,7 @@ Terminal footer, editor borders and activity display.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
-The Pi 1.4.0 runtime patch in `early.ts` decorates the stock editor and footer before startup paints and during session replacement. The usual editor and footer are installed at `session_start`; Git and quotas arrive later. No paint is held. Dialogs, errors and input remain stock. Disabled or incompatible shapes fall back to Pi (`[D-STATUSBAR-STARTUP]`).
+The Pi 1.5.0 runtime patch in `early.ts` decorates the stock editor and footer before startup paints and during session replacement. The usual editor and footer are installed at `session_start`; Git and quotas arrive later. No paint is held. Dialogs, errors and input remain stock. Disabled or incompatible shapes fall back to Pi (`[D-STATUSBAR-STARTUP]`).
 
 ## Subscription limits
 
@@ -14,10 +14,14 @@ CXC, shown before CX, is the Codex credits balance as Codex shows it: whole cred
 (`10.000`), or `Unlimited`. It comes from the same CX request. No credits means no CXC block;
 stale data gets the same `*` star as the percent.
 Providers without stored login credentials are hidden. Unknown values show `???`.
+The git branch keeps one colour; only the marks `*`, `+` and `?` after it carry the state colours.
+A git or quota refresh that changes nothing asks for no repaint.
 The active footer checks the shared cache immediately and once a minute, independently of model responses.
 Files in the system temporary directory under `rqw-quota/` are separate per provider and account.
 Codex credentials supply `accountId`; Pi's Anthropic credentials have no account ID, so the refresh token
-is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token.
+is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token. The Codex file is `CX-credits-<hash>.json`:
+older releases still running in other tabs write `CX-<hash>.json` without credits and would otherwise erase CXC.
+Until the new file exists, the old file supplies the last known percent (no credits, never counted as a fresh attempt), so a failed first request shows `CX *77%`, not `???`.
 Files contain only `percent`, `credits` (raw digits or `Unlimited`), `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
 an exclusive `.lock` file prevents parallel requests. Locks older than 30 seconds are replaced.
 Writes use a temporary file and rename; file errors retain the last displayed value.
@@ -59,22 +63,20 @@ The picker, theme palette, animation and other footer colours do not change.
 
 ## Activity and waits
 
-While Main is active, retain its existing thinking or tool activity text and agent-count suffix.
-After Main's full answer and run completion, running background work remains visible, for example
-`Background: 2 agents, 1 background process`. This is a count, not an open wait. The two categories are agents and background processes;
-reviewer profiles are ordinary agents, with no worker or separate review category.
+While Main is active, its thinking or tool text includes active agents and background processes.
+After Main finishes, running background work remains visible, for example
+`Waiting for 2 agents, 1 background process`. Reviewer profiles are ordinary agents.
 
-RQW-agent counts active logical assignments, pending sends or native activity recursively. A native-idle
-child waiting for its jobs or children still counts, and its active descendant counts separately.
-Completed undelivered results count zero. RQW-tools independently counts only Main's actual background jobs,
-not child jobs again. Both producers use public `pi.events` v1 running-count sources; the consumer accepts
-missing `backgroundProcesses` from older v1 sources as zero. Either producer may be disabled alone.
+RQW-agent supplies the agent tree and counts active agents and child processes. RQW-tools counts Main's
+background processes. Both use public `pi.events` v1 running-count sources, with optional process and idle-agent counts.
+There is no per-agent list. When idle agents exist (finished, asleep, paused or interrupted), one dim line
+below the activity text says `12 idle agents` (`1 idle agent`); it stays visible at full idle without an activity line
+and is absent at zero. Idle agents are excluded from the active count. The line is cached by width, number and theme.
 
 RQW-send-now's Esc key hint (for example `esc esc to stop background`) is drawn dim italic two spaces right of the
 activity text, taken from its `rqw:activity-hint:offer` source on `pi.events`; nothing is imported. It is left out when
 it does not fit whole and beside Pi's own retry and summary text (they carry their key).
 Without RQW-send-now or with the status bar off no hint is drawn. The painted hint is cached per text and theme.
 
-At genuine idle there is no activity line. This changes no visuals, timing, colours, agent lists, cards,
-settings or dependencies. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
+At genuine idle there is no activity line. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
 Source protocol: [Running-count contract](../RQW-agent/README.md#contract-for-p6).

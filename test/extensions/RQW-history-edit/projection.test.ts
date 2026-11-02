@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, it } from "node:test";
 import * as Pi from "@earendil-works/pi-coding-agent";
 import {
@@ -164,6 +167,57 @@ it("an error that is not a stack overflow is thrown unchanged", () => {
 	} finally { restoreOffer(previous); }
 });
 
+it("a reloaded module takes the patch over: its code is in effect, and reloading back restores the first", async () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const source = join(here, "../../../extensions/RQW-history-edit/projection.ts");
+	const stockOverflow = "const isOverflow = (error: unknown) => error instanceof RangeError;";
+	const code = readFileSync(source, "utf8");
+	assert.ok(code.includes(stockOverflow));
+	const dir = mkdtempSync(join(here, ".reload-copy-"));
+	const proto = fakePrototype();
+	const stock = { context: proto.buildContextEntries, projection: proto.buildSessionProjection };
+	const previous = (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
+	try {
+		assert.equal(installSafeProjection(proto), true);
+		assert.equal((proto.buildContextEntries.call(managerOf(bigSession())) as Entry[]).length, BIG_TAIL + 2);
+		// The updated module never treats a stack overflow as recoverable: Pi's own error shows which module is in effect.
+		const file = join(dir, "projection.ts");
+		writeFileSync(file, code.replace(stockOverflow, "const isOverflow = (_error: unknown) => false;"));
+		const updated = await import(pathToFileURL(file).href);
+		assert.equal(updated.installSafeProjection(proto), true);
+		assert.throws(() => proto.buildContextEntries.call(managerOf(bigSession())), RangeError);
+		assert.throws(() => (globalThis as Record<symbol, any>)[SAFE_PROJECTION](bigSession()), RangeError);
+		assert.equal(installSafeProjection(proto), true);
+		assert.equal((proto.buildContextEntries.call(managerOf(bigSession())) as Entry[]).length, BIG_TAIL + 2);
+		assert.equal((globalThis as Record<symbol, any>)[SAFE_PROJECTION](bigSession()).messages.length, BIG_TAIL + 2);
+		uninstallSafeProjection(proto);
+		assert.equal(proto.buildContextEntries, stock.context);
+		assert.equal(proto.buildSessionProjection, stock.projection);
+	} finally {
+		restoreOffer(previous);
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+it("a reload leaves wrappers that another extension covered, or an older release left unrecorded, in place", () => {
+	const previous = (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
+	try {
+		const covered = fakePrototype();
+		installSafeProjection(covered);
+		const outer = function (this: unknown, ...args: unknown[]) { return (inner as Function).apply(this, args); };
+		const inner = covered.buildContextEntries;
+		covered.buildContextEntries = outer;
+		assert.equal(installSafeProjection(covered), true);
+		assert.equal(covered.buildContextEntries, outer);
+
+		const legacy = fakePrototype();
+		legacy[INSTALLED] = {};
+		const wrapper = legacy.buildContextEntries;
+		assert.equal(installSafeProjection(legacy), true);
+		assert.equal(legacy.buildContextEntries, wrapper);
+	} finally { restoreOffer(previous); }
+});
+
 it("the offer projects an entry list directly, with Pi's own result when Pi does not overflow", () => {
 	const proto = fakePrototype();
 	const previous = (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
@@ -176,6 +230,106 @@ it("the offer projects an entry list directly, with Pi's own result when Pi does
 		assert.equal(offered(big).messages.length, BIG_TAIL + 2);
 		assert.equal(offered(big, `t${BIG_TAIL - 1}`).entries.length, BIG_TAIL + 2);
 	} finally { restoreOffer(previous); }
+});
+
+it("append-only steps project only the appended entries and preserve earlier results", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	const first = manager.appendMessage(user("unused", null, "one").message);
+	manager.appendCustomEntry("state", {});
+	const before = manager.buildSessionProjection();
+	const context = manager.buildContextEntries();
+	let reads = 0;
+	const entry = manager.getEntry(first)!;
+	Object.defineProperty(entry, "type", { get() { reads++; return "message"; }, configurable: true });
+	let walks = 0;
+	Object.defineProperty(entry, "parentId", { get() { walks++; return null; }, configurable: true });
+	let copies = 0;
+	const getEntries = manager.getEntries.bind(manager);
+	manager.getEntries = () => { copies++; return getEntries(); };
+	manager.appendCustomEntry("state", {});
+	manager.appendMessage({ role: "user", content: "two", timestamp: 2 });
+	const after = manager.buildSessionProjection();
+	const nextContext = manager.buildContextEntries();
+	assert.equal(reads, 0, "old entries are not reprojected or rescanned");
+	assert.equal(walks, 0, "the manager does not walk the old parent chain");
+	assert.equal(copies, 0, "the manager does not copy its whole history");
+	assert.equal(before.entries.length, 2);
+	assert.equal(before.messages.length, 1);
+	assert.equal(context.length, 2);
+	const lastMessage = after.messages.at(-1);
+	assert.ok(lastMessage?.role === "user");
+	assert.equal(lastMessage.content, "two");
+	assert.equal(nextContext.length, 4);
+	assert.deepEqual(after, stockPi.buildSessionProjection(getEntries(), manager.getLeafId()));
+	assert.ok(walks > 0, "the parent counter catches the original full branch walk");
+});
+
+it("appends to the cached branch without walking older parents and returns independent lists", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	const first = manager.appendMessage({ role: "user", content: "one", timestamp: 1 });
+	const state = manager.appendCustomEntry("state", {});
+	const before = manager.getBranch();
+	let walks = 0;
+	Object.defineProperty(manager.getEntry(first), "parentId", { get() { walks++; return null; }, configurable: true });
+	const tail = manager.appendCustomEntry("state", {});
+	const after = manager.getBranch();
+	assert.equal(walks, 0, "a new step does not traverse the old branch");
+	assert.deepEqual(before.map(entry => entry.id), [first, state]);
+	assert.deepEqual(after.map(entry => entry.id), [first, state, tail]);
+	after.pop();
+	assert.equal(manager.getBranch().length, 3);
+	assert.deepEqual(manager.getBranch(first).map(entry => entry.id), [first]);
+	assert.ok(walks > 0, "an explicit historical branch uses native traversal");
+	manager.branch(first);
+	assert.deepEqual(manager.getBranch().map(entry => entry.id), [first]);
+	const side = manager.appendCustomEntry("side", {});
+	assert.deepEqual(manager.getBranch().map(entry => entry.id), [first, side]);
+	manager.resetLeaf();
+	assert.deepEqual(manager.getBranch(), []);
+	const fresh = manager.appendCustomEntry("fresh", {});
+	assert.deepEqual(manager.getBranch().map(entry => entry.id), [fresh]);
+	manager.newSession();
+	assert.deepEqual(manager.getBranch(), []);
+});
+
+it("keeps the cached projection separate from mutable runtime message arrays", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	manager.appendMessage({ role: "user", content: "one", timestamp: 1 });
+	const runtime = manager.buildSessionProjection();
+	// Pi assigns projection.messages to agent.state.messages, then pushes message_end events into it.
+	runtime.messages.push({ role: "user", content: "not persisted", timestamp: 2 });
+	runtime.entries.pop();
+	manager.buildContextEntries().pop();
+	const expected = () => stockPi.buildSessionProjection(manager.getEntries(), manager.getLeafId());
+	assert.deepEqual(manager.buildSessionProjection(), expected());
+	manager.appendMessage({ role: "user", content: "two", timestamp: 3 });
+	assert.deepEqual(manager.buildSessionProjection(), expected());
+	assert.equal(manager.buildContextEntries().length, 2);
+});
+
+it("incremental projection rebuilds on edits, compaction, branch changes and session replacement", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	const first = manager.appendMessage(user("unused", null, "one").message);
+	const check = () => {
+		assert.deepEqual(manager.buildSessionProjection(), stockPi.buildSessionProjection(manager.getEntries(), manager.getLeafId()));
+		assert.deepEqual(manager.buildContextEntries(), stockPi.buildContextEntries(manager.getEntries(), manager.getLeafId()));
+	};
+	check();
+	manager.appendModelChange("p", "new"); check();
+	manager.appendThinkingLevelChange("high"); check();
+	manager.appendMessage(assistant("unused", first, "reply").message); check();
+	manager.appendContextEdit(first, { content: "edited" }); check();
+	manager.appendCompaction("sum", first, 1); check();
+	manager.appendMessage(user("unused", null, "tail").message); check();
+	manager.branch(first); check();
+	manager.appendMessage(user("unused", null, "side").message); check();
+	manager.resetLeaf(); check();
+	manager.newSession(); check();
+	manager.appendMessage(user("unused", null, "fresh").message); check();
 });
 
 it("a changed Pi shape leaves the stock methods and offers nothing", () => {

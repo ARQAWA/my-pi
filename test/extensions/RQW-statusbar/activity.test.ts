@@ -18,11 +18,40 @@ it("names the file of a multi-file write", () => {
 	assert.match(actionPhrase("edit", { edits: [{ path: "src/a.ts" }] }), /a\.ts/);
 });
 
-it("shows running background counts without implying an idle wait", () => {
+it("shows all background counts during work and while waiting", () => {
+	assert.equal(statusText({ compacting: false, running: true, counts: { agents: 2, backgroundProcesses: 1 } })?.text,
+		"Planning next moves · 2 agents, 1 background process");
 	assert.equal(statusText({ compacting: false, running: false, counts: { agents: 2, backgroundProcesses: 3 } })?.text,
-		"Background: 2 agents, 3 background processes");
+		"Waiting for 2 agents, 3 background processes");
 	assert.equal(statusText({ compacting: false, running: false, counts: { agents: 0, backgroundProcesses: 1 } })?.text,
-		"Background: 1 background process");
+		"Waiting for 1 background process");
+});
+
+it("sums the idle agents of every source and notifies when the number changes", () => {
+	const handlers = new Map<string, (data: any) => void>();
+	const events = {
+		on(channel: string, handler: (data: any) => void) { handlers.set(channel, handler); return () => handlers.delete(channel); },
+		emit(channel: string, data: unknown) { handlers.get(channel)?.(data); },
+	};
+	let first: { agents: number; idleAgents?: number } = { agents: 1, idleAgents: 2 };
+	let notify: (value: unknown) => void = () => {};
+	const source = { version: 1, snapshot: () => first, subscribe(listener: typeof notify) { notify = listener; return () => {}; } };
+	const other = { version: 1, snapshot: () => ({ agents: 0, idleAgents: 3 }), subscribe() { return () => {}; } };
+	let changes = 0;
+	const watch = new CountsWatch(events as never, () => changes++);
+	watch.start();
+	events.emit("rqw:running-counts:offer", { version: 1, source });
+	events.emit("rqw:running-counts:offer", { version: 1, source: other });
+	assert.equal(watch.get().idleAgents, 5);
+	const before = changes;
+	first = { agents: 1, idleAgents: 4 };
+	notify(first);
+	assert.equal(changes, before + 1);
+	assert.equal(watch.get().idleAgents, 7);
+	first = { agents: 1 };
+	notify(first);
+	assert.equal(watch.get().idleAgents, 3);
+	watch.stop();
 });
 
 it("consumes a count source and drops it on stop", () => {

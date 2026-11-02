@@ -2,6 +2,8 @@
 // active logical assignments, pending sends or native activity, including nested children. A child
 // waiting for jobs or children still counts; completed undelivered results do not. Reviewer profiles
 // are ordinary agents. RQW-tools independently offers Main's backgroundProcesses on the same v1 channel.
+// This source adds the live background processes of its children and `idleAgents`, the number of agents of the
+// tree that are neither working nor waiting. Both fields are omitted when zero.
 //
 // Contract, version 1. Producer and consumer may load in either order:
 // - request: a consumer emits COUNTS_REQUEST with { version, reply(source) }; a live producer replies synchronously.
@@ -20,7 +22,7 @@ export const COUNTS_VERSION = 1;
 export const COUNTS_REQUEST = "rqw:running-counts:request";
 export const COUNTS_OFFER = "rqw:running-counts:offer";
 
-export type RunningCounts = { agents: number; reviews: number };
+export type RunningCounts = { agents: number; reviews: number; backgroundProcesses?: number; idleAgents?: number };
 export type CountsListener = (counts: RunningCounts | null) => void;
 export type CountsSource = {
 	readonly version: typeof COUNTS_VERSION;
@@ -32,7 +34,8 @@ export type CountsRequest = { version: typeof COUNTS_VERSION; reply(source: Coun
 export type CountsOffer = { version: typeof COUNTS_VERSION; source: CountsSource };
 
 const ZERO: RunningCounts = { agents: 0, reviews: 0 };
-const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.reviews === b.reviews;
+const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.reviews === b.reviews
+	&& (a.backgroundProcesses ?? 0) === (b.backgroundProcesses ?? 0) && (a.idleAgents ?? 0) === (b.idleAgents ?? 0);
 // A consumer's error stays with the consumer: it must never reach the run that changed the counts.
 const deliver = (listener: CountsListener, counts: RunningCounts | null) => {
 	try {

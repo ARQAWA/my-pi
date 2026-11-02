@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { AssistantMessage, AssistantMessageEvent, Usage } from "@earendil-works/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { deadlineTimer } from "./coordinator.ts";
+import { isContinuedCut } from "./length-continue.ts";
 
 export type AlertKind = "error" | "repetition" | "long_turn" | "schema_rejection_repeated";
 export type ActivityAlert = { kind: AlertKind; at: string; detail: string };
@@ -201,7 +202,6 @@ export class Activity {
 	private readonly onChange: (() => void) | undefined;
 	private readonly alertAfter: number | undefined;
 	private alerts: ActivityAlert[] = [];
-	private alertSerial = 0;
 	private cancelTurnTimer: (() => void) | undefined;
 	private rejectionCounts = new Map<string, number>();
 	private repeatedStreams = new Set<string>();
@@ -218,9 +218,6 @@ export class Activity {
 		this.unsubscribe = session.subscribe(event => this.onEvent(event));
 	}
 
-	/** Monotonic across logical runs, even when the bounded alert history is reset. */
-	alertVersion(): number { return this.alertSerial; }
-
 	/** Runtime failures outside native message events, such as a rejected prompt(). */
 	reportError(detail: string): void {
 		const key = fingerprint("error", detail);
@@ -230,7 +227,6 @@ export class Activity {
 	}
 
 	private alert(kind: AlertKind, detail: string): void {
-		this.alertSerial++;
 		this.alerts.push({ kind, at: new Date().toISOString(), detail: headTail(detail, ERROR_CHARS).text });
 		if (this.alerts.length > ALERTS) this.alerts.shift();
 		this.changed();
@@ -417,7 +413,7 @@ export class Activity {
 						const detail = event.message.errorMessage ?? "Unknown provider error";
 						this.lastError = fingerprint("error", detail);
 						this.alert("error", detail);
-					} else if (event.message.stopReason === "length") {
+					} else if (event.message.stopReason === "length" && !isContinuedCut(event.message)) {
 						this.reportError("Response was truncated: the model reached its output token limit.");
 					}
 					this.liveMessage = null;

@@ -93,6 +93,8 @@ export class ProfileCatalogue {
 		const roles = new Map<string, Draft>();
 		const apply = (draft: Draft) => {
 			const lower = roles.get(draft.name);
+			// A broken file does not hide a working role of the same name below it; alone it stays an error.
+			if (lower && draft.error && !lower.error) return;
 			if (lower) {
 				draft.description ??= lower.description;
 				draft.nickname_candidates ??= lower.nickname_candidates;

@@ -83,6 +83,8 @@ guard code.
 
 ## What it does for Main
 
+- On session start, disables Main's todo through `rqw-todo:disable:v1`. Workers can keep their own lists when asked in their tasks.
+
 - `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): Main supplies an executor
   category in `model`; the guard draws a model and effort pair randomly from that category. A named or inherited reviewer
   profile instead uses its exact pair. A reviewer-profile call supplies matching explicit model and effort values; restart
@@ -111,8 +113,9 @@ guard code.
   (`@`, `~`, file URLs, cwd) and canonicalised (symlinks, also dangling ones, and `..`). A path inside this
   checkout, the main checkout, any registered git worktree or the sibling `my-pi-worktrees` folder is blocked.
   Other places, such as `../my-pi-evidence` and the OS temporary folder, stay allowed.
-- Delegation: the prompt tells Main to object and propose a subagent when the owner asks it to do such work
-  personally; only an explicit owner override lets Main do it. The mechanical `edit` and `write` block above is unchanged by this.
+- Delegation: the prompt tells Main that it performs no action itself (research, edits, checks, audits, commands, opening files
+  for the owner) and works only with tasks, `BACKLOG.md`, its context and subagents; it objects and proposes a subagent when the
+  owner asks it to act personally, and only an explicit owner override lets Main do it. The mechanical `edit` and `write` block above is unchanged by this.
 - `before_agent_start`: adds the `coordinator_rules` prompt section, generated from the same block on every
   run, so compaction cannot drop it.
 

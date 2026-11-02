@@ -264,7 +264,7 @@ function setup(options: { visible?: boolean; resized?: Any } = {}) {
 	async function full(input: unknown, signal?: AbortSignal) { return await tool.execute("id", input, signal, undefined, ctx); }
 	async function runSteps(steps: Array<{ method: string; args: unknown[] }>, signal?: AbortSignal, options: Record<string, unknown> = {}) {
 		responses.splice(0, responses.length, reply(chainCall(steps)), done());
-		return await call({ action: "run", name: "main", actions: ["perform action"], expected: "done", ...options }, signal);
+		return await call({ action: "run", name: "main", actions: ["perform action"], expected: "done", record: false, ...options }, signal);
 	}
 	async function call(input: unknown, signal?: AbortSignal) { return (await full(input, signal)).details.value; }
 	const element = <T extends FakeElement>(node: T): T => { node.ownerDocument = document; return node; };

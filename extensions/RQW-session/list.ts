@@ -1,11 +1,16 @@
 import { readdir, open, type FileHandle } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve, win32 } from "node:path";
 import { getAgentDir, type SessionInfo } from "@earendil-works/pi-coding-agent";
 
 const SESSION_INFO = Buffer.from('\n{"type":"session_info"');
 const MESSAGE = Buffer.from('\n{"type":"message"');
 const CHUNK = 64 * 1024;
 const STOCK = Symbol.for("rqw-session.list.stock");
+
+function pathsEqual(left: string, right: string): boolean {
+	if (process.platform === "win32") return win32.resolve(left).toLowerCase() === win32.resolve(right).toLowerCase();
+	return resolve(left) === resolve(right);
+}
 
 type ListFn = (...args: unknown[]) => Promise<SessionInfo[]>;
 type SessionManagerStatics = { list: ListFn; listAll: ListFn };
@@ -119,7 +124,7 @@ function finish(sessions: SessionInfo[], onProgress: unknown): SessionInfo[] {
 }
 
 /**
- * Replaces SessionManager.list and listAll with reverse-scan versions (Pi 1.4.0 shapes). An unknown shape, a relative
+ * Replaces SessionManager.list and listAll with reverse-scan versions (Pi 1.5.0 shapes). An unknown shape, a relative
  * or `~` directory, or any error inside the fast path leaves the stock call. Returns the restore function.
  */
 export function installFastList(manager: SessionManagerStatics): () => void {
@@ -141,9 +146,9 @@ export function installFastList(manager: SessionManagerStatics): () => void {
 	const patchedList = manager.list = wrap(stockList, ([cwd, sessionDir, onProgress, signal]) => {
 		if (typeof cwd !== "string" || typeof sessionDir !== "string" || !isAbsolute(sessionDir)) return undefined;
 		const defaultDir = join(resolve(getAgentDir()), "sessions", `--${resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`);
-		const filter = resolve(sessionDir) !== defaultDir;
+		const filter = !pathsEqual(sessionDir, defaultDir);
 		return listDirs([resolve(sessionDir)], signal as AbortSignal | undefined)
-			.then(sessions => finish(filter ? sessions.filter(s => s.cwd !== "" && resolve(s.cwd) === resolve(cwd)) : sessions, onProgress));
+			.then(sessions => finish(filter ? sessions.filter(s => s.cwd !== "" && pathsEqual(s.cwd, cwd)) : sessions, onProgress));
 	});
 	// listAll(), listAll(onProgress, signal), listAll(dir, onProgress, signal)
 	const patchedListAll = manager.listAll = wrap(stockListAll, ([first, second, third]) => {

@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, MessageEndEvent } from "@earendil-works/pi-coding-agent";
+import type { ContextEditableContent, ContextEditEntry, ExtensionAPI, ExtensionContext, MessageEndEvent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { generateSessionName, type NamingMessage, type NamingRegistry } from "./core.ts";
 
@@ -7,6 +7,23 @@ const ATTEMPTS = 4;
 const WARNING = "Automatic session naming failed; the previous session name is kept.";
 
 type Run = { controller: AbortController; sessionId: string | undefined };
+
+/** The text blocks of a message body; thinking, tool calls and images carry no name. */
+function textOf(content: ContextEditableContent): string {
+	if (typeof content === "string") return content;
+	const texts: string[] = [];
+	for (const block of content) {
+		if (block.type === "text") texts.push(block.text);
+	}
+	return texts.join("\n");
+}
+
+/** A user or assistant turn with its text; a context edit replaces only the content. */
+function namingMessage(message: MessageEndEvent["message"], replacement: ContextEditableContent | undefined): NamingMessage | undefined {
+	if (message.role !== "user" && message.role !== "assistant") return undefined;
+	const text = textOf(replacement ?? message.content);
+	return text ? { role: message.role, content: text } : undefined;
+}
 
 function sessionIdOf(ctx: ExtensionContext): string | undefined {
 	try { return ctx.sessionManager.getSessionId(); }
@@ -25,10 +42,22 @@ export default function (pi: ExtensionAPI) {
 	// Name we are writing ourselves; its session_info_changed echo must not cancel our own run.
 	let ownName: string | undefined;
 
-	const cancel = () => {
-		current?.controller.abort();
+	const finish = (run: Run) => {
+		if (current !== run) return;
 		current = undefined;
+		if (run.sessionId !== undefined) pi.events.emit("rqw-naming:activity", { sessionId: run.sessionId, active: false });
 	};
+	const cancel = () => {
+		if (!current) return;
+		const run = current;
+		run.controller.abort();
+		finish(run);
+	};
+	pi.events.on("rqw-naming:activity-query", (event: unknown) => {
+		const query = event as { sessionId?: unknown; offer?: (state: { sessionId: string; active: boolean }) => void } | null;
+		if (current?.sessionId !== undefined && query?.sessionId === current.sessionId)
+			query.offer?.({ sessionId: current.sessionId, active: true });
+	});
 
 	/** Stale runs (aborted, replaced or superseded) must never write or warn. */
 	const isCurrent = (run: Run, ctx: ExtensionContext) => {
@@ -50,7 +79,6 @@ export default function (pi: ExtensionAPI) {
 			if (!isCurrent(run, ctx)) return;
 		}
 		if (name === undefined) return warn(run, ctx);
-		if (current === run) current = undefined;
 		ownName = name;
 		pi.setSessionName(name);
 	}
@@ -60,32 +88,32 @@ export default function (pi: ExtensionAPI) {
 		cancel();
 		const run: Run = { controller: new AbortController(), sessionId: sessionIdOf(ctx) };
 		current = run;
+		if (run.sessionId !== undefined) pi.events.emit("rqw-naming:activity", { sessionId: run.sessionId, active: true });
 		const provider = ctx.model?.provider;
 		void (async () => {
 			let context: NamingMessage[];
 			try {
 				const branch = ctx.sessionManager.getBranch();
-				const edits = new Map(branch.filter((entry) => entry.type === "context_edit").map((entry) => [entry.targetId, entry.replacement]));
-				const messages = branch.flatMap((entry) => {
-					if (entry.type !== "message") return [];
-					if (!edits.has(entry.id)) return [entry.message];
-					const replacement = edits.get(entry.id);
-					if (!replacement) return [];
-					return [{ ...entry.message, content: replacement.content }];
-				});
-				// message_end reaches extensions before Pi appends that message to the session.
-				const available = pendingMessage ? [...messages, pendingMessage] : messages;
-				context = [];
-				for (const message of available) {
-					if (message.role !== "user" && message.role !== "assistant") continue;
-					const text = typeof message.content === "string" ? message.content
-						: message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
-					if (text) context.push({ role: message.role, content: text });
+				const edits = new Map<string, ContextEditEntry["replacement"]>();
+				for (const entry of branch) {
+					if (entry.type === "context_edit") edits.set(entry.targetId, entry.replacement);
 				}
+				context = [];
+				for (const entry of branch) {
+					if (entry.type !== "message") continue;
+					const replacement = edits.get(entry.id);
+					if (replacement === null) continue; // The edit omits this message from context.
+					const turn = namingMessage(entry.message, replacement?.content);
+					if (turn) context.push(turn);
+				}
+				// message_end reaches extensions before Pi appends that message to the session.
+				const pending = pendingMessage ? namingMessage(pendingMessage, undefined) : undefined;
+				if (pending) context.push(pending);
 			}
-			catch { return warn(run, ctx); }
+			catch { warn(run, ctx); finish(run); return; }
 			try { await generate(ctx, run, context, ctx.modelRegistry, provider); }
 			catch { warn(run, ctx); }
+			finally { finish(run); }
 		})();
 	}
 

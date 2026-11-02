@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 import { CompactionSummaryMessageComponent, initTheme, InteractiveMode, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, type Terminal } from "@earendil-works/pi-tui";
+import { installEarly } from "../../../extensions/RQW-blocks/early.ts";
 import { buildSession, makeFullscreen } from "./history-host.ts";
 
 const root = new URL("../../../", import.meta.url);
@@ -58,7 +62,7 @@ it("styles a history frame during real init before session_start", async t => {
 		clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
 	} as unknown as Terminal;
 	const sessionData: any = {
-		settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined }, autoCompactionEnabled: true,
+		settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined, messages: manager.buildSessionContext().messages }, autoCompactionEnabled: true,
 		getContextUsage: () => undefined,
 		modelRuntime: { getAvailableSnapshot: () => [], isUsingSubscription: () => false },
 		resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => loaded },
@@ -86,6 +90,62 @@ it("styles a history frame during real init before session_start", async t => {
 	} finally {
 		proceed();
 		try { await init; } finally { host.stop("none"); }
+	}
+});
+
+it("a reloaded module's block styles replace the running ones in one step", async () => {
+	const s = await setup();
+	try {
+		assert.match(s.draw(), /compaction · 1\.2k tokens/);
+		const events: string[] = [];
+		// The extension above runs in the loader's module instance; this call is the factory of an updated one.
+		installEarly(() => { events.push("installed"); return () => { events.push("released"); }; });
+		assert.deepEqual(events, ["installed"]);
+		assert.doesNotMatch(s.draw(), /compaction · 1\.2k tokens/);
+	} finally { s.close(); }
+});
+
+it("a reloaded module's history and start hooks replace the running ones", async () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const folder = join(here, "../../../extensions/RQW-blocks");
+	const dir = mkdtempSync(join(here, ".reload-copy-"));
+	const marks = Symbol.for("rqw-blocks-test.updated");
+	const global = globalThis as any;
+	const s = await setup();
+	// Loading Pi's next runtime runs the first module's factory, so it comes before the updated module's.
+	const next = await loader.loadExtensions([path], fileURLToPath(root));
+	try {
+		assert.match(s.draw(), /compaction · 1\.2k tokens/);
+		for (const file of readdirSync(folder)) if (file.endsWith(".ts")) cpSync(join(folder, file), join(dir, file));
+		// The updated module records which of its hooks run.
+		const mark = (name: string) => `(globalThis as any)[Symbol.for("rqw-blocks-test.updated")] = [...((globalThis as any)[Symbol.for("rqw-blocks-test.updated")] ?? []), "${name}"];`;
+		const edit = (file: string, anchor: string, name: string) => {
+			const code = readFileSync(join(dir, file), "utf8");
+			assert.ok(code.includes(anchor), anchor);
+			writeFileSync(join(dir, file), code.replace(anchor, `${anchor}\n${mark(name)}`));
+		};
+		edit("history.ts", 'const names = ["renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];', "history");
+		edit("startup.ts", "export function rebindWithHistory(host: any, run: () => Promise<unknown>): Promise<unknown> {", "rebind");
+		const updated = await import(pathToFileURL(join(dir, "early.ts")).href);
+		updated.installEarly(() => () => {});
+		assert.deepEqual(global[marks], ["history"]);
+
+		s.host.runtimeHost.session = {
+			...s.host.runtimeHost.session, sessionManager: session("new question"),
+			resourceLoader: { getExtensions: () => next, getThemes: () => ({ themes: [] }) },
+			async bindExtensions() {},
+		};
+		Object.assign(s.host, {
+			pendingMessagesContainer: new Container(), programStatus: { reset() {} },
+			applyRuntimeSettings() {}, subscribeToAgent() {}, setupAutocompleteProvider() {}, setupExtensionShortcuts() {},
+			showLoadedResources() {}, showStartupNoticesIfNeeded() {}, async updateAvailableProviderCount() {}, updateTerminalTitle() {},
+		});
+		await s.host.rebindCurrentSession({ renderBeforeBind: true });
+		assert.deepEqual(global[marks], ["history", "rebind"]);
+	} finally {
+		delete global[marks];
+		s.close();
+		rmSync(dir, { recursive: true, force: true });
 	}
 });
 

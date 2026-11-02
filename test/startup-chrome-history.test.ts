@@ -34,16 +34,18 @@ it("the first startup and switched frames contain final history and the current 
 		Object.assign(loaded.runtime, { getSettings: () => ({}), getSessionName: () => "", getThinkingLevel: () => "off" });
 		const runner = new ExtensionRunner(loaded.extensions, loaded.runtime, "/tmp", manager, {} as never);
 		const errors: string[] = [];
+		const metadata: { text: string; messageId?: string; timestamp?: string }[] = [];
+		runner.getMarkdownTransformers = () => [(text: string, context: any) => { metadata.push({ text, messageId: context.messageId, timestamp: context.timestamp }); return text; }];
 		runner.onError(error => errors.push(error.error));
 		const gate = deferred(), entered = deferred();
 		const session: any = {
-			settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined }, autoCompactionEnabled: true,
+			settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined, messages: manager.buildSessionContext().messages }, autoCompactionEnabled: true,
 			getContextUsage: () => undefined, modelRuntime: { getAvailableSnapshot: () => [], isUsingSubscription: () => false },
 			resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => loaded }, extensionRunner: runner,
 			getToolDefinition: () => undefined, subscribe() { return () => {}; },
 			async bindExtensions({ uiContext }: any) { runner.setUIContext(uiContext, "tui"); entered.resolve(); await gate.promise; await runner.emit({ type: "session_start", reason: "startup" }); },
 		};
-		return { session, manager, runner, gate, entered, errors };
+		return { session, manager, runner, gate, entered, errors, metadata };
 	};
 	const old = await create("old");
 	let first = "";
@@ -72,6 +74,11 @@ it("the first startup and switched frames contain final history and the current 
 		init = host.init();
 		await Promise.race([old.entered.promise, init]);
 		check(first, "old");
+		const checkMetadata = (view: typeof old, label: string) => {
+			const entry = view.manager.getBranch().find((item: any) => item.type === "message" && item.message.role === "assistant" && item.message.content.some((part: any) => part.text === `${label} answer`))!;
+			assert.ok(view.metadata.some(item => item.text === `${label} answer` && item.messageId === entry.id && item.timestamp === entry.timestamp));
+		};
+		checkMetadata(old, "old");
 		host.renderer.renderNow();
 		const oldScreen = host.renderer.getScreenLines().map(stripTerminalSequences).join("\n");
 		assert.match(oldScreen, /worked for 42s ›/);
@@ -87,6 +94,7 @@ it("the first startup and switched frames contain final history and the current 
 		await next.entered.promise;
 		const frame = visible();
 		check(frame, "new");
+		checkMetadata(next, "new");
 		assert.doesNotMatch(frame, /old request|old latest|old answer/);
 		host.renderer.renderNow();
 		const newScreen = host.renderer.getScreenLines().map(stripTerminalSequences).join("\n");

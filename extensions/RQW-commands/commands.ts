@@ -65,7 +65,7 @@ function filtered(host: Host, provider: any): any[] | undefined {
 }
 
 export function installCommands(pi: ExtensionAPI, registerShutdown = true): () => void {
- if (VERSION !== "1.4.0") throw new Error(WARNING);
+ if (VERSION !== "1.5.0") throw new Error(WARNING);
  const proto = InteractiveMode.prototype as any;
  let state = (proto as any)[STATE] as State | undefined;
  if (!state) {

@@ -55,16 +55,24 @@ test("Codex fork sends the caller's prepared prefix with isolated tool execution
 	const children = new Map<string, CodexThreadTransport>();
 	const root = Object.create(AgentSession.prototype);
 	root.sessionManager = parent;
-	root.agent = { streamFunction: (m: any, context: any, options: any) => rootTransport.stream(m, context, options) };
+	const stream = (m: any, context: any, options: any) => {
+		const id = options.sessionId;
+		if (id === parent.getSessionId()) return rootTransport.stream(m, context, options);
+		if (!children.has(id)) children.set(id, transport(id));
+		return children.get(id)!.stream(m, context, options);
+	};
 	const runtime = { getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true, getAuth: async () => ({ apiKey: "fake" }), checkAuth: async () => ({}), isUsingOAuth: () => true, getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [],
-		streamSimple: (m: any, context: any, options: any) => { const id = options.sessionId; if (!children.has(id)) children.set(id, transport(id)); return children.get(id)!.stream(m, context, options); } };
+		stream, streamSimple: stream };
+	root._modelRuntime = runtime;
+	root._cacheWarmer = { models: runtime };
+	root.agent = { streamFunction: (m: any, context: any, options: any) => runtime.streamSimple(m, context, options) };
 	const ctx: any = { cwd: w.cwd, sessionManager: parent, model, modelRegistry: { runtime, find: () => model, hasConfiguredAuth: () => true }, isIdle: () => root.isIdle, isProjectTrusted: () => true, getSystemPrompt: () => "caller system", signal: new AbortController().signal, mode: "tui" };
 	const hooks = new Map<string, any[]>();
 	const events = createEventBus();
 	let definition: any;
 	events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => ["bash", "z_tool"].map(name => ({ name, label: name, description: name, parameters: Type.Object({}), execute: async () => { executed.push(name); return { content: [{ type: "text", text: `${name} executed` }], details: {} }; } })), { names: ["bash", "z_tool"], aliases: {} }));
 	const pi: any = { events, on: (name: string, hook: any) => hooks.set(name, [...hooks.get(name) ?? [], hook]), registerTool: (tool: any) => { definition = tool; }, appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data), getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }), getThinkingLevel: () => "low", getActiveTools: () => ["bash"], sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details) };
-	const live = registerSessionRuntime(pi, events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const live = registerSessionRuntime(pi, events, false, undefined, undefined, undefined, undefined, "", undefined);
 	try {
 		for (const hook of hooks.get("session_start") ?? []) await hook({}, ctx);
 		const execute = (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx);

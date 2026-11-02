@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, it } from "node:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initTheme, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -37,7 +37,7 @@ it("double escape opens the current branch selector", async () => {
 		historyEdit({ on: (name: string, handler: any) => handlers.set(name, handler),
 			events: { on() {}, emit() {} }, registerCommand(_name: string, options: any) { command = options.handler; },
 			sendUserMessage: (text: string) => { requested = text; } } as unknown as ExtensionAPI);
-		const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getBranch: () => [{ type: "message", id: "a", message: { role: "user", content: "hello" } }] },
+		const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionFile: () => import.meta.filename, getBranch: () => [{ type: "message", id: "a", message: { role: "user", content: "hello" } }] },
 			ui: { setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }),
 				onTerminalInput: (handler: any) => { input = handler; return () => {}; }, getEditorText: () => "",
 				custom: async () => { opened = true; return undefined; } } };
@@ -64,7 +64,7 @@ it("escape restores the draft, and enter intercepts slash text", async () => {
 	historyEdit({ on: (name: string, handler: any) => handlers.set(name, handler),
 		events: { on() {}, emit() {} }, registerCommand(_name: string, options: any) { command = options.handler; },
 		sendUserMessage: (message: string) => sent.push(message) } as unknown as ExtensionAPI);
-	const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getBranch: () => [{ type: "message", id: "a", message: { role: "user", content: "old" } }] },
+	const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionFile: () => import.meta.filename, getBranch: () => [{ type: "message", id: "a", message: { role: "user", content: "old" } }] },
 		ui: { setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }),
 			onTerminalInput: (handler: any) => { input = handler; return () => {}; }, getEditorText: () => text,
 			setEditorText: (value: string) => { text = value; }, notify() {},
@@ -91,7 +91,7 @@ it("stops at both ends of the message list", async () => {
 	let keys: string[] = [];
 	historyEdit({ on() {}, events: { on() {}, emit() {} },
 		registerCommand: (_name: string, options: any) => { command = options.handler; } } as unknown as ExtensionAPI);
-	const ctx = { mode: "tui", sessionManager: { getBranch: () => ["first", "middle", "last"].map(id =>
+	const ctx = { mode: "tui", sessionManager: { getSessionFile: () => import.meta.filename, getBranch: () => ["first", "middle", "last"].map(id =>
 		({ type: "message", id, message: { role: "user", content: id } })) },
 		ui: { getEditorText: () => editor, setEditorText: (value: string) => { editor = value; }, notify() {},
 			custom: async (factory: any) => {
@@ -193,7 +193,7 @@ it("blocks both entrances during this session's background compaction", async ()
 			events: { on: (name: string, handler: any) => events.set(name, handler), emit() {} },
 			registerCommand: (_name: string, options: any) => { command = options.handler; },
 			sendUserMessage: (text: string) => { requested = text; } } as unknown as ExtensionAPI);
-		const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "one", getBranch: () => [
+		const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionFile: () => import.meta.filename, getSessionId: () => "one", getBranch: () => [
 			{ type: "message", id: "a", message: { role: "user", content: "hello" } },
 		] }, ui: { setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }),
 			onTerminalInput: (handler: any) => { input = handler; return () => {}; }, getEditorText: () => editor,
@@ -234,4 +234,77 @@ it("double escape still opens the history when the counts are all zero", () => {
 		assert.deepEqual(h.press(), { consume: true });
 		assert.equal(h.requested(), "/edit-history");
 	} finally { Date.now = previousNow; }
+});
+
+it("refuses both entrances without a session file and keeps the draft", async () => {
+	const previousNow = Date.now;
+	let now = 1000;
+	Date.now = () => now;
+	try {
+		for (const file of [undefined, join(tmpdir(), "history-edit-missing-session.jsonl")]) {
+			const handlers = new Map<string, any>();
+			let command: any;
+			let input: any;
+			let requested = "";
+			let editor = "draft";
+			let opened = 0;
+			const notices: string[] = [];
+			historyEdit({ on: (name: string, handler: any) => handlers.set(name, handler), events: { on() {}, emit() {} },
+				registerCommand: (_name: string, options: any) => { command = options.handler; },
+				sendUserMessage: (text: string) => { requested = text; } } as unknown as ExtensionAPI);
+			const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionFile: () => file, getBranch: () => [{ type: "message", id: "a", message: { role: "user", content: "old" } }] },
+				ui: { setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }),
+					onTerminalInput: (handler: any) => { input = handler; return () => {}; },
+					getEditorText: () => editor, setEditorText: (value: string) => { editor = value; },
+					notify: (message: string) => notices.push(message), custom: async () => { opened++; return "a"; } } };
+			handlers.get("session_start")!({}, ctx);
+			// The gesture requests the command, which Pi then runs; the typed command is the second entrance.
+			editor = "";
+			input("\x1b");
+			now += 100;
+			input("\x1b");
+			assert.equal(requested, "/edit-history");
+			await command("", ctx);
+			editor = "draft";
+			await command("", ctx);
+			assert.deepEqual(notices, Array(2).fill("No session file. Open a saved session first."));
+			assert.equal(opened, 0);
+			assert.equal(editor, "draft");
+			now += 1000;
+		}
+	} finally { Date.now = previousNow; }
+});
+
+it("keeps the old file and the draft in the editor when sending the edit fails", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "history-draft-"));
+	try {
+		const path = join(dir, "session.jsonl");
+		writeFileSync(path, "old\n");
+		let branch: any[] = [{ type: "message", id: "a", parentId: null, message: { role: "user", content: "old" } }];
+		const entries = branch.slice();
+		const handlers = new Map<string, any>();
+		let command: any;
+		let editor = "";
+		const pi = { on: (name: string, handler: any) => handlers.set(name, handler), events: { on() {}, emit() {} },
+			registerCommand: (_name: string, options: any) => { command = options.handler; }, sendUserMessage() {},
+			appendEntry: (customType: string, data: unknown) => { const entry = { type: "custom", id: `n${entries.length}`, parentId: branch.at(-1)?.id ?? null, customType, data }; entries.push(entry); branch.push(entry); } } as unknown as ExtensionAPI;
+		historyEdit(pi);
+		const manager = { getSessionFile: () => path, getBranch: () => branch.slice(), getEntries: () => entries.slice(), getLeafId: () => branch.at(-1)?.id ?? null,
+			getLabel: () => undefined, getSessionName: () => undefined, getHeader: () => ({ type: "session", id: "s" }) };
+		const ui = { getEditorText: () => editor, setEditorText: (value: string) => { editor = value; }, notify() {}, custom: async () => "a",
+			setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }), onTerminalInput: () => () => {} };
+		const navigateTree = async (id: string) => { branch = id === "a" ? [] : entries.slice(); return { cancelled: false }; };
+		const reopened: any = { ui, navigateTree, sessionManager: { getEntries: () => [], getBranch: () => branch.slice() },
+			switchSession: async (_path: string, options: any) => { await options.withSession(reopened); return { cancelled: false }; },
+			sendUserMessage: async () => { throw new Error("no model"); } };
+		const ctx = { mode: "tui", isIdle: () => true, sessionManager: manager, ui, navigateTree,
+			switchSession: async (_path: string, options: any) => { await options.withSession(reopened); return { cancelled: false }; } };
+		handlers.get("session_start")!({}, ctx);
+		await command("", ctx);
+		assert.equal(editor, "old");
+		assert.deepEqual(handlers.get("input")!({ source: "interactive", text: "edited" }), { action: "handled" });
+		await command("", ctx);
+		assert.equal(readFileSync(path, "utf8"), "old\n");
+		assert.equal(editor, "edited");
+	} finally { rmSync(dir, { recursive: true, force: true }); }
 });

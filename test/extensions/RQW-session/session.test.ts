@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, unlinkSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import fsp, { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
@@ -206,13 +207,20 @@ it("cleanup keeps the current tree behind a symlinked path and keeps trees it ca
 		await symlink(join(real, "target.jsonl.children", "agent-1", "cur3.jsonl"), join(real, "cur3link.jsonl"));
 		await run(join(real, "cur3link.jsonl"));
 		assert.equal(existsSync(join(targetTree, "agent-1", "gone.jsonl.children")), true);
-		if (process.platform === "win32" || process.getuid?.() === 0) return;
-		// Listable but not searchable: the sibling check fails with EACCES, so the tree stays and a warning is shown.
+		// The sibling check fails with EACCES (made by hand, so it holds on every system and for root): the tree stays and a warning is shown.
 		const locked = join(agent, "sessions", "b");
 		await mkdir(join(locked, "orphan.jsonl.children"), { recursive: true });
-		await chmod(locked, 0o600);
+		const access = fsp.access;
+		fsp.access = async (path, mode) => {
+			if (String(path) === join(locked, "orphan.jsonl")) throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+			return access(path, mode);
+		};
+		syncBuiltinESMExports();
 		try { assert.match(await run(join(real, "cur.jsonl")), /^warning:/); }
-		finally { await chmod(locked, 0o700); }
+		finally {
+			fsp.access = access;
+			syncBuiltinESMExports();
+		}
 		assert.equal(existsSync(join(locked, "orphan.jsonl.children")), true);
 	} finally { await rm(root, { recursive: true, force: true }); }
 });

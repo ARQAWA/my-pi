@@ -40,7 +40,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   images itself. Expanded rows show no summary line; Ctrl+O again folds back.
 - Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, or
   a tool without a definition, such as an unavailable tool in stored session history) is not exported by Pi, so
-  `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
+  `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.5.0 with its sources cited in
   its header. Maintenance: on a Pi upgrade, compare `fallback.ts` with the cited Pi sources and update the pin.
 - The original renderers are called where Pi calls this row's renderers: their call side from the start of execution
   (so the bash clock starts when Pi's would), their result side from the first expansion on, and from then on with
@@ -52,13 +52,17 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   prepared before `renderSessionEntries`, keyed by the live session and extension runtime. `session_start` does not
   rebuild the groups. On shutdown, event data and session references are released while the old visible rows stay
   intact until Pi replaces the transcript or stops.
+- An argument delta of a call already grouped (`toolcall_delta`) does not rebuild the groups: it replaces that member's
+  arguments in place, bumps its group's `revision` and redraws only the group's leader. Classifications are cached per
+  member and arguments object, so a frame while a call streams classifies that call alone.
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
   this extension cannot remove them.
 
 ### Wait results
 
-`agent` calls with `action: "wait"` count as `waited for N agents` in the summary line and the live block shows
-`wait <ids>`. Reviewer profiles `spotty` and `bossy` run as ordinary `agent` children and use these same waits.
+Stored `agent` calls with `action: "wait"` (older sessions only; the action no longer exists, results arrive
+automatically as a hidden message) count as `waited for N agents` in the summary line and the live block shows
+`wait <ids>`. Reviewer profiles `spotty` and `bossy` run as ordinary `agent` children; their results arrive automatically.
 RQW-agent-ui is registered before tool-ui; while collapsed it delegates to tool-ui, and Ctrl+O shows agent-ui's
 expanded wait cards with the full answers. Without tool-ui, agent-ui renders its collapsed wait cards.
 
@@ -184,7 +188,7 @@ switching it on again the same way brings the compact display back for the whole
 
 ## Patches
 
-The tool rows use Pi extension and TUI APIs. The early history and worked-for hooks patch Pi 1.4.0 in memory,
+The tool rows use Pi extension and TUI APIs. The early history and worked-for hooks patch Pi 1.5.0 in memory,
 with shape checks and stock rendering on an incompatible host. There is no fork, installed-file edit or deep import.
 The one copy of Pi code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
 

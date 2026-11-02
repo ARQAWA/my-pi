@@ -111,16 +111,6 @@ it("does not announce a mixed batch while useful work remains", async t => {
 	await tick();
 });
 
-it("wakes only for a matching explicit steering notice", async t => {
-	const { send } = await pairOfTabs(t);
-	const pending = send.run("wait_answer", { chatId: "recv", afterEntryId: null });
-	await tick();
-	send.pi.events.emit("rqw:wait-steer:v1", { sessionId: "other" });
-	send.pi.events.emit("rqw:wait-steer:v1", { sessionId: "send" });
-	assert.equal(parse(await pending).reason, "steered");
-	await tick();
-});
-
 it("does not take a streaming part or a tool turn for the final answer, and times out", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const { recv, send } = await pairOfTabs(t);

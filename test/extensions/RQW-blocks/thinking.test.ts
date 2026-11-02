@@ -27,6 +27,19 @@ it("removes hidden thinking rows and spacing while keeping shown thinking and re
 	assert.deepEqual(plain(component), stock);
 });
 
+it("preserves native status spacing without hidden thinking and restores a custom label", () => {
+	initTheme();
+	const restore = installThinking();
+	const component = new AssistantMessageComponent(message([{ type: "thinking", thinking: "private" }], "error"), true, undefined, "Custom label");
+	try {
+		assert.equal(plain(component).length, 1);
+		component.updateContent(message([{ type: "text", text: "answer" }], "error"));
+		assert.deepEqual(plain(component), ["", "answer", "", "Error: Unknown error"]);
+		component.updateContent(message([{ type: "thinking", thinking: "private" }]));
+	} finally { restore(); }
+	assert.ok(plain(component).some(line => line.includes("Custom label")));
+});
+
 it("drops bookkeeping of collected components so restore does not scan them", () => {
 	initTheme();
 	const RealWeakRef = globalThis.WeakRef;

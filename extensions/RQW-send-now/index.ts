@@ -18,7 +18,7 @@ import { interrupted, RESUME_NOTE, RESUME_TYPE } from "./resume.ts";
 export const ENTRY = "rqw-send-now";
 /** Only Codex has the second Ctrl+Enter that forces; other providers force with Escape (and an empty Enter, as before). */
 const CODEX = "openai-codex";
-/** The wait tools' channel: `{ sessionId, call, open }` when a wait opens or closes (RQW-agent, RQW-tools). */
+/** The wait tools' channel: `{ sessionId, call, open }` when a wait opens or closes (RQW-tabs-link's `wait_answer`). */
 const WAITING = "rqw:waiting:v1";
 /** Two Escape presses within this time are one gesture. */
 const DOUBLE_ESCAPE_MS = 500;
@@ -60,7 +60,7 @@ export default function sendNow(pi: ExtensionAPI) {
 			agents += part.agents ?? 0; processes += part.backgroundProcesses ?? 0; unstoppable += part.unstoppable ?? 0;
 		} });
 		const parts = [agents && `${agents} ${agents === 1 ? "agent" : "agents"}`, processes && `${processes} background ${processes === 1 ? "process" : "processes"}`].filter(Boolean);
-		ctx.ui.notify(`${parts.length ? `Stopped: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
+		ctx.ui.notify(`${parts.length ? `Stop requested: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
 	}
 	pi.registerShortcut?.("ctrl+\\", { description: "Stop session background work", handler: stopSession });
 	let pending: Pending | undefined;

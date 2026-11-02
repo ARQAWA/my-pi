@@ -10,6 +10,7 @@ async function renameAfterResume(messages: any[], window: number, provider = "an
 	let sent: any;
 	let calls = 0;
 	const pi = {
+		events: { on() {}, emit() {} },
 		on: (event: string, handler: typeof handlers[string]) => { handlers[event] = handler; },
 		registerCommand: (_name: string, value: unknown) => { command = value; },
 		registerTool() {},

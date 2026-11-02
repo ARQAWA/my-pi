@@ -5,6 +5,7 @@ import { isContextOverflow } from "@earendil-works/pi-ai/compat";
 import { AUTH_FAILURE } from "./auth.ts";
 import { type HttpDiagnostic, planServerRetry, readHttpDiagnostic, sleep, type SummarySink } from "./retry-hints.ts";
 import { OVERLAY } from "./registration.ts";
+import { summaryStream } from "./cache.ts";
 
 export const STREAM_CONTRACT = Symbol.for("rqw-anthropic/stream-contract");
 export const AUTH_ORIGIN = Symbol.for("rqw-anthropic/auth-origin");
@@ -149,8 +150,8 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 				"_getSummarizationRequestAuth"].map(name =>
 				[Session.prototype, name, Object.getOwnPropertyDescriptor(Session.prototype, name)])),
 		] as Original[];
-		if (VERSION !== "1.4.0" || originals.some(([, , d]) => typeof d?.value !== "function" || !d.configurable)) {
-			throw new Error("RQW-anthropic: incompatible Pi recovery hooks; requires Pi 1.4.0. Nothing was patched.");
+		if (VERSION !== "1.5.0" || originals.some(([, , d]) => typeof d?.value !== "function" || !d.configurable)) {
+			throw new Error("RQW-anthropic: incompatible Pi recovery hooks; requires Pi 1.5.0. Nothing was patched.");
 		}
 		// Retry planning is optional: a private method of another shape stays stock, the rest keeps working.
 		for (const name of ["_prepareRetry", "_summarizationRetryCallbacks"]) {
@@ -228,7 +229,11 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 					if (!operation?.active || operation.runtime !== this.modelRuntime) return original.apply(this, args);
 					const request: { runtime: ModelRuntime; origin?: AuthOrigin } = { runtime: this.modelRuntime };
 					return requests.run(request, async () => {
-						const resolved = await original.apply(this, args);
+						const inner = summaryStream(this);
+						const agent = this.agent;
+						const agentView = inner && new Proxy({}, { get: (_target, key) => key === "streamFunction" ? inner : Reflect.get(agent, key, agent) });
+						const sessionView = agentView && new Proxy({}, { get: (_target, key) => key === "agent" ? agentView : Reflect.get(this, key, this) });
+						const resolved = await original.apply(sessionView ?? this, args);
 						if (resolved.model.provider !== "anthropic") return resolved;
 						const env = { ...resolved.env };
 						handoffs.set(env, { operation, model: resolved.model, apiKey: resolved.apiKey, origin: request.origin });

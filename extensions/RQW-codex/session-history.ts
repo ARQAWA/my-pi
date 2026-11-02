@@ -6,7 +6,6 @@
 // the real parent file proves the ancestry. Imports: Pi SDK types, this folder and Node built-ins only.
 import { readFileSync } from "node:fs";
 import {
-	buildSessionProjection,
 	convertToLlm,
 	sessionEntryToContextMessages,
 	type AgentSession,
@@ -32,6 +31,7 @@ import {
 	type WireWindow,
 } from "./history.ts";
 import type { CodexIdentity } from "./metadata.ts";
+import { project, projectManager } from "./projection.ts";
 import { slices } from "./slices.ts";
 import type { RawItemHistory } from "./transport.ts";
 import { buildRequest, prefixContext, transcriptItems, type WireItem, type WireModelInfo, type WireOptions } from "./wire.ts";
@@ -64,17 +64,9 @@ type Coverage = { baseIndex: number; covered: Set<string>; responses: Set<string
 
 const SOURCE_ROLES: ReadonlySet<string> = new Set(["user", "system", "toolResult", "assistant"]);
 
-/** Optional process-wide offer of RQW-history-edit: Pi's projection that survives a long tail after a compaction. */
-const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
-type Projection = ReturnType<SessionManagerLike["buildSessionProjection"]>;
-type Project = (entries: SessionEntry[], leafId: string | null) => Projection;
-
 /** Pi's projected messages per raw entry id on the branch ending at leafId (edits and omissions applied). */
 function projectedMessages(entries: SessionEntry[], leafId: string | null): Map<string, unknown[]> {
 	const out = new Map<string, unknown[]>();
-	// Pi's own call overflows the stack on a tail of about 120000 entries after a compaction.
-	const offered = (globalThis as { [SAFE_PROJECTION]?: unknown })[SAFE_PROJECTION];
-	const project: Project = typeof offered === "function" ? offered as Project : buildSessionProjection as unknown as Project;
 	for (const entry of project(entries, leafId).entries) out.set(entry.sourceEntry.id, entry.messages);
 	return out;
 }
@@ -130,7 +122,7 @@ function pairedCallKeys(manager: SessionManagerLike): Set<string> {
 	return out;
 }
 
-type RawAssistantEntry = SessionEntry & { message: { content?: unknown } };
+type RawAssistantEntry = { entry: WireSessionEntry; content: unknown };
 
 /** One read of the current branch for source checks: the first raw assistant entry per response id, and Pi's projection (built once, on first use). */
 type ResponseSources = { raw: Map<string, RawAssistantEntry>; projected(): Map<string, unknown[]> };
@@ -138,9 +130,9 @@ type ResponseSources = { raw: Map<string, RawAssistantEntry>; projected(): Map<s
 function responseSources(manager: SessionManagerLike): ResponseSources {
 	const raw = new Map<string, RawAssistantEntry>();
 	for (const entry of manager.getBranch()) {
-		const message = (entry as { message?: { role?: unknown; responseId?: unknown } }).message;
+		const message = entry.message as { role?: unknown; responseId?: unknown; content?: unknown } | undefined;
 		if (entry.type === "message" && message?.role === "assistant" && typeof message.responseId === "string" && !raw.has(message.responseId)) {
-			raw.set(message.responseId, entry as RawAssistantEntry);
+			raw.set(message.responseId, { entry, content: message.content });
 		}
 	}
 	let projected: Map<string, unknown[]> | undefined;
@@ -154,10 +146,10 @@ function responseSources(manager: SessionManagerLike): ResponseSources {
 function sourceState(sources: ResponseSources, responseId: string): "absent" | "same" | "edited" | "deleted" {
 	const raw = sources.raw.get(responseId);
 	if (!raw) return "absent";
-	const projected = sources.projected().get(raw.id) ?? sessionEntryToContextMessages(raw);
+	const projected = sources.projected().get(raw.entry.id) ?? sessionEntryToContextMessages(raw.entry as unknown as SessionEntry);
 	if (projected.length === 0) return "deleted";
 	const current = projected.find((message) => (message as { role?: unknown; responseId?: unknown }).role === "assistant" && (message as { responseId?: unknown }).responseId === responseId) as { content?: unknown } | undefined;
-	return canonicalJson(current?.content) === canonicalJson(raw.message.content) ? "same" : "edited";
+	return canonicalJson(current?.content) === canonicalJson(raw.content) ? "same" : "edited";
 }
 
 function responseSourceState(manager: SessionManagerLike, responseId: string): "absent" | "same" | "edited" | "deleted" {
@@ -414,7 +406,7 @@ export class SessionWireState {
 	}
 
 	#effectiveMessages(): unknown[] {
-		return convertToLlm(this.#manager().buildSessionProjection().messages as never) as unknown as unknown[];
+		return convertToLlm(projectManager(this.#manager() as unknown as Parameters<typeof projectManager>[0]).messages as never) as unknown as unknown[];
 	}
 
 	#ensureWindow(): void {
@@ -567,7 +559,7 @@ export class SessionWireState {
 				continue;
 			}
 			// The request carries this assistant message: its content must be the physical original, or the raw output is unproven.
-			if (state === "same" && canonicalJson(requested.get(responseId)) === canonicalJson(sources.raw.get(responseId)?.message.content)) accepted.add(responseId);
+			if (state === "same" && canonicalJson(requested.get(responseId)) === canonicalJson(sources.raw.get(responseId)?.content)) accepted.add(responseId);
 		}
 		return accepted;
 	}

@@ -1,7 +1,7 @@
 import { AgentSession, VERSION, type ExtensionAPI, type SettingsManager } from "@earendil-works/pi-coding-agent";
 
 const BIND = "rqw-settings:cache-default-bind";
-const HOOK = Symbol.for("rqw-settings/cache-default/1.4.0");
+const HOOK = Symbol.for("rqw-settings/cache-default/1.5.0");
 /** Shared method-lease contract `rqw:method-chain/v1` (self-contained copy in each RQW extension that wraps a Pi prototype method). */
 const CHAIN = Symbol.for("rqw:method-chain/v1");
 /** Each wrapper layer links to the value it wraps; read at call time, so a rebase of the chain reaches the layer. */
@@ -82,7 +82,7 @@ function leaveAll(owner: Owner, state: State): void {
 
 /** Session-owned policy, not a persisted setting or a process-wide SettingsManager default. */
 export function installCacheDefault(pi: ExtensionAPI): Cleanup {
-	if (VERSION !== "1.4.0") throw new Error("RQW-settings cache default requires Pi 1.4.0");
+	if (VERSION !== "1.5.0") throw new Error("RQW-settings cache default requires Pi 1.5.0");
 	const owner = AgentSession.prototype as Owner;
 	const current = METHODS.map(name => [name, Object.getOwnPropertyDescriptor(owner, name)] as const);
 	if (current.some(([, d]) => typeof d?.value !== "function" || !d.configurable)) {

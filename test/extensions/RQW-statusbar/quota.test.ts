@@ -54,8 +54,8 @@ function setup(t: TestContext) {
 	};
 	setAccount("first");
 	const cacheDir = join(temporary, "rqw-quota");
-	const file = (provider: "CX" | "CC", account = "first") => join(cacheDir,
-		`${provider}-${createHash("sha256").update(provider === "CX" ? `fake-account-${account}` : `fake-cc-refresh-${account}`).digest("hex").slice(0, 16)}.json`);
+	const file = (provider: "CX" | "CC", account = "first", name: string = provider === "CX" ? "CX-credits" : "CC") => join(cacheDir,
+		`${name}-${createHash("sha256").update(provider === "CX" ? `fake-account-${account}` : `fake-cc-refresh-${account}`).digest("hex").slice(0, 16)}.json`);
 	const reads = { CX: 0, CC: 0 };
 	t.mock.method(globalThis, "fetch", async (url: unknown) => {
 		assert.equal(url, "https://chatgpt.com/backend-api/wham/usage");
@@ -71,7 +71,8 @@ function setup(t: TestContext) {
 		for (const stop of shutdown) await stop();
 		await until(idle);
 		process.chdir(previousCwd);
-		rmSync(root, { recursive: true, force: true });
+		// a late cache write can land while the folder is removed
+		rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 		if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = saved;
 		t.mock.restoreAll();
@@ -97,13 +98,14 @@ function setup(t: TestContext) {
 		};
 		type Footer = { render(width: number): string[]; dispose(): void };
 		let footer: Footer;
+		let repaints = 0;
 		const theme = { fg: (_role: string, text: string) => text };
 		const ctx = {
 			mode: "tui", cwd: "project", model: undefined, isIdle: () => true, getContextUsage: () => undefined,
 			sessionManager: { getSessionId: () => "quota-test", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [] },
 			ui: { theme, getEditorComponent: () => ({}), setEditorComponent() {}, setWidget() {}, setWorkingIndicator() {},
 				setFooter(factory: (tui: unknown, theme: unknown, data: unknown) => Footer) {
-					footer = factory({ requestRender() {} }, theme, {
+					footer = factory({ requestRender() { repaints++; } }, theme, {
 						onBranchChange: () => () => {}, getExtensionStatuses: () => new Map(),
 					});
 				} },
@@ -114,7 +116,7 @@ function setup(t: TestContext) {
 		const stop = () => handlers.get("session_shutdown")!({}, ctx);
 		shutdown.push(stop);
 		return Object.assign(() => footer.render(160).map(strip).join("\n"), {
-			raw: (width: number) => footer.render(width), stop,
+			raw: (width: number) => footer.render(width), stop, repaints: () => repaints,
 			tick: async () => { await ticks[tickIndex](); },
 		});
 	}
@@ -266,6 +268,20 @@ it("a fresh value removes the star", async (t) => {
 	assert.ok(!shown().includes("*"));
 });
 
+it("a quota refresh that changes nothing does not repaint the footer", async (t) => {
+	const cache = setup(t);
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CX 77%") && shown().includes("CC 77%") && cache.idle());
+	const repaints = shown.repaints();
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => cache.reads.CX === 2 && cache.reads.CC === 2 && cache.idle());
+	assert.equal(shown.repaints(), repaints);
+	cache.response.percent = 64;
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => shown().includes("CX 64%") && cache.idle());
+	assert.ok(shown.repaints() > repaints);
+});
+
 const CREDIT_CASES: [string, unknown, string | undefined][] = [
 	["a small balance", { has_credits: true, unlimited: false, balance: "25" }, "25"],
 	["ten thousand with a dot", { has_credits: true, unlimited: false, balance: "10000" }, "10.000"],
@@ -305,6 +321,32 @@ it("CXC takes the colour of CX and gets the stale star with CX, then loses it on
 	cache.response.credits = { has_credits: false };
 	t.mock.timers.tick(3 * MINUTE);
 	await until(() => !shown().includes("CXC") && cache.idle());
+});
+
+it("CXC survives a cache file written by a release that does not know credits", async (t) => {
+	const cache = setup(t);
+	cache.response.credits = { has_credits: true, unlimited: false, balance: "25" };
+	mkdirSync(cache.cacheDir);
+	const oldTab = () => writeFileSync(cache.file("CX", "first", "CX"), JSON.stringify({ percent: 77, okAt: Date.now(), checkedAt: Date.now() }));
+	oldTab();
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CXC 25  CX 77%") && cache.idle());
+	t.mock.timers.tick(3 * MINUTE);
+	oldTab();
+	t.mock.timers.tick(MINUTE);
+	await until(() => cache.idle());
+	assert.ok(shown().includes("CXC 25  CX 77%"));
+});
+
+it("a failed first request after the update keeps the last percent of the old cache file with a star", async (t) => {
+	const cache = setup(t);
+	cache.response.status = 429;
+	mkdirSync(cache.cacheDir);
+	writeFileSync(cache.file("CX", "first", "CX"), JSON.stringify({ percent: 77, okAt: Date.now() - MINUTE, checkedAt: Date.now() - 10 * MINUTE }));
+	const shown = await cache.openTab();
+	await until(() => cache.reads.CX === 1 && cache.idle());
+	await until(() => shown().includes("CX *77%"));
+	assert.doesNotMatch(shown(), /CX \?\?\?/);
 });
 
 it("CXC follows the Codex login and is hidden without it", async (t) => {

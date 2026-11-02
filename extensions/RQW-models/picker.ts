@@ -1,8 +1,8 @@
-import type { Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 
-export type ChatModel = Model<string>;
+export type ChatModel = Model<Api>;
 export type Step = "up" | "down" | "right" | "left";
 /** Draft = the transactional choice shown in the chooser; live Pi state is untouched until Enter. */
 export type Draft = { model: ChatModel | undefined; effort: string | undefined };
@@ -90,7 +90,8 @@ export class ModelEffortPicker implements Component {
 		if (this.closed) return;
 		const step = STEP_KEYS.find(([key]) => matchesKey(data, key as never))?.[1];
 		if (step) return this.step(step);
-		if (matchesKey(data, "enter")) return this.close(this.current);
+		// Shift is often still down from the last Shift+arrow, and Kitty terminals then send Shift+Enter.
+		if (matchesKey(data, "enter") || matchesKey(data, "shift+enter")) return this.close(this.current);
 		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) this.close(undefined);
 	}
 

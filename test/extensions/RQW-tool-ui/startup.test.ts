@@ -111,7 +111,7 @@ it("retains events arriving during real init before the first history", async (t
 	const settings = SettingsManager.inMemory({ quietStartup: true, theme: "dark", tui: { mode: "fullscreen" } } as never);
 	const fixture: any = makeHost(saved.manager, loaded, screen.screen);
 	const session = fixture.runtimeHost.session;
-	Object.assign(session, { settingsManager: settings, scopedModels: [], modelRuntime: { getAvailableSnapshot: () => [] }, getContextUsage: () => undefined, state: {} });
+	Object.assign(session, { settingsManager: settings, scopedModels: [], modelRuntime: { getAvailableSnapshot: () => [] }, getContextUsage: () => undefined, state: { get messages() { return saved.manager.buildSessionContext().messages; } } });
 	session.resourceLoader.getThemes = () => ({ themes: [] });
 	const runtime = { session, setBeforeSessionInvalidate() {}, setRebindSession() {} };
 	const host: any = new InteractiveMode(runtime as never, { terminal: screen.terminal as never, tuiMode: "fullscreen" });

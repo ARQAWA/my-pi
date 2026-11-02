@@ -114,23 +114,52 @@ it("refuses editing without a session file", async () => {
 	assert.deepEqual(notices, ["No session file. Open a saved session first."]);
 });
 
-it("keeps edited text in the reopened session when sending fails", async () => {
+/** A session file holding `original` plus the anchor entry; `send` is what the reopened session does with the message. */
+function sendHarness(dir: string, send: () => Promise<void>) {
+	const path = join(dir, "session.jsonl");
+	const original = Buffer.from("original\n\u0000bytes\n");
+	writeFileSync(path, original);
+	let branch: any[] = [
+		{ type: "message", id: "u", parentId: null, message: { role: "user", content: "old" } },
+		{ type: "message", id: "v", parentId: "u", message: { role: "user", content: "later" } },
+	];
+	const entries = branch.slice();
+	const append = (customType: string, data: unknown) => { const entry = { type: "custom", id: `n${entries.length}`, parentId: branch.at(-1)?.id ?? null, customType, data }; entries.push(entry); branch.push(entry); appendFileSync(path, `${JSON.stringify(entry)}\n`); };
+	const pi = { appendEntry: append } as unknown as ExtensionAPI;
+	const notices: string[] = [];
+	const navigated: string[] = [];
+	const manager = { getSessionFile: () => path, getBranch: () => branch.slice(), getEntries: () => entries.slice(), getLeafId: () => branch.at(-1)?.id ?? null,
+		getLabel: () => undefined, getSessionName: () => undefined, getHeader: () => ({ type: "session", id: "s" }) };
+	const navigateTree = async (id: string) => { navigated.push(id); branch = id === "u" ? [] : entries.slice(0, 3); return { cancelled: false }; };
+	// The reopened session starts at the cut leaf; accepting the message moves its leaf.
+	const reopened = (): any => ({ ui: { setEditorText() {}, notify: (message: string) => notices.push(message) }, navigateTree,
+		sessionManager: { getEntries: () => [], getBranch: () => branch.slice() },
+		switchSession: async (_path: string, options: any) => { await options.withSession(reopened()); return { cancelled: false }; },
+		sendUserMessage: send });
+	const ctx = { isIdle: () => true, sessionManager: manager, ui: { notify: (message: string) => notices.push(message) }, navigateTree,
+		// Pi appends a settings entry when it reopens a file that lacks one, so the leaf moves even if nothing is sent.
+		switchSession: async (_path: string, options: any) => { branch = [...branch, { type: "thinking_level_change", id: "t" }]; await options.withSession(reopened()); return { cancelled: false }; } } as unknown as ExtensionCommandContext;
+	return { path, original, pi, ctx, notices, navigated, accept: () => { branch = [...branch, { type: "message", id: "new", message: { role: "user" } }]; } };
+}
+
+it("keeps the old history when sending fails", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "history-send-"));
 	try {
-		const path = join(dir, "session.jsonl");
-		writeFileSync(path, "old\n");
-		let branch: any[] = [{ type: "message", id: "u", parentId: null, message: { role: "user", content: "old" } }];
-		const entries = branch.slice();
-		const pi = { appendEntry: (customType: string, data: unknown) => { const entry = { type: "custom", id: `n${entries.length}`, parentId: branch.at(-1)?.id ?? null, customType, data }; entries.push(entry); branch.push(entry); } } as unknown as ExtensionAPI;
-		let editor = "";
-		let notice = "";
-		const manager = { getSessionFile: () => path, getBranch: () => branch.slice(), getEntries: () => entries.slice(), getLeafId: () => branch.at(-1)?.id ?? null,
-			getLabel: () => undefined, getSessionName: () => undefined, getHeader: () => ({ type: "session", id: "s" }) };
-		const ctx = { isIdle: () => true, sessionManager: manager, ui: { notify: () => assert.fail("old context used") },
-			navigateTree: async () => { branch = []; return { cancelled: false }; },
-			switchSession: async (_path: string, options: any) => { await options.withSession({ ui: { setEditorText: (value: string) => { editor = value; }, notify: (value: string) => { notice = value; } }, sendUserMessage: async () => { throw new Error("failed"); } }); return { cancelled: false }; } } as unknown as ExtensionCommandContext;
-		await commitEdit(pi, ctx, "u", "draft");
-		assert.equal(editor, "draft");
-		assert.match(notice, /failed/);
+		const h = sendHarness(dir, async () => { throw new Error("no model"); });
+		assert.deepEqual(await commitEdit(h.pi, h.ctx, "u", "draft"), { committed: false });
+		assert.deepEqual(readFileSync(h.path).subarray(0, h.original.length), h.original);
+		assert.deepEqual(h.navigated, ["u", "n2"]);
+		assert.deepEqual(h.notices, ["History edit failed: the message was not sent (Error: no model)"]);
+	} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+it("keeps the cut when the run fails after the message was accepted", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "history-run-"));
+	try {
+		const h: ReturnType<typeof sendHarness> = sendHarness(dir, async () => { h.accept(); throw new Error("provider"); });
+		assert.deepEqual(await commitEdit(h.pi, h.ctx, "u", "draft"), { committed: true });
+		assert.deepEqual(h.navigated, ["u"]);
+		assert.deepEqual(h.notices, ["The run failed after the message was sent: Error: provider"]);
+		assert.ok(!readFileSync(h.path, "utf8").startsWith("original"));
 	} finally { rmSync(dir, { recursive: true, force: true }); }
 });

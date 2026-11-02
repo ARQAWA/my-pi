@@ -1,3 +1,4 @@
+import { descriptions } from "./extensions/RQW-tools/descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +7,7 @@ import test from "node:test";
 import { createFauxCore, fauxAssistantMessage, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
 import registerAgent from "../extensions/RQW-agent/index.ts";
+import { adoptSource, takeFrom } from "./extensions/RQW-agent/consumer.ts";
 import { installRqwTools } from "../extensions/RQW-tools/index.ts";
 
 test("real RQW-tools definitions reach default and nested children", async t => {
@@ -49,17 +51,18 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 		registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand() {}, registerEntryRenderer() {},
 		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
 		getSettings: () => ({ shellPath: "/nonexistent/rqw-guard-shell", retry: { enabled: false }, compaction: { enabled: false } }),
-		getThinkingLevel: () => "off", getActiveTools: () => [],
+		getThinkingLevel: () => "off", getActiveTools: () => [], getAllTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	installRqwTools(pi);
+	installRqwTools(pi, { descriptions });
 	registerAgent(pi);
 	t.after(async () => { for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx); });
 	const call = (id: string, params: any) => tools.get("agent").execute(id, params, ctx.signal, undefined, ctx);
+	const source = await adoptSource(pi, hooks, ctx);
 	await call("start", { action: "start", task: "outer" });
-	await call("outer/wait", { action: "wait", ids: ["agent#1"] });
+	await takeFrom(source, () => {});
 	// The outer child finishes while its nested child may still run; let that child finish too.
-	for (let turn = 0; turn < 200 && !requests.some((item: any) => item.messages.some((message: any) => message.toolCallId === "nested-read")); turn++)
+	for (let turn = 0; turn < 20000 && !requests.some((item: any) => item.messages.some((message: any) => message.toolCallId === "nested-read")); turn++)
 		await new Promise(resolve => setImmediate(resolve));
 	for (const task of ["outer", "nested"]) {
 		const request = requests.find((item: any) => item.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === task)

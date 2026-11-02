@@ -15,13 +15,13 @@ type Host = {
 type Prototype = { init: Host["init"] & { [PATCHED]?: true } };
 
 /**
- * Runtime patch of Pi 1.4.0's `InteractiveMode.prototype.init` ([D-SCOPE-RUNTIME-PATCH]). Before the first paint a chat
+ * Runtime patch of Pi 1.5.0's `InteractiveMode.prototype.init` ([D-SCOPE-RUNTIME-PATCH]). Before the first paint a chat
  * started in a system folder moves to the temp folder; then init runs as usual on the new runtime. Installed once per
  * process and inert after the first init. Returns the restore function, or undefined for an unknown shape.
  */
 export function installTempCwd(prototype: Prototype = InteractiveMode.prototype as unknown as Prototype, options: MoveOptions = {}, version = VERSION): (() => void) | undefined {
 	const original = prototype.init;
-	if (version !== "1.4.0" || typeof original !== "function") return undefined;
+	if (version !== "1.5.0" || typeof original !== "function") return undefined;
 	// A later load of the extension (its new runtime, /reload) finds the patch already there.
 	if (original[PATCHED]) return () => undefined;
 	const started = new WeakSet<object>();

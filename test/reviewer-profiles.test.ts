@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { loadSkills } from "@earendil-works/pi-coding-agent";
+import { keyHint, keyText, loadSkills } from "@earendil-works/pi-coding-agent";
 import { parse } from "smol-toml";
 import { ProfileCatalogue } from "../extensions/RQW-agent/profiles.ts";
 import { createAgentCard } from "../extensions/RQW-agent-ui/card.ts";
@@ -17,7 +17,7 @@ test("the reviewer's first line is the one the agent card reads", () => {
 	assert.ok(template, "the answer template carries the numbered first line");
 	const answer = [template.replace("<N>", "2"), "FINDING 1", "SEVERITY: P2", "FINDING 2", "SEVERITY: P3", "CHECKED: guard.ts"].join("\n");
 	const card = createAgentCard({ role: "custom", customType: "agent", content: `[agent#5] ${answer}`, details: { outcome: "finished" }, display: true, timestamp: 0 } as never,
-		{ expanded: false, outputPad: 0 }, { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never)!;
+		{ expanded: false, outputPad: 0, keyText, keyHint }, { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never)!;
 	assert.equal(card.render(80)[0], "agent#5 2 findings");
 });
 

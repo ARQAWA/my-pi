@@ -22,6 +22,22 @@ for (const kind of ["select", "confirm", "input", "custom"] as const) {
 	});
 }
 
+it("keeps an open dialog focused when startup installs the custom editor", async t => {
+	const f = startupHost(t);
+	const { init } = await f.pending();
+	const answer = f.host.createExtensionUIContext().input("OPEN DIALOG", "text");
+	await Promise.resolve();
+	f.proceed.resolve();
+	await init;
+	f.host.renderer.renderNow();
+	assert.match(f.host.renderer.getScreenLines().join("\n"), /OPEN DIALOG/);
+	f.input("answer");
+	f.input("\r");
+	assert.equal(await answer, "answer");
+	f.input("after");
+	assert.equal(f.host.editor.getText(), "after");
+});
+
 for (const kind of ["error", "progress"] as const) {
 	it(`startup ${kind} stays visible over the early panel`, async t => {
 		const f = startupHost(t);

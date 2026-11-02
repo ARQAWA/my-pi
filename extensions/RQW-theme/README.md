@@ -1,6 +1,6 @@
 # RQW-theme
 
-The `RQW-theme` colour theme for Pi 1.4.0, one asset: `theme.json`. It uses only Pi's native theme tokens.
+The `RQW-theme` colour theme for Pi 1.5.0, one asset: `theme.json`. It uses only Pi's native theme tokens.
 The owner's decisions are recorded in [Theme](../../DECISIONS.md#theme).
 
 **Registration.** `package.json` lists the theme in `pi.themes`. RQW-settings selects `RQW-theme` once on first start
@@ -20,8 +20,9 @@ The three card surfaces are direct hex values of option C on the comparison page
 Agent answers (custom messages) have no background: `customMessageBg` is empty and `customMessageLabel` is gold.
 All three cards have about the same OKLCH lightness, 26 %.
 
-No other token reuses these values. The export info panel `infoBg` keeps `panel`, selected rows keep `cardHi`,
-user messages keep `card`.
+No other token reuses these values. The export info panel `infoBg` keeps `panel` and selected rows keep `cardHi`.
+User messages use `userMessageBg` `#36312c`; `muted` is `#b8b3aa` and `dim` is `#96918a`.
+These are direct values; the shared `card`, `smoke` and `steel` variables stay unchanged.
 
 ## Thinking greens
 

@@ -27,7 +27,7 @@ function response(kind: "answer" | "summary" | "tools") {
 	return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
 }
 
-for (const compact of [false, true]) test(`Anthropic fork preserves payload and tool access${compact ? " after compaction" : ""}`, async t => {
+for (const compact of [false, true]) for (const captureOutside of [false, true]) test(`Anthropic fork preserves payload and tool access${compact ? " after compaction" : ""}, capture ${captureOutside ? "outside" : "inside"}`, async t => {
 	const w = await world(t);
 	const parent = SessionManager.create(w.cwd, join(w.base, "parent"));
 	const initial = parent.appendMessage({ role: "user", content: "caller message", timestamp: 1 });
@@ -54,13 +54,35 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 	};
 	const root = Object.create(AgentSession.prototype);
 	root.sessionManager = parent;
-	root.agent = { streamFunction: (m: any, context: any, options: any) => provider.streamSimple(m, context, { ...options, fetch }) };
 	const modelRuntime = {
 		getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true,
 		getAuth: async () => ({ auth: { apiKey: "sk-test" }, env: {} }), checkAuth: async () => ({}), isUsingOAuth: () => false,
 		getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [],
+		stream: (m: any, context: any, options: any) => provider.stream(m, context, { ...options, apiKey: "sk-test", fetch }),
 		streamSimple: (m: any, context: any, options: any) => provider.streamSimple(m, context, { ...options, apiKey: "sk-test", fetch }),
 	};
+	root._modelRuntime = modelRuntime;
+	root._cacheWarmer = { models: modelRuntime };
+	root.agent = { streamFunction: (m: any, context: any, options: any) => modelRuntime.streamSimple(m, context, options) };
+	const ownerKey = Symbol.for("rqw:request-owner:v1");
+	const observed: any[] = [];
+	let parentPayload: unknown;
+	const installCapture = () => {
+		const next = modelRuntime.streamSimple;
+		modelRuntime.streamSimple = (m: any, context: any, options: any) => {
+			const marker = options?.[ownerKey];
+			const owner = marker?.sessionId ?? options?.sessionId;
+			observed.push({ owner, wire: options?.sessionId, kind: marker?.kind, retention: options?.cacheRetention });
+			if (marker?.kind === "cache-replay" || owner !== parent.getSessionId()) return next(m, context, options);
+			const onPayload = options?.onPayload;
+			return next(m, context, { ...options, async onPayload(payload: any, requestModel: any) {
+				const result = await onPayload?.(payload, requestModel) ?? payload;
+				parentPayload = structuredClone(result);
+				return result;
+			} });
+		};
+	};
+	installCapture();
 	const ctx: any = {
 		cwd: w.cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: () => model, hasConfiguredAuth: () => true },
 		isIdle: () => root.isIdle, isProjectTrusted: () => true, getSystemPrompt: () => "caller system", signal: new AbortController().signal, mode: "tui",
@@ -68,6 +90,11 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	let definition: any;
 	const events = createEventBus();
+	let childId: string | undefined;
+	events.on("rqw-codex:session-policy", (request: any) => {
+		childId = request.session.sessionManager.getSessionId();
+		if (captureOutside) queueMicrotask(installCapture);
+	});
 	events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => ["bash", "z_tool"].map(name => ({
 		name, label: name, description: name, parameters: Type.Object({}),
 		execute: async () => { calls.push(name); return { content: [{ type: "text", text: `${name} executed` }], details: {} }; },
@@ -78,7 +105,7 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: compact, keepRecentTokens: 10 } }), getThinkingLevel: () => "low", getActiveTools: () => ["bash"],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
 	try {
 		for (const hook of hooks.get("session_start") ?? []) await hook({}, ctx);
 		await assert.rejects(async () => definition.execute("missing", { action: "start", fork_turns: "all", task: "fork task" }, new AbortController().signal, undefined, ctx), /last provider payload is unavailable/);
@@ -94,6 +121,7 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 		await root.agent.streamFunction(model, context, { apiKey: "sk-test", sessionId: parent.getSessionId(), reasoning: "low", cacheRetention: "long",
 			onPayload(payload: any) { payload.system[0].text += " after hook"; return payload; },
 		}).result();
+		const capturedParent = structuredClone(parentPayload);
 		await definition.execute("call", { action: "start", fork_turns: "all", task: "fork task", tools: ["bash"] }, new AbortController().signal, undefined, ctx);
 		await live.wait(new AbortController().signal);
 		const taskIndex = sent.findIndex((body, index) => index > 0 && JSON.stringify(body.messages.at(-1)).includes("fork task"));
@@ -112,6 +140,11 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 		const expected = structuredClone(sent[0]);
 		expected.messages.push({ role: "user", content: [{ type: "text", text: "fork task" }] });
 		assert.deepEqual(sent[taskIndex], expected);
+		assert.deepEqual(parentPayload, capturedParent);
+		const childRequests = observed.filter(request => request.owner === childId);
+		assert.ok(childRequests.length >= 2);
+		assert.equal(childRequests[0].retention, captureOutside ? undefined : "long");
+		if (!captureOutside) assert.equal(childRequests[0].wire, parent.getSessionId());
 		assert.deepEqual(calls, ["bash"]);
 		assert.match(JSON.stringify(sent[taskIndex + 1].messages), /Tool z_tool not found/);
 		assert.match(JSON.stringify(sent[taskIndex + 1].messages), /"is_error":true/);
@@ -119,5 +152,10 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 		await definition.execute("call-2", { action: "send", id: "agent#1", task: "follow up" }, new AbortController().signal, undefined, ctx);
 		await live.wait(new AbortController().signal);
 		assert.match(JSON.stringify(sent.at(-1).messages), /follow up/);
+		await definition.execute("call-3", { action: "start", fork_turns: "all", task: "second task" }, new AbortController().signal, undefined, ctx);
+		await live.wait(new AbortController().signal);
+		const second = structuredClone(sent[0]);
+		second.messages.push({ role: "user", content: [{ type: "text", text: "second task" }] });
+		assert.deepEqual(sent.at(-1), second);
 	} finally { live.close(); }
 });

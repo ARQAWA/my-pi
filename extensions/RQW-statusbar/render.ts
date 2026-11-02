@@ -31,14 +31,13 @@ export type Role =
 	| "label"
 	| "model"
 	| "path"
-	| "gitClean"
-	| "gitDirty"
+	| "gitBranch"
 	| "staged"
 	| "unstaged"
 	| "untracked"
 	| "sep"
 	| "info"
-	| "predictionAbort"
+	| "suggestionAbort"
 	| "effort";
 export type Paint = (role: Role, text: string, level?: string) => string;
 export const plain: Paint = (_role, text) => text;
@@ -46,6 +45,26 @@ export const plain: Paint = (_role, text) => text;
 /** Metadata must not create terminal rows or carry terminal commands. */
 export function singleLine(text: string): string {
 	return stripVTControlCharacters(text).replace(/[\r\n\t]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "").replace(/ +/g, " ").trim();
+}
+
+/** Statuses may carry SGR styling, but no other terminal commands or extra rows. */
+function statusLine(text: string): string {
+	const controls = /(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c|$)|(?:\x1b[PX^_]|[\x90\x98\x9e\x9f])[\s\S]*?(?:\x1b\\|\x9c|$)|\x1b\[[0-9;]*m/g;
+	const clean = (part: string) => stripVTControlCharacters(part).replace(/[\r\n\t]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+	let result = "";
+	let start = 0;
+	let styled = false;
+	for (const match of text.matchAll(controls)) {
+		result += clean(text.slice(start, match.index));
+		if (/^\x1b\[[0-9;]*m$/.test(match[0])) {
+			result += match[0];
+			styled = true;
+		}
+		start = match.index + match[0].length;
+	}
+	result += clean(text.slice(start));
+	result = result.replace(/ +/g, " ").trim();
+	return result + (styled ? "\x1b[0m" : "");
 }
 
 export type PlaceKind = "folder" | "scratch" | "worktree";
@@ -67,7 +86,8 @@ export interface BarState {
 	/** GPT Fast of the main chat: the lightning right after the model name, before the thinking level. `frame` is the shimmer step while the agent works, undefined when idle. */
 	fast?: { frame?: number };
 	backgroundFrame?: number;
-	prediction?: { state: "brewing"; frame: number } | { state: "aborted" };
+	namingFrame?: number;
+	suggestion?: { state: "brewing"; frame: number } | { state: "aborted" };
 	/** Texts other extensions set with `ctx.ui.setStatus`, in key order. */
 	statuses: string[];
 }
@@ -203,7 +223,7 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 		? ` ${paint("model", name)} ${fastMark(state.fast.frame)}${shownLevel}`
 		: ` ${paint("model", name)}${shownLevel}`;
 	const dot = ` ${paint("sep", "·")} `;
-	const statuses = state.statuses.map(singleLine).filter(Boolean);
+	const statuses = state.statuses.map(statusLine).filter(status => stripVTControlCharacters(status).length > 0);
 	if (statuses.length > 0) left += dot + statuses.join(dot);
 	const right = state.compactions === undefined ? [] : [paint("label", `cmp ${state.compactions}`)];
 	if (state.rate !== undefined && Number.isFinite(state.rate) && state.rate > 0) {
@@ -211,6 +231,10 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 	}
 	const warning = singleLine(state.warning ?? "");
 	const rightText = right.join(dot);
+	const styledStatuses = statuses.filter(status => /\x1b\[[0-9;]*m/.test(status));
+	if (styledStatuses.length && visibleWidth(left) + visibleWidth(rightText) + 1 > width) {
+		return fit(styledStatuses.join(dot), width);
+	}
 	if (warning && visibleWidth(left) + visibleWidth(rightText) + visibleWidth(warning) + 3 <= width) {
 		return leftRight(left, `${paint("warning", warning)}  ${rightText}`, width);
 	}
@@ -220,30 +244,30 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 /** The git part: branch and the counts of unstaged `*`, staged `+` and untracked `?` files. */
 export function gitText(git: BarState["git"], paint: Paint = plain): string {
 	if (!git) return "";
-	const dirty = git.staged + git.unstaged + git.untracked > 0;
 	const marks: string[] = [];
 	if (git.unstaged > 0) marks.push(paint("unstaged", `*${git.unstaged}`));
 	if (git.staged > 0) marks.push(paint("staged", `+${git.staged}`));
 	if (git.untracked > 0) marks.push(paint("untracked", `?${git.untracked}`));
 	if (!git.branch && marks.length === 0) return "";
 	const head = git.branch ? `${ICON.branch} ${singleLine(git.branch)}` : "";
-	return paint(dirty ? "gitDirty" : "gitClean", head) + (marks.length > 0 ? `${head ? " " : ""}${marks.join(" ")}` : "");
+	return paint("gitBranch", head) + (marks.length > 0 ? `${head ? " " : ""}${marks.join(" ")}` : "");
 }
 
 /** Row 3: the working place and background states on the left, git on the right. */
 export function placeRow(state: BarState, width: number, paint: Paint = plain, right = gitText(state.git, paint)): string {
-	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.prediction ? (state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : ""].filter(Boolean);
+	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.suggestion ? (state.suggestion.state === "brewing" ? "suggestion" : "suggestion aborted") : "", state.namingFrame !== undefined ? "naming" : ""].filter(Boolean);
 	const reserved = labels.reduce((sum, label) => sum + 2 + visibleWidth(label), 0);
 	const rightWidth = right ? visibleWidth(right) + 1 : 0;
 	const folderText = ` ${ICON[state.place.kind]} ${singleLine(state.place.text)}`;
 	let left = paint("path", fitPlain(folderText, Math.max(0, width - rightWidth - reserved)));
 	if (state.backgroundFrame !== undefined) left += "  " + shimmerText("bg compaction", visibleWidth(left) + 2, state.backgroundFrame, GOLD);
-	if (state.prediction) {
-		const text = state.prediction.state === "brewing"
-			? shimmerText("prediction", visibleWidth(left) + 2, state.prediction.frame, SILVER)
-			: paint("predictionAbort", "prediction aborted");
+	if (state.suggestion) {
+		const text = state.suggestion.state === "brewing"
+			? shimmerText("suggestion", visibleWidth(left) + 2, state.suggestion.frame, SILVER)
+			: paint("suggestionAbort", "suggestion aborted");
 		left += "  " + text;
 	}
+	if (state.namingFrame !== undefined) left += "  " + shimmerText("naming", visibleWidth(left) + 2, state.namingFrame, SILVER);
 	return leftRight(left, right, width);
 }
 
@@ -251,26 +275,28 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain, r
 export function placeLayout(state: BarState, width: number, paint: Paint = plain): { first: () => string; rest: string[] } {
 	const quotas = state.quotas && quotaText(state.quotas);
 	const git = gitText(state.git, paint);
-	if (!quotas && state.backgroundFrame === undefined && !state.prediction)
+	if (!quotas && state.backgroundFrame === undefined && !state.suggestion && state.namingFrame === undefined)
 		return { first: () => placeRow(state, width, paint, git), rest: [] };
 	const right = [quotas, git].filter(Boolean).join("  ");
 	const statusWidth = (state.backgroundFrame === undefined ? 0 : 2 + visibleWidth("bg compaction")) +
-		(state.prediction ? 2 + visibleWidth(state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : 0);
+		(state.suggestion ? 2 + visibleWidth(state.suggestion.state === "brewing" ? "suggestion" : "suggestion aborted") : 0) +
+		(state.namingFrame !== undefined ? 2 + visibleWidth("naming") : 0);
 	if (width > 0 && statusWidth > width) {
 		const rows: string[] = [];
 		if (state.backgroundFrame !== undefined) {
 			if (width >= visibleWidth("bg compaction") + 2) {
-				rows.push(placeRow({ ...state, prediction: undefined }, width, paint, ""));
+				rows.push(placeRow({ ...state, suggestion: undefined, namingFrame: undefined }, width, paint, ""));
 			} else {
 				rows.push(...wrapTextWithAnsi(shimmerText("bg compaction", 0, state.backgroundFrame, GOLD), width));
 			}
 		}
-		if (state.prediction) {
-			const text = state.prediction.state === "brewing"
-				? shimmerText("prediction", 0, state.prediction.frame, SILVER)
-				: paint("predictionAbort", "prediction aborted");
+		if (state.suggestion) {
+			const text = state.suggestion.state === "brewing"
+				? shimmerText("suggestion", 0, state.suggestion.frame, SILVER)
+				: paint("suggestionAbort", "suggestion aborted");
 			rows.push(...wrapTextWithAnsi(text, width));
 		}
+		if (state.namingFrame !== undefined) rows.push(...wrapTextWithAnsi(shimmerText("naming", 0, state.namingFrame, SILVER), width));
 		if (right) rows.push(...wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width)));
 		return { first: () => rows[0] ?? "", rest: rows.slice(1) };
 	}
@@ -529,18 +555,22 @@ export interface ActivityChrome {
 /** Spaces between the status text and its key hint. */
 const HINT_GAP = 2;
 
-/**
- * The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty.
- * `paintHint` styles the key hint (dim italic); the caller caches it.
- */
-export function activityRows(width: number, chrome: ActivityChrome | undefined, paintHint: (hint: string) => string = (hint) => hint): string[] {
-	if (!chrome) return [];
-	if (width <= 0) return ["", ""];
+/** The one dim line with the number of idle subagents (asleep or interrupted too); absent at zero. Prepared separately so the shimmer never repaints it. */
+export function idleRows(width: number, idle: number, paint: (role: "dim", text: string) => string): string[] {
+	if (idle === 0) return [];
+	return [paint("dim", fitPlain(` ${idle} idle ${idle === 1 ? "agent" : "agents"}`, width))];
+}
+
+/** Pi supplies one leading spacer; a visible widget ends with one empty row. */
+export function activityRows(width: number, chrome: ActivityChrome | undefined, paintHint: (hint: string) => string = (hint) => hint, agents: string[] = []): string[] {
+	if (!chrome && agents.length === 0) return [];
+	if (!chrome) return [...agents, ""];
+	if (width <= 0) return ["", ...agents, ""];
 	const text = fitPlain(singleLine(chrome.text), width - 1);
 	const label = " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER));
 	const hint = singleLine(chrome.hint ?? "");
 	const fits = hint !== "" && width - 1 - visibleWidth(text) - HINT_GAP >= visibleWidth(hint);
-	return [fits ? label + " ".repeat(HINT_GAP) + paintHint(hint) : label, ""];
+	return [fits ? label + " ".repeat(HINT_GAP) + paintHint(hint) : label, ...agents, ""];
 }
 
 /** A run of the top border: a rule, the hint, the title or the session ID. */

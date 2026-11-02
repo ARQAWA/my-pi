@@ -84,7 +84,8 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 	let wake: (() => void) | undefined;
 	const drive = <T>(run: () => T): T => { driving = true; try { return run(); } finally { driving = false; } };
 	const refreshed = () => new Promise<void>(done => { wake = done; });
-	const requestRender = () => { if (!driving) wake?.(); };
+	let repaints = 0;
+	const requestRender = () => { if (!driving) { repaints++; wake?.(); } };
 
 	const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
 	let command: unknown;
@@ -139,5 +140,13 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 	await polled;
 	assert.equal(gitRuns, afterWrite + GIT_RUNS_PER_REFRESH);
 	assert.match(shown(), /\*2/);
+
+	// A poll that finds the same state asks for no repaint.
+	const afterChange = gitRuns;
+	const repaintsBefore = repaints;
+	drive(() => t.mock.timers.tick(10_000));
+	while (gitRuns < afterChange + GIT_RUNS_PER_REFRESH) await new Promise<void>(done => setImmediate(done));
+	await new Promise<void>(done => setImmediate(done));
+	assert.equal(repaints, repaintsBefore);
 	await handlers.get("session_shutdown")!({}, ctx);
 });

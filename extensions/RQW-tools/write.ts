@@ -1,6 +1,7 @@
+import path from "node:path";
 import { Type } from "typebox";
-import { resolvePath, writePathKeys } from "./keys.ts";
-import { withFileLock } from "./lock.ts";
+import { lockPathKey, writePathKeys } from "./keys.ts";
+import { abortable, withFileLock } from "./lock.ts";
 import { withRetry } from "./retry.ts";
 
 // Multi-file write over the stock write definition (design decision 5).
@@ -39,7 +40,13 @@ export function prepareWriteArguments(input: any): any {
 	return files === input.files ? input : { ...input, files };
 }
 
-const isInside = (outer: string, inner: string) => inner.startsWith(outer.endsWith("/") ? outer : outer + "/");
+function isInside(outer: string, inner: string): boolean {
+	if (path.sep === "\\") {
+		outer = outer.replaceAll("\\", "/");
+		inner = inner.replaceAll("\\", "/");
+	}
+	return inner.startsWith(outer.endsWith("/") ? outer : outer + "/");
+}
 
 export async function executeWrite(stockExecute: any, id: string, params: any, signal: any, onUpdate: any, ctx: any, cwd: string) {
 	const base = ctx?.cwd || cwd;
@@ -61,18 +68,19 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 		files = [{ path: params.path, content: params.content }];
 	}
 
-	const keys = writePathKeys(files.map((file) => file.path), base, signal);
+	const keys = await abortable(() => writePathKeys(files.map((file) => file.path), base, signal), signal);
 	for (let i = 0; i < files.length; i++) {
 		for (let j = i + 1; j < files.length; j++) {
 			const a = keys[i], b = keys[j];
-			if (a.key === b.key || (a.leaf !== undefined && a.leaf === b.leaf)) throw new Error(`files lists ${files[j].path} twice`);
-			if (isInside(a.key, b.key)) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
-			if (isInside(b.key, a.key)) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
+			if (a.key === b.key || (a.leaf !== undefined && a.leaf === b.leaf) ||
+				(a.canonical !== undefined && a.canonical === b.canonical)) throw new Error(`files lists ${files[j].path} twice`);
+			if (isInside(a.key, b.key) || (a.canonical && b.canonical && isInside(a.canonical, b.canonical))) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
+			if (isInside(b.key, a.key) || (a.canonical && b.canonical && isInside(b.canonical, a.canonical))) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
 		}
 	}
 
-	const runFile = (file: { path: string; content: string }) =>
-		withFileLock(resolvePath(file.path, base), () =>
+	const runFile = async (file: { path: string; content: string }) =>
+		withFileLock(await abortable(() => lockPathKey(file.path, base), signal), () =>
 			withRetry<{ details?: unknown }>(() => stockExecute(id, { path: file.path, content: file.content }, signal, onUpdate, ctx), signal), signal);
 
 	if (files.length === 1) return runFile(files[0]);

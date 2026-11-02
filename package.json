@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --experimental-test-isolation=none \"test/extensions/*/*.test.ts\" \"test/*.test.ts\" \"pcli-vscode/test/*.test.mjs\"",
+    "test": "node --test --experimental-test-isolation=none --test-reporter=./scripts/test-reporter.mjs \"test/extensions/*/*.test.ts\" \"test/*.test.ts\" \"pcli-vscode/test/*.test.mjs\"",
     "lint": "oxlint --config .oxlintrc.json extensions test .pi",
     "knip": "knip --config knip.config.mjs --cache --no-progress --reporter compact --max-show-issues 20",
     "check": "node scripts/check.mjs",
@@ -15,7 +15,7 @@
     "pi-package"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "typebox": "*"
   },
   "pi": {
@@ -43,23 +43,25 @@
       "./extensions/RQW-tool-ui/index.ts",
       "./extensions/RQW-blocks/index.ts",
       "./extensions/RQW-skill-dollar/index.ts",
+      "./extensions/RQW-todo/index.ts",
       "./extensions/RQW-history-edit/index.ts",
       "./extensions/RQW-dyslexia/index.ts",
       "./extensions/RQW-live-tail/index.ts",
       "./extensions/RQW-codex-compat/index.ts",
       "./extensions/RQW-tabs-link/index.ts",
       "./extensions/RQW-btw/index.ts",
-      "./extensions/RQW-predictions/index.ts",
+      "./extensions/RQW-suggestions/index.ts",
       "./extensions/RQW-browser/index.ts",
-      "./extensions/RQW-cwd/index.ts"
+      "./extensions/RQW-cwd/index.ts",
+      "./extensions/RQW-links/index.ts"
     ],
     "themes": [
       "./extensions/RQW-theme/theme.json"
     ]
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "@types/node": "22.20.5",
     "@types/ws": "8.18.2",
     "knip": "6.43.0",
@@ -69,8 +71,12 @@
   },
   "dependencies": {
     "@puppeteer/browsers": "3.0.6",
-    "puppeteer-core": "25.3.0",
+    "puppeteer-core": "25.16.0",
     "smol-toml": "1.9.1",
     "ws": "8.22.0"
+  },
+  "overrides": {
+    "undici": "8.12.3",
+    "minimatch": "11.0.4"
   }
 }

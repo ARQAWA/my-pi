@@ -82,10 +82,36 @@ it("shows the background count and stop hint while the main run is idle", async 
 	} });
 	s.hint.text = "esc esc to stop background";
 	const rows = s.rows();
-	assert.equal(strip(rows.render(100)[0]), " Background: 2 agents, 1 background process  esc esc to stop background");
+	assert.equal(strip(rows.render(100)[0]), " Waiting for 2 agents, 1 background process  esc esc to stop background");
 	counts = { agents: 0, backgroundProcesses: 0 };
 	listener?.(counts);
 	assert.deepEqual(rows.render(100), []);
+});
+
+it("shows one dim idle-agents line instead of agent rows, cached until the list changes", async (t) => {
+	const s = await setup(t);
+	const colors: Record<string, string> = { muted: "35", dim: "90", text: "37" };
+	s.ctx.ui.theme.fg = (role: string, text: string) => `\x1b[${colors[role]}m${text}\x1b[39m`;
+	let counts: { agents: number; idleAgents?: number } = { agents: 2, idleAgents: 3 };
+	let notify: (value: unknown) => void = () => {};
+	s.events.emit("rqw:running-counts:offer", { version: 1, source: {
+		version: 1, snapshot: () => counts, subscribe: (listener: typeof notify) => { notify = listener; return () => {}; },
+	} });
+	s.start();
+	const rows = s.rows();
+	const active = rows.render(80);
+	assert.deepEqual(active.map(strip), [" Planning next moves · 2 agents", " 3 idle agents", ""]);
+	assert.match(active[1], /\x1b\[90m 3 idle agents\x1b\[39m/);
+	// A later shimmer frame reuses the already-painted idle line.
+	s.clock.now += 100;
+	assert.equal(rows.render(80)[1], active[1]);
+	counts = { agents: 0, idleAgents: 1 };
+	notify(counts);
+	await s.handlers.get("agent_settled")!({}, s.ctx);
+	assert.deepEqual(rows.render(80).map(strip), [" 1 idle agent", ""]);
+	counts = { agents: 1 };
+	notify(counts);
+	assert.deepEqual(rows.render(80).map(strip), [" Waiting for 1 agent", ""]);
 });
 
 it("paints the hint once per text and reuses the rows of an unchanged frame", async (t) => {

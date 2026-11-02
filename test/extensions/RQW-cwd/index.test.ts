@@ -58,7 +58,7 @@ const options = () => ({ platform, home, target, chdir: () => undefined }) as co
 
 it("init in the home folder runs once on the temp runtime with the footer rebound, and later inits do not move again", async () => {
 	const proto = prototype();
-	registerTempCwd({ on: () => undefined } as unknown as ExtensionAPI, proto, options(), "1.4.0");
+	registerTempCwd({ on: () => undefined } as unknown as ExtensionAPI, proto, options(), "1.5.0");
 	const chat = Object.assign(Object.create(proto), host(home));
 	await chat.init();
 	await chat.init();
@@ -68,7 +68,7 @@ it("init in the home folder runs once on the temp runtime with the footer reboun
 
 it("a failed move keeps the original chat and shows the warning after init", async () => {
 	const proto = prototype();
-	installTempCwd(proto, options(), "1.4.0");
+	installTempCwd(proto, options(), "1.5.0");
 	const chat = Object.assign(Object.create(proto), host(home, target));
 	await chat.init();
 	assert.equal(log[0], `init ${home}`);
@@ -77,7 +77,7 @@ it("a failed move keeps the original chat and shows the warning after init", asy
 
 it("a footer without its binding methods keeps the stock chat and warns", async () => {
 	const proto = prototype();
-	installTempCwd(proto, options(), "1.4.0");
+	installTempCwd(proto, options(), "1.5.0");
 	const chat = Object.assign(Object.create(proto), host(home), { footer: {} });
 	const first = chat.runtimeHost.session;
 	await chat.init();
@@ -88,11 +88,11 @@ it("a footer without its binding methods keeps the stock chat and warns", async 
 it("a second load does not wrap twice, restore brings stock back, and a project chat is not moved", async () => {
 	const proto = prototype();
 	const stock = proto.init;
-	installTempCwd(proto, options(), "1.4.0")?.();
+	installTempCwd(proto, options(), "1.5.0")?.();
 	assert.equal(proto.init, stock);
-	installTempCwd(proto, options(), "1.4.0");
+	installTempCwd(proto, options(), "1.5.0");
 	const once = proto.init;
-	installTempCwd(proto, options(), "1.4.0");
+	installTempCwd(proto, options(), "1.5.0");
 	assert.equal(proto.init, once);
 	const chat = Object.assign(Object.create(proto), host(join(home, "project")));
 	await chat.init();
@@ -105,7 +105,7 @@ it("the extension patches Pi's real InteractiveMode, and another Pi version keep
 	const proto = prototype();
 	const stock = proto.init;
 	const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-	registerTempCwd({ on: (name: string, handler: never) => handlers.set(name, handler) } as unknown as ExtensionAPI, proto, options(), "1.5.0");
+	registerTempCwd({ on: (name: string, handler: never) => handlers.set(name, handler) } as unknown as ExtensionAPI, proto, options(), "1.6.0");
 	assert.equal(proto.init, stock);
 	const ctx = (cwd: string) => ({ cwd, hasUI: true, ui: { notify: (message: string) => log.push(message) } });
 	handlers.get("session_start")?.({ reason: "startup" }, ctx(home));

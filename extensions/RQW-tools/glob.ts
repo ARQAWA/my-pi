@@ -2,7 +2,7 @@ import path from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
-	baseArgs, dropNulls, failureOf, FOOTER_RESERVE, fitPrefix, incompleteReason, inspectRoot, listPaths, OUTPUT_BYTES, readDescription,
+	baseArgs, dropNulls, failureOf, FOOTER_RESERVE, fitPrefix, incompleteReason, inspectRoot, listPaths, OUTPUT_BYTES,
 	resolveRipgrep, SCAN_ENTRIES, SEARCH_TIMEOUT_MS, type RgOptions,
 } from "./rg.ts";
 import { createPolicy, resolveInputPath } from "./search-policy.ts";
@@ -27,11 +27,11 @@ export function recursivePattern(input: unknown, platform: NodeJS.Platform = pro
 	return pattern.startsWith("**/") ? pattern : `**/${pattern}`;
 }
 
-export function createGlobToolDefinition(cwd: string, options: RgOptions = {}): ToolDefinition<any, any, any> {
+export function createGlobToolDefinition(cwd: string, description: string, options: RgOptions = {}): ToolDefinition<any, any, any> {
 	return {
 		name: "rqw_glob",
 		label: "glob",
-		description: readDescription("rqw_glob"),
+		description,
 		promptSnippet: "Find files by glob pattern, newest first (respects .gitignore)",
 		parameters: globSchema,
 		prepareArguments: (input: unknown) => dropNulls(input, ["glob_pattern"]) as any,

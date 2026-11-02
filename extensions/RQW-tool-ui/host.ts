@@ -13,7 +13,8 @@ type Owner = {
 	runtime?: object;
 	stopped: boolean;
 };
-type Hub = { owners: WeakMap<Function, Owner>; hosts: WeakMap<object, Owner>; count: number };
+type Glue = { init(host: Host): void; prepare(host: Host): void; stopped(host: Host): void };
+type Hub = { owners: WeakMap<Function, Owner>; hosts: WeakMap<object, Owner>; count: number; run?: Glue; restore?: () => void };
 
 function resources(host: Host): { session: any; runtime: object; extensions: any[] } | undefined {
 	try {
@@ -77,22 +78,42 @@ function prepare(hub: Hub, host: Host): void {
 	}
 }
 
+/** What the process-wide hooks run. The newest module instance owns it, so /reload applies new code. */
+const glue = (hub: Hub): Glue => ({
+	init(host) {
+		const owner = ownerFor(hub, host);
+		if (owner) owner.host = host;
+	},
+	prepare: (host) => prepare(hub, host),
+	stopped(host) {
+		const owner = hub.hosts.get(host);
+		if (owner) forget(owner);
+		if (hub.hosts.delete(host)) hub.count--;
+		if (hub.count === 0) hub.restore?.();
+	},
+});
+
 function install(): Hub | undefined {
 	const global = globalThis as Record<symbol, unknown>;
-	if (global[SLOT]) return global[SLOT] as Hub;
+	const existing = global[SLOT] as Hub | undefined;
+	if (existing) {
+		// A hub of an earlier release has no glue and keeps its own code until a restart.
+		if (existing.run) existing.run = glue(existing);
+		return existing;
+	}
 	const proto = InteractiveMode.prototype as any;
 	const names = ["init", "renderSessionEntries", "addMessageToChat", "stop"] as const;
 	const descriptors = names.map((name) => Object.getOwnPropertyDescriptor(proto, name));
-	if (VERSION !== "1.4.0" || descriptors.some((d) => !d || typeof d.value !== "function" || !d.writable || !d.configurable)) return;
+	if (VERSION !== "1.5.0" || descriptors.some((d) => !d || typeof d.value !== "function" || !d.writable || !d.configurable)) return;
 	const hub: Hub = { owners: new WeakMap(), hosts: new WeakMap(), count: 0 };
+	hub.run = glue(hub);
 	const [init, render, add, stop] = descriptors.map((d) => d!.value);
 	proto.init = function (this: Host, ...args: unknown[]) {
-		const owner = ownerFor(hub, this);
-		if (owner) owner.host = this;
+		hub.run?.init(this);
 		return init.apply(this, args);
 	};
 	proto.renderSessionEntries = function (this: Host, ...args: unknown[]) {
-		prepare(hub, this);
+		hub.run?.prepare(this);
 		return render.apply(this, args);
 	};
 	proto.addMessageToChat = function (this: Host, ...args: unknown[]) {
@@ -104,17 +125,14 @@ function install(): Hub | undefined {
 	};
 	proto.stop = function (this: Host, ...args: unknown[]) {
 		try { return stop.apply(this, args); }
-		finally {
-			const owner = hub.hosts.get(this);
-			if (owner) forget(owner);
-			if (hub.hosts.delete(this)) hub.count--;
-			if (hub.count === 0 && names.every((name, i) => proto[name] === wrappers[i])) {
-				for (let i = 0; i < names.length; i++) Object.defineProperty(proto, names[i], descriptors[i]!);
-				if (global[SLOT] === hub) delete global[SLOT];
-			}
-		}
+		finally { hub.run?.stopped(this); }
 	};
 	const wrappers = names.map((name) => proto[name]);
+	hub.restore = () => {
+		if (!names.every((name, i) => proto[name] === wrappers[i])) return;
+		for (let i = 0; i < names.length; i++) Object.defineProperty(proto, names[i], descriptors[i]!);
+		if (global[SLOT] === hub) delete global[SLOT];
+	};
 	global[SLOT] = hub;
 	return hub;
 }

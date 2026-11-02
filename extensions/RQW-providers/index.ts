@@ -2,7 +2,7 @@ import { AgentSession, ModelRuntime, VERSION, type ExtensionAPI } from "@earendi
 
 // Only these providers stay in login and model lists; credentials of the others stay saved.
 export const ALLOWED = new Set(["anthropic", "openai-codex"]);
-// Pi 1.4.0's native handler map carries this private key: the patched `_bindExtensionCore` tells each loaded
+// Pi 1.5.0's native handler map carries this private key: the patched `_bindExtensionCore` tells each loaded
 // instance which session (and so which runtime) it was bound to, before the session emits any event.
 const BIND = "rqw-providers:session-bind";
 const PATCH = Symbol.for("rqw-providers/patch");
@@ -45,7 +45,7 @@ export type Visibility = {
 	release(): void;
 };
 
-const INCOMPATIBLE = "RQW-providers: incompatible Pi internals; requires Pi 1.4.0. Nothing was patched.";
+const INCOMPATIBLE = "RQW-providers: incompatible Pi internals; requires Pi 1.5.0. Nothing was patched.";
 const SESSION_HOOKS = ["_bindExtensionCore", "dispose"] as const;
 
 function chainsOf(target: object, create: boolean): Map<string, Chain> | undefined {
@@ -120,7 +120,7 @@ function wrapSessionHook(state: PatchState, Session: typeof AgentSession, name: 
 	if (typeof descriptor?.value !== "function" || !descriptor.configurable) throw new Error(INCOMPATIBLE);
 	const wrapped: Link = (name === "dispose" ? function(this: AgentSession, ...args: unknown[]) {
 		if (state.count === 0) return (wrapped[INNER] as Fn).apply(this, args);
-		// Pi 1.4.0 SDK dispose has no shutdown hook: release this session's instances before Pi invalidates its API.
+		// Pi 1.5.0 SDK dispose has no shutdown hook: release this session's instances before Pi invalidates its API.
 		for (const release of [...(state.bound.get(this) ?? [])]) release();
 		return (wrapped[INNER] as Fn).apply(this, args);
 	} : function(this: AgentSession, ...args: unknown[]) {
@@ -137,7 +137,7 @@ function wrapSessionHook(state: PatchState, Session: typeof AgentSession, name: 
 
 /**
  * Hide every provider but `ALLOWED` in the lists of a runtime that has an owning session, and in that session's
- * scoped models. A checked, reference-counted, reversible patch of Pi's exported classes (Pi 1.4.0 has no
+ * scoped models. A checked, reference-counted, reversible patch of Pi's exported classes (Pi 1.5.0 has no
  * visibility policy). The runtime methods and `scopedModels` are restored by their saved descriptors when the last
  * instance releases. The two session hooks (`_bindExtensionCore`, `dispose`) are layers in the shared
  * `rqw:method-chain/v1` chain: `release` removes only this patch's own layers and preserves other owners' layers, and
@@ -229,7 +229,7 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 }
 
 export default function providers(pi: ExtensionAPI) {
-	if (VERSION !== "1.4.0") throw new Error("RQW-providers requires Pi 1.4.0; nothing was changed");
+	if (VERSION !== "1.5.0") throw new Error("RQW-providers requires Pi 1.5.0; nothing was changed");
 	let stopped = false;
 	// Pi's extension API throws once its session was reloaded or disposed; `on` + unsubscribe probes that without effect.
 	const live = () => {

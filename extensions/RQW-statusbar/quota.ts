@@ -8,11 +8,22 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 // Missing sources never imply a full or empty subscription.
 export const QUOTA_REFRESH_MS = 60 * 1000;
 const QUOTA_CHECK_MS = 3 * 60 * 1000;
+// Releases before CXC wrote CX-<account>.json without credits. They may still run in other tabs and
+// would erase the credits from a shared file, so the credits-aware CX record has its own file.
+const CACHE_NAME = { CX: "CX-credits", CC: "CC" } as const;
 // Object order is the display order: credits, Codex weekly quota, Claude weekly quota.
 export const QUOTA_COLORS = { CXC: "139;197;255", CX: "139;197;255", CC: "255;152;170" } as const;
 export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
 type Reading = { percent?: number; credits?: string; okAt?: number; checkedAt?: number };
 type Usage = { percent: number; credits?: string };
+
+/** A first load after the update has no credits-aware file yet: the old file still supplies the last known percent, never a fresh attempt. */
+async function readRecord(file: string, legacyFile?: string): Promise<Reading> {
+	const record = await readCache(file);
+	if (record.checkedAt !== undefined || !legacyFile) return record;
+	const { percent, okAt } = await readCache(legacyFile);
+	return { ...record, percent, okAt };
+}
 
 async function readCache(file: string): Promise<Reading> {
 	try {
@@ -168,30 +179,32 @@ export class QuotaConsumer {
 				const provider = id === "CX" ? "openai-codex" : "anthropic";
 				const credential = this.deps.readCredential(provider);
 				if (!credential) {
-					if (current()) { this.forget(id); delete this.accounts[id]; this.changed(); }
+					if (current()) this.update(() => { this.forget(id); delete this.accounts[id]; });
 					return;
 				}
 				const key = accountKey(credential);
 				if (!key) throw new Error("Quota account unavailable");
 				if (this.accounts[id] !== key) { this.forget(id); this.accounts[id] = key; }
-				const file = join(tmpdir(), "rqw-quota", `${id}-${key}.json`);
+				const file = join(tmpdir(), "rqw-quota", `${CACHE_NAME[id]}-${key}.json`);
+				const legacyFile = id === "CX" ? join(tmpdir(), "rqw-quota", `${id}-${key}.json`) : undefined;
 				const show = (record: Reading) => {
 					if (!current()) return;
-					if (record.percent !== undefined) {
-						const star = isStale(record) ? "*" : "";
-						this.values[id] = `${star}${record.percent}%`;
-						if (id === "CX" && record.credits) this.values.CXC = `${star}${creditsText(record.credits)}`;
-						else if (id === "CX") delete this.values.CXC;
-					} else this.values[id] ??= "???";
-					this.changed();
+					this.update(() => {
+						if (record.percent !== undefined) {
+							const star = isStale(record) ? "*" : "";
+							this.values[id] = `${star}${record.percent}%`;
+							if (id === "CX" && record.credits) this.values.CXC = `${star}${creditsText(record.credits)}`;
+							else if (id === "CX") delete this.values.CXC;
+						} else this.values[id] ??= "???";
+					});
 				};
 				const fresh = (record: Reading) => record.checkedAt !== undefined && Date.now() - record.checkedAt < QUOTA_CHECK_MS;
-				let record = await readCache(file);
+				let record = await readRecord(file, legacyFile);
 				show(record);
 				if (!current() || fresh(record) || !await lockCache(file)) return;
 				try {
 					// Another tab may have finished between our first read and acquiring the lock.
-					record = await readCache(file);
+					record = await readRecord(file, legacyFile);
 					show(record);
 					if (!current() || fresh(record)) return;
 					record.checkedAt = Date.now();
@@ -214,8 +227,14 @@ export class QuotaConsumer {
 					await writeCache(file, record);
 					show(record);
 				} finally { await unlink(`${file}.lock`).catch(() => {}); }
-			} catch { if (current()) { this.values[id] ??= "???"; this.changed(); } }
+			} catch { if (current()) this.update(() => { this.values[id] ??= "???"; }); }
 		}));
+	}
+	/** Asks for a repaint only when the shown values really changed. */
+	private update(change: () => void): void {
+		const before = JSON.stringify(this.values);
+		change();
+		if (JSON.stringify(this.values) !== before) this.changed();
 	}
 	/** CXC comes from the same response as CX, so they go together. */
 	private forget(id: keyof Quotas): void {

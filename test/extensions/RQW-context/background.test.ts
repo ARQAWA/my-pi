@@ -2,12 +2,30 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import * as PiRoot from "@earendil-works/pi-coding-agent";
 import { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
-import { installBackground, prepareSnapshot } from "../../../extensions/RQW-context/background.ts";
-import { harness, WINDOW } from "./harness.ts";
+import { installBackground, maybeStart, prepareSnapshot } from "../../../extensions/RQW-context/background.ts";
+import { harness as createHarness, WINDOW } from "./harness.ts";
+import { saveContextHooks } from "./hooks-cleanup.ts";
+
+let restoreHooks: () => void;
+beforeEach(() => { restoreHooks = saveContextHooks(); });
+const sessions: Array<Awaited<ReturnType<typeof createHarness>>> = [];
+async function harness(...args: Parameters<typeof createHarness>) {
+	const h = await createHarness(...args);
+	sessions.push(h);
+	return h;
+}
+afterEach(async () => {
+	try {
+		for (const h of sessions.splice(0)) {
+			await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never);
+			h.session.dispose();
+		}
+	} finally { restoreHooks(); }
+});
 
 // Test-only oracle: Pi's own pure preparation, which neither package build exports at its root.
 const { prepareCompaction } = await import(new URL("core/compaction/compaction.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href) as {
@@ -27,6 +45,20 @@ async function toBackground(h: Awaited<ReturnType<typeof harness>>) {
 const userIds = (h: Awaited<ReturnType<typeof harness>>) =>
 	h.manager.getBranch().filter((entry: any) => entry.type === "message" && entry.message.role === "user").map((entry) => entry.id);
 
+it("does not read the branch below the background threshold", () => {
+	installBackground({ _runDefaultCompaction() {}, getContextUsage() {}, dispose() {} }, () => true);
+	let branches = 0;
+	const session = {
+		sessionManager: { getBranch() { branches++; return []; }, getSessionId() { return "test"; } },
+		settingsManager: { getCompactionSettings() { return { enabled: true, reserveTokens: 100, keepRecentTokens: 100 }; } },
+		getContextUsage() { return { tokens: 649 }; },
+		async _runDefaultCompaction() { throw new Error("unexpected summary"); },
+	};
+	maybeStart(session, { contextWindow: 1_000 });
+	maybeStart(session, { contextWindow: 1_000 });
+	assert.equal(branches, 0);
+});
+
 describe("RQW-context background compaction: trigger and lifecycle", () => {
 	it("starts one background summary from 65% of W per generation and reports it on the status channel", async () => {
 		const h = await harness();
@@ -40,6 +72,15 @@ describe("RQW-context background compaction: trigger and lifecycle", () => {
 		h.release("S");
 		await h.quiet();
 		assert.deepEqual(h.status, [{ sessionId, active: true }, { sessionId, active: false }]);
+	});
+
+	it("does not recompute usage after this compaction generation already has a candidate", async t => {
+		const h = await harness();
+		await toBackground(h);
+		const usage = t.mock.method(h.session, "getContextUsage");
+		maybeStart(h.session as never, h.session.model);
+		maybeStart(h.session as never, h.session.model);
+		assert.equal(usage.mock.callCount(), 0);
 	});
 
 	it("does not start when compaction is off or an explicit reserve puts Pi's threshold below 65%", async () => {
@@ -301,7 +342,7 @@ describe("RQW-context background compaction: projected snapshot", () => {
 		const previous = shared[key];
 		try {
 			delete shared[key];
-			assert.throws(() => prepareSnapshot(big, settings, 0), RangeError);
+			assert.ok(prepareSnapshot(big, settings, 0));
 			const seen: unknown[] = [];
 			shared[key] = (entries: unknown) => { seen.push(entries); return PiRoot.buildSessionProjection(small as never); };
 			const snapshot = prepareSnapshot(big, settings, 0);

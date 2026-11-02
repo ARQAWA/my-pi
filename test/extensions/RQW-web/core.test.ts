@@ -24,8 +24,10 @@ for (const [caller, { model, efforts }] of Object.entries(MATRIX)) {
 	}
 }
 
-it("passes a GPT caller through as is, including gpt-6.1-terra", () => {
-	assert.deepEqual(mapCaller("openai-codex/gpt-6.1-terra", "high"), { model: "gpt-6.1-terra", effort: "high" });
+it("passes every offered Terra effort through as is", () => {
+	for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+		assert.deepEqual(mapCaller("openai-codex/gpt-6.1-terra", effort), { model: "gpt-6.1-terra", effort });
+	}
 });
 
 it("sends Pi off as native none to a GPT caller that supports none", () => {

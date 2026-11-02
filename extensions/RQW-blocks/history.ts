@@ -94,13 +94,17 @@ export function installHistory(prototype: any = InteractiveMode.prototype, befor
 	const lazy = createLazy(render, typeof switchMode === "function");
 	// True while Pi stops the TUI: the exit transcript prints only what is drawn, so quitting stays instant on a long branch.
 	let stopping = false;
+	// Set by `restore`. A wrapper that another extension covered cannot be removed; it only passes calls through from then on.
+	let dead = false;
 	// Armed by a wrapper, used by the next `renderSessionEntries` call only.
 	let armed: Mode | undefined;
 	const arm = (mode: Mode, run: () => unknown) => {
+		if (dead) return run();
 		armed = mode;
 		try { return run(); } finally { armed = undefined; }
 	};
 	prototype.renderSessionEntries = function (this: Host, entries: Entry[], options?: unknown) {
+		if (dead) return render.call(this, entries, options);
 		const mode = armed;
 		armed = undefined;
 		if (beforeRender && !beforeRender(this)) return render.call(this, entries, options);
@@ -125,7 +129,7 @@ export function installHistory(prototype: any = InteractiveMode.prototype, befor
 		return result;
 	};
 	if (typeof switchMode === "function") prototype.switchTuiMode = function (this: any, mode: unknown, ...args: unknown[]) {
-		if (mode !== "fullscreen" && !stopping) lazy.loadAll(this);
+		if (!dead && mode !== "fullscreen" && !stopping) lazy.loadAll(this);
 		return switchMode.call(this, mode, ...args);
 	};
 	if (typeof stopTui === "function") prototype.stopInteractiveTui = function (this: unknown, ...args: unknown[]) {
@@ -137,11 +141,13 @@ export function installHistory(prototype: any = InteractiveMode.prototype, befor
 	// Only the synchronous start of the handler matters: both compaction branches clear and draw before their first await.
 	prototype.handleEvent = function (this: unknown, event: any, ...args: unknown[]) {
 		const type = event?.type;
+		if (dead) return handle.call(this, event, ...args);
 		const fresh = type === "compaction_end" ? event.result && !event.aborted : type === "entry_appended" && event.entry?.type === "compaction";
 		return fresh ? arm("prefix", () => handle.call(this, event, ...args)) : handle.call(this, event, ...args);
 	};
 	const installed = new Map(lazyNames.map(key => [key, prototype[key]]));
 	const restore = () => {
+		dead = true;
 		lazy.dispose();
 		for (const key of lazyNames) {
 			if (prototype[key] !== installed.get(key)) continue;

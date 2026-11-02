@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,7 +20,7 @@ test("codemode calls all new tools in parallel and rejects the old name", async 
 		: { stdout: jsonLines(fileEvents("./a.txt", [{ n: 1, text: "hello" }])) };
 	let definition: any;
 	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
-	const all: any[] = createTools(cwd, () => ({}), { codemode: definition, enabled: () => false });
+	const all: any[] = createTools(cwd, () => ({}), { descriptions, codemode: definition, enabled: () => false });
 	const tools = all.filter((tool) => ["rqw_readfile", "rqw_rg", "rqw_glob"].includes(tool.name));
 	const code = all.find((tool) => tool.name === "codemode");
 	const ctx: any = {
@@ -56,7 +57,7 @@ try { await tools.read({ path: "a.txt" }); } catch { text("old name unavailable"
 	assert.ok(fake.calls.some((args) => args.includes("--ignore-case")));
 });
 
-test("codemode job wait yields to the script and leaves the result for a direct wait", async t => {
+test("a script that calls job status sees the finished job as undelivered; its result still arrives once through the source", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const jobs = createJobs();
 	const completion = Promise.withResolvers<any>();
@@ -70,41 +71,35 @@ test("codemode job wait yields to the script and leaves the result for a direct 
 	await running;
 	let definition: any;
 	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
-	const all: any[] = createTools(process.cwd(), () => ({}), { jobs, codemode: definition });
+	const all: any[] = createTools(process.cwd(), () => ({}), { descriptions, jobs, codemode: definition });
 	const code = all.find(tool => tool.name === "codemode");
 	const job = all.find(tool => tool.name === "job");
-	const original = { id: "original", type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: "script", name: "codemode", arguments: {} }] } };
-	const later = { parentId: "original", type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: "later", name: "bash", arguments: {} }] } };
-	const manager = { getBranch: () => [], getSessionId: () => "session", getLeafEntry: () => later, getEntry: () => original };
-	const called = Promise.withResolvers<void>();
-	const returned = Promise.withResolvers<any>();
-	const ctx: any = { cwd: process.cwd(), tools: [job], sessionManager: manager,
+	const ctx: any = { cwd: process.cwd(), tools: [job], sessionManager: { getBranch: () => [] },
 		async executeTool(_name: string, args: any, options: any) {
-			called.resolve();
 			const result = await job.execute("script/1", args, options.signal, undefined, ctx);
-			returned.resolve(result);
 			return { toolCall: { id: "script/1" }, result, isError: false };
 		},
 	};
 	const controller = new AbortController();
 	t.after(() => { controller.abort(); jobs.dispose(); });
-	const script = code.execute("script", { code: 'text(await tools.job({action: "wait", ids: ["job#1"]})); text("script continued");' }, controller.signal, undefined, ctx);
-	await called.promise;
-	const nested = await Promise.race([returned.promise, new Promise(resolve => setImmediate(() => resolve("blocked")))]);
-	assert.notEqual(nested, "blocked");
-	const output: any = await script;
-	assert.match(JSON.stringify(output.content), /direct_wait_required/);
-	assert.match(JSON.stringify(output.content), /script continued/);
 	completion.resolve({ content: [{ type: "text", text: "finished" }] });
 	await jobs.settled("job#1");
-	assert.equal((await job.execute("direct", { action: "wait", ids: ["job#1"] }, undefined, undefined, ctx)).details.results[0].result, "finished");
-	jobs.dispose();
+	const output: any = await code.execute("script", { code: 'text(JSON.stringify(await tools.job({action: "status", ids: ["job#1"]})));' }, controller.signal, undefined, ctx);
+	const shown = JSON.stringify(output.content);
+	assert.match(shown, /result_delivery/);
+	assert.match(shown, /pending/);
+	const auto = jobs.autoSource();
+	const claim = auto.source.claim()!;
+	assert.equal(claim.results[0].text, "finished");
+	auto.source.commit(claim.token);
+	assert.equal(auto.source.claim(), undefined);
+	auto.close();
 });
 
 test("codemode tools.bash rejects a refused command", async () => {
 	let definition: any;
 	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
-	const all: any[] = createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { codemode: definition, enabled: () => false });
+	const all: any[] = createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { descriptions, codemode: definition, enabled: () => false });
 	const bash = all.find(tool => tool.name === "bash");
 	const code = all.find(tool => tool.name === "codemode");
 	const ctx: any = {
@@ -136,7 +131,7 @@ test("a slow new search becomes a cancellable background job", async (t) => {
 	const running = new Promise<void>((resolve) => { started = resolve; });
 	fake.handler = () => { started(); return { hang: true }; };
 	const jobs = createJobs({ backgroundAfterMs: 12 });
-	const rg: any = createTools(cwd, () => ({}), { jobs }).find((tool) => tool.name === "rqw_rg");
+	const rg: any = createTools(cwd, () => ({}), { descriptions, jobs }).find((tool) => tool.name === "rqw_rg");
 	const pending = rg.execute("call", { pattern: "hello" }, undefined, undefined, { cwd });
 	await running;
 	t.mock.timers.tick(12);

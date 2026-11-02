@@ -51,13 +51,13 @@ function digest(access: string): string {
 	return createHash("sha256").update(access).digest("hex").slice(0, 16);
 }
 
-/** Exact Pi 1.4.0 seams and a credential store with read and modify. Checked before anything is patched. */
+/** Exact Pi 1.5.0 seams and a credential store with read and modify. Checked before anything is patched. */
 function assertPi(runtime: ModelRuntime, store: CredentialStore): void {
 	const target = runtime as unknown as Record<string, unknown>;
 	const models = (runtime as unknown as { models?: Record<string, unknown> }).models;
 	const names = ["getAuth", "prepareRequest", "stream", "streamSimple", "composeProvider"] as const;
 	const candidate = store as unknown as Record<string, unknown> | undefined;
-	const ok = VERSION === "1.4.0"
+	const ok = VERSION === "1.5.0"
 		&& names.every(name => typeof target[name] === "function")
 		&& typeof models?.getAuth === "function"
 		&& typeof candidate?.read === "function" && typeof candidate?.modify === "function";
@@ -66,7 +66,7 @@ function assertPi(runtime: ModelRuntime, store: CredentialStore): void {
 			const own = Object.getOwnPropertyDescriptor(object as object, name as string);
 			return own === undefined || own.configurable === true;
 		});
-	if (!ok || !configurable) throw new Error("RQW-codex: incompatible Pi auth seams (requires Pi 1.4.0). Nothing was patched.");
+	if (!ok || !configurable) throw new Error("RQW-codex: incompatible Pi auth seams (requires Pi 1.5.0). Nothing was patched.");
 }
 
 /**

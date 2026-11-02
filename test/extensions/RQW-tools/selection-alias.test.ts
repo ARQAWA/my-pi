@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,7 +8,7 @@ import { AgentSession, createCodemodeExtension, createEventBus, createReadToolDe
 import { createTools, installRqwTools } from "../../../extensions/RQW-tools/index.ts";
 import { defaultSearchSelection, installSelectionAliases } from "../../../extensions/RQW-tools/selection-alias.ts";
 
-function host(allow?: string[], exclude?: string[], codemode?: any, definitions = createTools(process.cwd(), () => ({}), { codemode })) {
+function host(allow?: string[], exclude?: string[], codemode?: any, definitions = createTools(process.cwd(), () => ({}), { descriptions, codemode })) {
 	const registered = definitions.map((definition) => ({ definition, sourceInfo: { source: "extension", path: "test" } }));
 	const session: any = Object.create(AgentSession.prototype);
 	Object.assign(session, {
@@ -135,7 +136,7 @@ test("startup keeps unexcluded default search and does not bypass selection", as
 		setActiveTools: (names: string[]) => session.setActiveToolsByName(names),
 		on(name: string, handler: Function) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 	};
-	installRqwTools(pi);
+	installRqwTools(pi, { descriptions });
 	session = host(undefined, ["grep"], undefined, definitions);
 	const ctx = { sessionManager: session.sessionManager, mode: "print", isIdle: () => true };
 	try {
@@ -162,7 +163,7 @@ test("fallback keeps implicit stock search defaults and backgrounds slow reads",
 		setActiveTools: (names: string[]) => session.setActiveToolsByName(names),
 		on(name: string, handler: Function) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 	};
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	session = host(undefined, undefined, undefined, definitions);
 	session._defaultToolModifiers = undefined;
 	const ctx = { cwd, sessionManager: session.sessionManager, mode: "print", isIdle: () => true };
@@ -210,7 +211,7 @@ test("adapter installation fallback honors modifiers and narrow selections", asy
 	const warn = console.warn;
 	console.warn = () => {};
 	try {
-		installRqwTools(pi);
+		installRqwTools(pi, { descriptions });
 		Object.defineProperty(prototype, "_setActiveTools", originalSet);
 		session = host(undefined, undefined, undefined, definitions);
 		session._defaultToolModifiers = ["-grep"];
@@ -240,7 +241,7 @@ test("an abandoned registration restores Pi's original methods", () => {
 	const refresh = Object.getOwnPropertyDescriptor(prototype, "_refreshToolRegistry");
 	const set = Object.getOwnPropertyDescriptor(prototype, "_setActiveTools");
 	const release = installSelectionAliases();
-	const state = prototype[Symbol.for("rqw/tool-selection-aliases/1.4.0")];
+	const state = prototype[Symbol.for("rqw/tool-selection-aliases/1.5.0")];
 	for (const reference of state.leases) Object.defineProperty(reference, "deref", { value: () => undefined });
 	try {
 		const session = host();

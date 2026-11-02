@@ -4,7 +4,7 @@ const aliases: Record<string, string> = { read: "rqw_readfile", grep: "rqw_rg", 
 const reverse = Object.fromEntries(Object.entries(aliases).map(([old, name]) => [name, old]));
 const currentName = (name: string) => aliases[name] ?? name;
 const oldName = (name: string) => reverse[name] ?? name;
-const HOOK = Symbol.for("rqw/tool-selection-aliases/1.4.0");
+const HOOK = Symbol.for("rqw/tool-selection-aliases/1.5.0");
 
 type Binding = { session: any; allowed: any; excluded: any; modifiers: string[] };
 type State = {
@@ -60,7 +60,7 @@ export function defaultSearchSelection(manager: object, settings: any, legacy = 
 
 /** Selection aliases are applied before Pi filters the registry, never to executable tool names. */
 export function installSelectionAliases(Session: any = AgentSession, version = VERSION): (manager?: object, reload?: boolean) => void {
-	if (version !== "1.4.0") throw new Error(`unsupported Pi version ${version}`);
+	if (version !== "1.5.0") throw new Error(`unsupported Pi version ${version}`);
 	const owner = Session.prototype as any;
 	let refreshDescriptor = Object.getOwnPropertyDescriptor(owner, "_refreshToolRegistry");
 	let setDescriptor = Object.getOwnPropertyDescriptor(owner, "_setActiveTools");

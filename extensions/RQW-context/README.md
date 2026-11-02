@@ -1,6 +1,6 @@
 # RQW-context
 
-Independent context-window and compaction policy for Pi 1.4.0.
+Independent context-window and compaction policy for Pi 1.5.0.
 
 - For each physical model, W = min(contextWindow, 500000), R = Math.round(W / 10).
   Threshold compaction starts strictly above W - R, not at equality.
@@ -13,7 +13,7 @@ Independent context-window and compaction policy for Pi 1.4.0.
 - Explicit global `compaction.reserveTokens` and per-selection
   `compaction.modelOverrides["provider/id"].reserveTokens` keep native precedence when below W.
   A reserve at or above W falls back to R. `compaction.enabled: false` keeps native disabling behavior.
-- Native Pi compaction, summary routing and overflow recovery remain in charge. Pi 1.4.0 compact does not
+- Native Pi compaction, summary routing and overflow recovery remain in charge. Pi 1.5.0 compact does not
   read `preparation.settings`; there is no summary-reserve rebinding or reserve-intent bookkeeping.
   Summary requests use the summarizing model's output limit, not R. Native pi-ai also clamps output to
   the window minus estimated input minus 4096, with a floor of one token. Oversized input and prose-heavy
@@ -45,7 +45,7 @@ Background compaction (`background.ts`):
 - `pi.events` channel `rqw-context:background-compaction` carries `{ sessionId, active }`: true when the request
   starts, false once, as soon as it ends in any way: ready, failed, aborted, stale, superseded by a compaction, session
   shutdown or `dispose()`. A late end of an older request never switches off a newer one.
-- The projected preparation is a local copy of Pi 1.4.0 helpers that neither the npm root nor the compiled bundle
+- The projected preparation is a local copy of Pi 1.5.0 helpers that neither the npm root nor the compiled bundle
   exports. The oracle tests compare it with Pi's `prepareCompaction`; recheck them on every Pi update. Without the
   summary generator seam background compaction stays off and W/R works as before.
 - The projection of the branch goes through `globalThis[Symbol.for("rqw:safe-projection:v1")]` when RQW-history-edit
@@ -57,8 +57,10 @@ Background compaction (`background.ts`):
 - Subagents use it through the shared prototypes, without the status event or the shutdown abort.
 
 Hooks are process-wide while any extension owner remains. `session_shutdown` releases one owner;
-SDK `dispose()` alone does not. Unsupported private Pi boundaries fail at load. Restart Pi after updating
-hook implementations; `/reload` alone is insufficient. The extension can be disabled independently.
+SDK `dispose()` alone does not. Unsupported private Pi boundaries fail at load. Each patched property holds one
+forwarding slot (`hooks.ts`); a reloaded module only replaces what the slot runs, so `/reload` puts the new code
+in effect. A process that started on an older release keeps that release's hooks until Pi is restarted once.
+The extension can be disabled independently.
 
 Tests: `test/extensions/RQW-context/`.
 See [decisions](../../DECISIONS.md#context).
