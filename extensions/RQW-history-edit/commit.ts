@@ -1,15 +1,22 @@
 import { constants, copyFileSync, existsSync, renameSync, rmSync } from "node:fs";
 import type { ImageContent } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { rewriteSession } from "./rewrite.ts";
 
 export type CommitResult = { committed: boolean; retryRestore?: (ctx: ExtensionCommandContext) => Promise<boolean> };
+
+export const NO_SESSION_FILE = "No session file. Open a saved session first.";
+
+export function hasSessionFile(ctx: ExtensionContext): boolean {
+	const path = ctx.sessionManager.getSessionFile();
+	return !!path && existsSync(path);
+}
 
 export async function commitEdit(pi: ExtensionAPI, ctx: ExtensionCommandContext, id: string, text: string, images: ImageContent[] = []): Promise<CommitResult> {
 	const path = ctx.sessionManager.getSessionFile();
 	const ui = ctx.ui;
 	if (!path || !existsSync(path)) {
-		ui.notify("No session file. Open a saved session first.", "warning");
+		ui.notify(NO_SESSION_FILE, "warning");
 		return { committed: false };
 	}
 	if (!ctx.isIdle()) {
@@ -27,6 +34,7 @@ export async function commitEdit(pi: ExtensionAPI, ctx: ExtensionCommandContext,
 	let navigated = false;
 	let committed = false;
 	let failure: unknown;
+	let reopened: ExtensionCommandContext | undefined;
 	try {
 		// Anchor the original branch on disk before navigation or metadata replay.
 		pi.appendEntry("rqw-history-edit", { version: 1 });
@@ -37,18 +45,23 @@ export async function commitEdit(pi: ExtensionAPI, ctx: ExtensionCommandContext,
 		const result = await ctx.navigateTree(id);
 		if (!result.cancelled) {
 			rewriteSession(pi, ctx, path);
+			const cutIds = new Set(ctx.sessionManager.getBranch().map(item => item.id));
 			const switched = await ctx.switchSession(path, {
 				withSession: async fresh => {
+					reopened = fresh;
 					fresh.ui.setEditorText("");
 					try {
 						await fresh.sendUserMessage(images.length ? [{ type: "text", text }, ...images] : text);
 					} catch (error) {
-						fresh.ui.setEditorText(text);
-						fresh.ui.notify(`Message was not sent: ${String(error)}`, "error");
+						// The cut is final once the message is in the history; a later run error must not undo it.
+						// Pi may append settings entries on reopening, so only a new user message counts as accepted.
+						const accepted = fresh.sessionManager.getBranch().some(item => item.type === "message" && item.message.role === "user" && !cutIds.has(item.id));
+						if (!accepted) failure = `the message was not sent (${String(error)})`;
+						else fresh.ui.notify(`The run failed after the message was sent: ${String(error)}`, "error");
 					}
 				},
 			});
-			committed = !switched.cancelled;
+			committed = !switched.cancelled && failure === undefined;
 		}
 	} catch (error) {
 		failure = error;
@@ -85,7 +98,8 @@ export async function commitEdit(pi: ExtensionAPI, ctx: ExtensionCommandContext,
 			return false;
 		}
 	};
-	if (!await restore(ctx)) return { committed: false, retryRestore: restore };
+	// After a reopened session the old command context is stale, so recovery uses the fresh one.
+	if (!await restore(reopened ?? ctx)) return { committed: false, retryRestore: restore };
 	if (failure !== undefined) ui.notify(`History edit failed: ${String(failure)}`, "error");
 	else ui.notify("History edit cancelled.", "warning");
 	return { committed: false };
