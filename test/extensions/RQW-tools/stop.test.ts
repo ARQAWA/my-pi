@@ -22,7 +22,7 @@ test("stop background notice reaches only the owning tools session", async () =>
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });
 
-test("main jobs offer finished results once without changing explicit wait", async t => {
+test("main jobs offer finished results exactly once through the source", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-auto-job-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -53,11 +53,11 @@ test("main jobs offer finished results once without changing explicit wait", asy
 	const next = source.claim();
 	source.commit(next.token);
 	assert.equal(source.claim(), undefined);
-	const wait = await tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
-	assert.equal(wait.details.results[0].id, "job#1");
+	const status = await tools.get("job").execute("status", { action: "status", ids: ["job#1"] });
+	assert.equal(status.details.statuses[0].result_delivery, "delivered");
 });
 
-test("stop kills a searched job under an open wait and sends no message", async t => {
+test("stop kills a searched job; its killed result arrives once through the source and no message is sent", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-stop-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -73,19 +73,24 @@ test("stop kills a searched job under an open wait and sends no message", async 
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
 	await running; t.mock.timers.tick(12); await pending;
-	const waiting = tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
+	let source: any;
+	events.emit("rqw:auto-wait:request:v1", { sessionId: "main", offer: (value: any) => { source = value; } });
+	const ready = Promise.withResolvers<void>();
+	source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
 	const replies: any[] = [];
 	events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (part: any) => replies.push(part) });
 	assert.deepEqual(replies, [{ backgroundProcesses: 1, unstoppable: 0 }]);
-	const wait = await waiting;
-	assert.equal(wait.details.reason, "exit");
-	assert.equal(wait.details.results[0].state, "killed");
+	await ready.promise;
+	const claim = source.claim();
+	assert.deepEqual(claim.results.map((item: any) => [item.id, item.outcome]), [["job#1", "killed"]]);
+	source.commit(claim.token);
+	assert.equal(source.claim(), undefined);
 	assert.equal(fake.killed, 1);
 	assert.deepEqual(messages, []);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });
 
-test("a job that exits under an open wait sends no chat message", async t => {
+test("a job that exits is delivered through the source and sends no chat message itself", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-exit-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -103,12 +108,15 @@ test("a job that exits under an open wait sends no chat message", async t => {
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
 	await fake.started(); t.mock.timers.tick(12); await pending;
-	const waiting = tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
-	await new Promise(resolve => setImmediate(resolve));
+	let source: any;
+	pi.events.emit("rqw:auto-wait:request:v1", { sessionId: "main", offer: (value: any) => { source = value; } });
+	const ready = Promise.withResolvers<void>();
+	source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
 	child.stdout.end(); child.stderr.end(); child.emit("close", 1);
-	const wait = await waiting;
-	assert.equal(wait.details.reason, "exit");
-	assert.equal(wait.details.results[0].state, "exited");
+	await ready.promise;
+	const claim = source.claim();
+	assert.deepEqual(claim.results.map((item: any) => [item.id, item.outcome]), [["job#1", "exited"]]);
+	source.commit(claim.token);
 	await new Promise(resolve => setImmediate(resolve));
 	assert.deepEqual(messages, []);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);

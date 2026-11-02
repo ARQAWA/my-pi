@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, it } from "node:test";
 import { bashCommand, call, keys, reportTimings, text, world } from "./synthetic/world.ts";
+import { untilWake } from "./synthetic/wake.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -41,12 +42,12 @@ it("bash refuses a command that reads a file and starts no process", async (t) =
 	assert.deepEqual(w.processAttempts, []);
 });
 
-it("a bash command still running after 12 s becomes job#1 and job wait returns its result", async (t) => {
+it("a bash command still running after 12 s becomes job#1 and its result arrives automatically", async (t) => {
 	const w = await world(t);
 	const run = w.processes.hold(bashCommand("sleep 30"));
 	w.model.script(
 		call("bash", { command: "sleep 30" }, "b1"),
-		call("job", { action: "wait", ids: ["job#1"], timeout_ms: 60000 }, "j1"),
+		text("started the job"),
 		text("job finished"),
 	);
 	w.type("run it");
@@ -60,8 +61,8 @@ it("a bash command still running after 12 s becomes job#1 and job wait returns i
 	assert.match(toolResultText(w, "b1"), /job#1 \(bash\) is still running after 12 s/);
 
 	run.finish({ stdout: "slept\n" });
-	await w.settle();
+	const delivered = await untilWake(w);
 	w.see("job finished");
-	assert.match(toolResultText(w, "j1"), /job#1/);
-	assert.match(toolResultText(w, "j1"), /slept/);
+	assert.match(delivered, /job#1/);
+	assert.match(delivered, /slept/);
 });

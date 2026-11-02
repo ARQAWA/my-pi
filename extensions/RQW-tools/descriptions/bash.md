@@ -8,5 +8,5 @@ IMPORTANT: Use this tool for terminal operations like git, npm, docker, etc. DO 
 - Run independent commands as parallel bash calls. Chain dependent commands with `&&`.
 - Use the `gh` command via the bash tool for all GitHub-related tasks, including issues, pull requests, checks, and releases.
 - Pipe filters of another command's output are allowed (e.g. git log | grep x); do not use terminal commands to search or read files.
-- A call still running after 12 seconds becomes a job; use job to wait before using its result. timeout kills the command and its child processes; without timeout there is no command deadline.
+- A call still running after 12 seconds becomes a job. Need a result of your agents or jobs? End your turn. Their final results arrive automatically in one message, and you continue. A subagent's own final answer reaches its parent only when nothing it started is still running; stop or kill what you no longer need. timeout kills the command and its child processes; without timeout there is no command deadline.
 - Only the last 2000 lines or 50KiB are shown. Full output is saved to a log file; inspect it with rqw_readfile or rqw_rg. A non-zero exit code is reported as an error.

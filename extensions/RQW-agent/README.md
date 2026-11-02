@@ -40,9 +40,9 @@ The default `fork_turns: "none"` preserves ordinary clean starts. Forking is ava
   one call are an error; on `restart` a new one replaces the old choice, otherwise the old choice is kept. The prompt is
   forced, so Pi appends nothing more.
 - `title` (optional, 3-5 words; `agent` `start` and `restart`, kept on restart) is shown
-  as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
-  `details.title` of historical messages. The package registers RQW-agent-ui before RQW-tool-ui for wait-result
-  cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards.
+  as `title` in `status`, in the display data of a delivered result (`results[i].display.title`) and in the message
+  `details.title` of historical messages. The package registers RQW-agent-ui before RQW-tool-ui for the cards
+  of older stored waits; a result now arrives as one hidden message and has no tool card.
 - The `agent` description and parameter descriptions adapt Codex 0.165.0 texts to this harness. They retain the
   approved trust and result-delivery guidance and describe our lifecycle, profiles and prompt files. The profile list
   is appended under `Available roles:`. No project-specific execution rules.
@@ -145,7 +145,7 @@ Saved child configuration keeps `profile: { name, path, sha256 }` and the resolv
 model and thinking. `resume` uses that saved version even if the file changed or disappeared. `restart`
 re-reads and validates the selected profile before closing the old child; failed validation leaves it intact.
 The profile path and SHA identify the bytes loaded for that child, not the latest file contents. Status and
-message `details.profile` expose the same provenance; waits expose it under `results[i].display.profile`.
+message `details.profile` expose the same provenance; delivered results expose it under `results[i].display.profile`.
 
 RQW-review is one optional provider: it offers `spotty` and `bossy` and discovers native review skills.
 Each reviewer is an ordinary recursive agent; read-only is its role instruction, not tool filtering, a git guard
@@ -162,7 +162,7 @@ A matching inline and file option are an error, as is mixing any system option w
 
 Restart keeps the previous prompt choice unless a new one is supplied. An inherited file choice is re-read before
 the old child is replaced; a changed file therefore changes the new prompt and hash. Failed file/config validation
-leaves the old child intact. Historical message `details.prompt_file` and wait `details.results[i].display.prompt_file`
+leaves the old child intact. Historical message `details.prompt_file` and result `details.results[i].display.prompt_file`
 carry the same `{kind: "system" | "role", path, sha256}` provenance: the absolute resolved path and SHA-256 of the
 bytes actually loaded, not of a later file version. This is prompt-file provenance, not an F2 run manifest.
 
@@ -191,7 +191,7 @@ restart. Without a task, restart remains idle.
   tools. `cacheWarming` stays off. Not copied: UI and terminal settings, default model/thinking and enabled models
   (the child's model is explicit), default tools (explicit allowlist), packages, extensions, skills, prompts and themes
   (children load no resources), branch summaries (no tree navigation), session storage, sharing and telemetry.
-- `job`: an offered set includes RQW-tools' `job` tool and a child-local registry. `jobs.abortAll()` runs on interrupt and `jobs.dispose()` on close. Background jobs survive the caller's Esc and new messages; child interrupt, stop, restart and shutdown end them. `job wait` is an explicit blocking tool call. A running file-tool call finishes on its own.
+- `job`: an offered set includes RQW-tools' `job` tool and a child-local registry. `jobs.abortAll()` runs on interrupt and `jobs.dispose()` on close. Background jobs survive the caller's Esc and new messages; child interrupt, stop, restart and shutdown end them. A job's result reaches the child automatically (see Results arrive automatically). A running file-tool call finishes on its own.
 
 Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
@@ -205,7 +205,7 @@ The generic `RuntimeHandle` in [coordinator.ts](coordinator.ts) connects the cal
 to the session runtime in [index.ts](index.ts). Registration takes the direct caller's API explicitly; there is no
 global caller session. Completed agents keep their history until `stop` or caller shutdown. After exactly five
 finished-idle minutes, an eligible live child releases its SDK session into the same saved-slot restore path.
-Parent wait/status interactions rearm the grace period. Both parent metadata and child history must reopen durably;
+Parent status interactions rearm the grace period. Both parent metadata and child history must reopen durably;
 in-memory or unavailable histories stay awake. The session manager the caller keeps for a sleeping child is released with
 its session, so a sleeping child holds no history in memory. A committed outer codemode handoff may intentionally filter its result.
 Committed delivery run IDs are appended one per line to `<owning-session-file>.children/delivered`.
@@ -224,13 +224,13 @@ Caller Esc leaves accepted agents running and keeps late answers without waking 
 [Results and main abort](#results-and-main-abort).
 
 A subagent's final answer is available to its parent even while descendants continue. The descendant stays in the
-subagent's session and its result stays available to that subagent through an explicit wait in a later run.
+subagent's session and its result reaches that subagent automatically: its loop stays open while the descendant runs and wakes when the result is ready.
 `stop`, `restart` and parent shutdown close that subagent's descendants. `interrupt` aborts pending descendants
 without closing their runtimes. Queued/preflight calls are canceled too, and issued ids stay reserved.
 
 Session state and delivery remain caller-local.
 There is no child-specific execution, turn, token, output-growth or wall-clock limit; provider limits and explicit
-management cancellation still apply. Wait timeout limits the caller's pause, never the child's lifetime.
+management cancellation still apply. Nothing times a child out.
 
 ## Background progress notifications
 
@@ -240,7 +240,7 @@ After 50 non-final assistant responses containing at least one `toolCall`, or af
 communication, whichever comes first, a child starts one background progress summary from its own cached context. Counting happens at `message_end`, before the tools finish: one response is
 one step, regardless of how many tools or nested codemode calls it contains. Text-only responses and terminal
 `stop`, `error`, `length` or `aborted` responses do not count. Only a successful parent `send` or delivered progress
-report resets the counter. `status` and `wait` do not. `progressSteps` lives in the existing `rqw-agent-child`
+report resets the counter. `status` does not. `progressSteps` lives in the existing `rqw-agent-child`
 metadata and survives Pi restart and explicit resume; there is no additional state file. The 30 minute limit is one
 `setTimeout` per running child in `progress.ts` (`PROGRESS_INTERVAL_MS`): no model call, polling or per-frame work. It
 starts with the first tool-call response of a run, restarts on a successful parent `send` or a delivered report, and
@@ -259,7 +259,7 @@ The direct parent receives a notification from the notification mechanism, not a
 (`details.steps` is 50) or, for the timer, `[notification] agent#N has worked 30 minutes without communication.` (no `details.steps`).
 It includes the summary and says the agent continues working. Fixed code text and the embedded skill both ask:
 "Check whether this child has drifted outside its task and still follows the plan in its brief. Decide whether to send
-a correction." The parent decides whether to send anything. This notice neither completes a wait nor claims or
+a correction." The parent decides whether to send anything. This notice neither completes a run nor claims or
 publishes a final result. Nested agents notify only their direct parent through its durable `rqw-agent-inbox` bridge.
 Busy-parent notices use the existing context-only delivery and settlement continuation, outside the clearable
 follow-up queue. While main-chat auto-wait is active, idle progress notices wait for the next user input and never
@@ -356,70 +356,44 @@ through `before_provider_request`; Anthropic requests are untouched. Default, ru
 
 ## Background activity indicators
 
-A direct wait keeps the native run active. A final answer does not wait for agents or jobs, and native idle Enter starts a new turn. Running-count sources only drive indicators; they do not hold input, receipts or notifications.
+A caller's final answer does not wait for agents or jobs, and native idle Enter starts a new turn. Running-count sources only drive indicators; they do not hold input, receipts or notifications. Results arrive through the automatic source (RQW-auto-wait for the main chat).
 
 With `HERDR_ENV=1`, `herdr-state.ts` adapts the user-owned `herdr-agent-state.*` integration in the TUI. It keeps the dot working for native activity or running counts. If the runner or handler shape is unknown, herdr stays stock. The user file is not edited.
 
 In the TUI, `terminal-progress.ts` projects native progress and program status together with running counts onto OSC 9;4 and OSC 7501. A terminal shape it does not recognize stays stock. Pi enables OSC 9;4 only with `terminal.showTerminalProgress`, which this package does not enable. Terminal and herdr patches are removed on session shutdown.
 
-## Wait, status and management
+## Results, status and management
 
-`agent` accepts `wait`, `status`, `send`, `resume`, `interrupt`, `stop` and `restart`.
-Management `id` accepts an `agent#N` ID or its numeric string. `wait`/`status`
-accept nonempty `ids` of fully qualified direct agent IDs. Management targets remain direct
-children only; `status depth` adds read-only descendant visibility, not access to manage grandchildren or siblings.
+`agent` accepts `start`, `status`, `send`, `resume`, `interrupt`, `stop` and `restart`. There is no `wait`.
+Management `id` accepts an `agent#N` ID or its numeric string. `status` accepts nonempty `ids` of fully qualified direct
+agent IDs. Management targets remain direct children only; `status depth` adds read-only descendant visibility,
+not access to manage grandchildren or siblings.
 
 ```js
-agent({action: "wait", ids: ["agent#1", "agent#2"], timeout_ms: 90000})
 agent({action: "status", ids: ["agent#1"], messages: 8})
 agent({action: "send", id: "agent#1", task: "Fix the reported assertion only"})
 agent({action: "stop", id: "agent#2"})
 ```
 
-Work in parallel when useful. When blocked, estimate remaining duration and choose `timeout_ms` somewhat longer on
-**each** wait; 300000 ms is only the omission/null default, not a periodic requirement or maximum. A positive finite
-safe integer is required; large waits use monotonic deadlines and platform-safe timer chunks. Timeout never stops a
-child. Re-estimate and wait again, or inspect status before deciding management. No busy polling, model turn or network
-request comes from the timer; children continue their own work/tokens. No new execution limits/watchdogs are added.
+### Results arrive automatically
 
-### Direct wait
+A caller that needs a result ends its turn. Final results come as one hidden `rqw-auto-wait-results` message, with no
+wait call and no model request while the work runs (`[D-AUTO-WAIT-EVERYWHERE]`, `[D-AGENT-STATUS]`). The model-visible
+text is JSON `{"results":[{"id","title"?,"outcome","text"}]}`, each text ending with the completion follow-up, and never
+carries statuses, alerts, tool previews or token counts. `details` mirrors it for bookkeeping: `results` with `run`,
+`delivery` and `display`.
 
-A direct `wait` is one open tool call in every mode, including a nested subagent. A wait inside codemode returns `direct_wait_required` without consuming results; finish the script and call wait directly. A mixed batch returns `work_pending` without consuming results. The direct wait calls
-`Coordinator.wait` and returns one final tool result: the first or all selected results, an alert, a changed target, or
-the `timeout_ms` deadline (default 300000). No `waiting` receipt, no `terminate` and no later `child_wait` message are
-produced for a new wait. A timeout or an abort ends only the wait; the children keep running. An answer the wait took
-counts as delivered once its tool result is saved without error. If that result is lost, the answer remains available for another explicit wait. Older `rqw-agent-wait` records are never resumed.
+- Main chat: RQW-auto-wait adopts this extension's source (`rqw:auto-wait:request:v1`) and the one of RQW-tools. It wakes an
+  idle chat in the TUI and in rpc, and holds the end of the turn in print and json mode. Manually switching it off leaves
+  results to `status` only.
+- A subagent: its loop takes the same sources (`background.ts`, `AutoSource`). Its answer is final only when nothing it started
+  is still running and nothing is ready; until then it sleeps with no model call and no timer, and wakes when a result is ready.
+- Restart: the waiting ids are saved in an `rqw-agent-waiting` entry after the result inbox entry (`waiting.ts`). After a
+  restart a child gets its ready results, and an id that is gone arrives as a `lost` result, so the child decides what to restart.
 
-`wait` accepts `until: "first" | "all"`, default `"first"`. The default returns the first selected completion and
-any other already-ready results, including terminal errors. `"all"` holds early completions until every selected
-target has a result, a delivery receipt, or is inactive. It reserves those results for wait delivery only when the
-whole selection is ready. An alert, timeout or caller abort releases held completions back to pending without
-consuming them in the wait. Already-delivered answers remain receipts, not copies.
-`wake_on_alert` defaults to `false`: alerts never wake a wait. With `wake_on_alert: true` an alert created on a
-selected child after this wait registered returns early with `reason: "alert"` and one short line, without consuming
-results. Old alerts do not repeatedly wake later waits.
-
-#### A wait is a signal, not a report
-
-Waiting costs no model tokens, and neither does what a wait returns (`[D-AGENT-WAIT-LEAN]`). The model-visible text is
-one of two shapes and never carries statuses, alerts, tool previews, argument previews or token counts:
-
-- Real final answers: JSON `{"results":[{"id","title"?,"outcome","text"}]}`, each text ending with the completion follow-up.
-- No answer: one short line, `<reason>[: detail]; still running: agent#1, agent#2` or `; nothing running`, with
-  `; unknown or closed: <ids>` appended when a selected id is gone. Reasons: `interrupted` (user steering),
-  `timeout`, `alert` (opt-in), `target_changed: <id> <change>`, `no new answer, already delivered: <ids>`, `idle`,
-  `work_pending`, `direct_wait_required`.
-
-`details` (never sent to the model) mirrors it for cards and bookkeeping: `reason`, `timed_out`, `results` (with `run`,
-`delivery` and `display`), `receipts`, `changed`. There is no `statuses` array. `idle` returns immediately if no
-selected run/result exists. Full detail is only available through an explicit `status`. Interrupt/stop/restart wake
-old waits; they never silently follow replacements. Management registration is ordered, but the wait Promise does not
-hold that queue.
-
-Results have caller-local ID, epoch/run identity and a UUID delivery. A broker reserves a result for one waiter.
-Repeated or competing waits receive receipts (`delivered_via`, `claimed_by`), not second copies.
-A handoff commits only with a successful finalized persisted tool result. A failed handoff returns its reservation
-to pending. Older nested ownership records use actual `parentToolCallId` events, not the bounded nestedCalls log.
+Results have caller-local ID, epoch/run identity and a UUID delivery. A source hands a result to one consumer: `claim`,
+then `commit` once the message is saved, or `release` on failure. A saved answer is the outbox; it is delivered once.
+Older nested ownership records use actual `parentToolCallId` events, not the bounded nestedCalls log.
 
 `status` is a local snapshot, without invoking the child model or consuming a result. `depth` defaults to 0 and
 must be a nonnegative safe integer. Positive depth adds compact read-only snapshots of descendants under `children`,
@@ -434,9 +408,9 @@ token totals/run deltas and explicitly incomplete live usage are not token estim
 settlement also completes usage; a response without reported token usage keeps `usage_complete: false`. Preview budgets
 (1200 characters/message, 12000/ID) limit representation only, never execution/history.
 
-`agent` supports these wait/status options and `alert_after_ms` on start/restart. Status `alerts` contains
+`agent` supports `status` options and `alert_after_ms` on start/restart. Status `alerts` contains
 `{kind, at, detail}` items with an ISO timestamp and trimmed diagnostic text. `activity.ts` keeps the latest 32 for
-presentation only and resets the history on a new logical run; the alert version remains monotonic for wait wakeups.
+presentation only and resets the history on a new logical run.
 Kinds are `error`, `repetition`, `long_turn` and `schema_rejection_repeated`.
 
 `error` reports provider/runtime failures and truncation. `repetition` reports the existing identical-call or live
@@ -455,13 +429,12 @@ No `stalled_tool` alert is implemented.
 `send` to a running child is Pi steering (`session.steer`): the message reaches the child after its current tool call
 (Pi runs all calls of the current assistant turn first), before its next model request, and aborts nothing; a message
 sent before the child's first request goes into that request. To an idle child `send` starts a new run with its
-history. A child whose native run has ended gets the message at once (reply `: sent`, a new run starts; its descendant remains available). A wait announces itself on `rqw:waiting:v1` (`{ sessionId, call, open }`) while it is open, and returns `reason: "work_pending"` at once, consuming nothing and announcing nothing, when its batch holds a call that is not a wait; the model then calls it again alone. A child in its own `wait` tool returns `reason: "steered"` and receives the message without stopping the target. `send` with `interrupt: true` redirects a running child in one call: it drops the child's queued steering and
+history. A child whose native run has ended gets the message at once (reply `: sent`, a new run starts; its descendant remains available). `send` with `interrupt: true` redirects a running child in one call: it drops the child's queued steering and
 follow-ups and aborts the current turn exactly like `interrupt` (session and history kept, pending descendants aborted),
 then returns at once with `<name>#N: interrupted, sent`, without waiting. The task is recorded as the child's next
 run and starts automatically, once, as soon as the old run has stopped; there is no time limit, so a tool that
 ignores the abort signal simply delays the start, and `status` shows `cancellation_requested` and `pending_sends`.
-Until the start the child counts as running: a `wait` on it is never `idle` and ends with `target_changed` when the
-new run begins.
+Until the start the child counts as running and its result is not ready.
 A further `send` before the start is appended after it, in order, and all pending tasks go in one prompt joined by
 blank lines. A later `interrupt`, `stop` or `restart` drops them. On an idle child the flag makes a plain `send`.
 Without the flag nothing changes. Use plain `interrupt` only to cancel. Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
@@ -505,12 +478,11 @@ A final `compaction_end.errorMessage` without `willRetry` is delivered as `error
 drops only the provisional assistant attempt, including its truncation marker. Genuine final answers and errors remain
 in order across follow-ups.
 
-Every final result returned by a wait ends with the completion follow-up (`FOLLOW_UP` in [prompt.ts](prompt.ts)).
+Every final result delivered ends with the completion follow-up (`FOLLOW_UP` in [prompt.ts](prompt.ts)).
 The result cards hide this paragraph. Historical pushed results and `child_wait` cards remain readable.
 
 A caller's final answer never waits for running children or background jobs. The children continue under their
-existing IDs. A child result does not trigger a hidden request in any mode; call `agent wait` to receive it.
-Aborting a wait ends only the wait and leaves the result available.
+existing IDs. A child result arrives automatically when the chat is idle or ends its turn (see Results arrive automatically).
 
 ## IDs and history
 
@@ -545,18 +517,14 @@ become one batch, as they become one message. `interrupt`, `stop` and `restart` 
 On resume the batches whose `n` is not yet in the history are sent once, in order, whatever the last request was; the
 first one as the next prompt, the others as steering. A batch already in the history is never sent again.
 
-Old `rqw-agent-wait` records and historical `child_wait` messages remain in the session, but do not restore a
-subscription or trigger a request. Historical deliveries still count as delivered. New waits write no such record.
+Old `rqw-agent-wait` and `rqw-agent-accept` records and historical `child_wait` messages remain in the session, but do not restore a
+subscription or trigger a request. Historical deliveries still count as delivered. Nothing writes such records now.
 
 A final answer is saved in the child's record, with its `delivery` id, before it is delivered; the saved answer is the outbox.
-After a restore an explicit wait returns that same id, not a new one. Records and receipts written earlier have no id and are read as before.
+After a restore the delivery returns that same id, not a new one. Records and receipts written earlier have no id and are read as before.
 A child record from before `pending_sends` and `history` has only its saved task: it counts as one pending batch, sent when the history has no user message.
-A `wait` inside a codemode script may let the script filter the answer, and the delivery receipt is written only later. So when
-that wait call ends, an `rqw-agent-accept` entry saves the call, the script's call, the outcome of the wait and the runs and
-delivery ids it took. After a restore those answers count as delivered only if the wait succeeded and the script's own tool
-result is saved without error; a wait error the script caught leaves the answer available.
-Completed durable children remain saved slots during parent hydration and `wait`; neither opens their histories or
-constructs SDK sessions. Wait snapshots for these slots report saved identity, model, title and idle state, without
+Completed durable children remain saved slots during parent hydration and result delivery; neither opens their histories or
+constructs SDK sessions. Status snapshots for these slots report saved identity, model, title and idle state, without
 inventing live diagnostics. `send` opens only its target with the original history, configuration and session identity.
 `status` materializes selected slots where exact previews, token totals or descendant diagnostics require the runtime;
 this is the exact-status fallback, not a summary substitute. Unfinished recovery remains eager, and already live
@@ -586,7 +554,7 @@ A fork or clone copies the parent transcript but not the children's files: it do
 so a saved child entry that points into another session's tree is unavailable with a clear diagnostic. That never blocks a new
 `agent` start or the main chat, and one broken or lost child never blocks the recovery of the others. Children are not
 copied on fork. `/resume-agents` resumes unfinished children
-without calling the main model first. Their final results remain available through wait. Continuing a restored
+without calling the main model first. Their final results arrive automatically. Continuing a restored
 parent mechanically recovers its unfinished children; merely opening an old session does not start work.
 
 Recovery keeps completed tool results. A broken history is repaired in the request, never in the file:
@@ -635,8 +603,8 @@ Delivered custom messages keep their original content byte-for-byte. Their `deta
 Final errors, aborts and truncation are failed; a recovered retry is finished. Answer text, including
 an `error:` prefix, does not mark a run as failed. Quiet cancellation still suppresses delivery as before. These fields do not change execution, steering or delivery ownership.
 
-For wait, the same metadata is at `result.details.results[i].display`. The existing result item's
-`outcome` remains `completed`/`error`, and the entire original wait `content` is unchanged. Consumers
+For a delivered result, the same metadata is at `result.details.results[i].display`. The existing result item's
+`outcome` remains `completed`/`error`, and the entire original `content` is unchanged. Consumers
 must read display metadata from details, not parse it from the model-visible JSON text. A receipt is
 not another delivered answer and adds no duplicate tool-use count.
 

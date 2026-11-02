@@ -9,8 +9,8 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 | `highreview` | high | `bossy` | `gpt-6.1-terra` | xhigh |
 
 `selfcheck` is the executor's shell around the same loop: the finished executor starts a fork of itself with
-`agent` `fork_turns: "all"` (no model, thinking, profile, role or `include`) and waits for one report without editing
-the object. The fork checks against the owner's words, runs the affected tests and, where allowed, the product, fixes,
+`agent` `fork_turns: "all"` (no model, thinking, profile, role or `include`) and ends its turn; the one report
+arrives automatically, and the object stays unedited meanwhile. The fork checks against the owner's words, runs the affected tests and, where allowed, the product, fixes,
 then runs the blind loop of the reviewer skill until `CLEAN` and returns one report: problems, fixes, checks run and
 their results, unrun checks, rounds, `CLEAN` or the reason. The fork never starts another selfcheck fork; its blind
 reviewers are ordinary fresh agents without `fork_turns`. The package offers the skill; the repository PROCESS

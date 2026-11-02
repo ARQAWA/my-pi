@@ -7,6 +7,7 @@ import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { AgentSession, createAgentSession, createEventBus, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import rqwTools, { installRqwTools } from "../extensions/RQW-tools/index.ts";
 import registerAgent from "../extensions/RQW-agent/index.ts";
+import { adoptSource, takeFrom } from "./extensions/RQW-agent/consumer.ts";
 
 const expected = "Use the rqw_readfile tool to load a skill's file when the task matches its description.";
 const bashHint = "Use bash to load a skill's file when the task matches its description.";
@@ -111,15 +112,16 @@ test("a real child receives the new skill hint in its request", async () => {
 	const pi: any = { events: createEventBus(), on(name: string, hook: any) { hooks.set(name, [...hooks.get(name) ?? [], hook]); },
 		registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand() {}, registerEntryRenderer() {},
 		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
-		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }), getThinkingLevel: () => "off", getActiveTools: () => [],
+		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }), getThinkingLevel: () => "off", getActiveTools: () => [], getAllTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details) };
 	try {
 		await parentRun.session.prompt("hello");
 		installRqwTools(pi);
 		registerAgent(pi);
 		const call = (id: string, args: any) => tools.get("agent").execute(id, args, ctx.signal, undefined, ctx);
+		const source = await adoptSource(pi, hooks, ctx);
 		await call("start", { action: "start", task: "child" });
-		await call("outer/wait", { action: "wait", ids: ["agent#1"] });
+		await takeFrom(source, () => {});
 		assert.ok(requests.length > 0);
 		const system = requests[0].messages.filter((message: any) => message.role === "system");
 		assert.ok(JSON.stringify(system).includes(expected));

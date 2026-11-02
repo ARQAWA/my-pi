@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
 import { call, isTask, keys, reportTimings, text, world } from "./synthetic/world.ts";
+import { untilWake } from "./synthetic/wake.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -11,32 +12,27 @@ async function finishedChild(t: Parameters<typeof world>[0]) {
 	w.model.when(isTask("count files"), text(ANSWER));
 	w.model.script(
 		call("agent", { action: "start", task: "count files", title: "Count", model: "anthropic/claude-sonnet-5-5", thinking: "medium" }, "a1"),
-		call("agent", { action: "wait", ids: ["agent#1"] }, "a2"),
+		text("started"),
 		text("child said"),
 	);
 	await w.submit("go");
-	return w;
+	const delivered = await untilWake(w);
+	return { w, delivered };
 }
 
-it("Ctrl+O shows the result card with the child's id, title, model and thinking", async (t) => {
-	const w = await finishedChild(t);
+// An automatic result is one hidden message: no card in the chat, and the model gets the answer byte for byte.
+it("the result of a child is hidden in the chat, also with Ctrl+O", async (t) => {
+	const { w } = await finishedChild(t);
+	w.see("child said");
 	w.notSee("agent#1 Count finished");
+	w.notSee("line 1");
 
 	w.press(keys.ctrlO);
-	w.see("agent#1 Count finished · Sonnet 5.5 md");
+	w.notSee("agent#1 Count finished");
+	w.notSee("line 1");
 });
 
-it("Ctrl+O shows the child's whole answer, and Ctrl+O again folds it", async (t) => {
-	const w = await finishedChild(t);
-	w.notSee("line 1");
-
-	w.press(keys.ctrlO);
-	for (const line of ANSWER.split("\n")) w.see(line);
-	// The card changes only the display: the model got the answer byte for byte.
-	const original = w.requests.at(-1)!.context.messages.findLast((message) => message.role === "toolResult") as { content: { text: string }[] };
-	assert.ok(JSON.parse(original.content[0].text).results[0].text.startsWith(`${ANSWER}\n\n`));
-
-	w.press(keys.ctrlO);
-	w.notSee("line 1");
-	w.see("Waited for 1 agent");
+it("the model gets the whole answer of the child byte for byte", async (t) => {
+	const { delivered } = await finishedChild(t);
+	assert.ok(JSON.parse(delivered).results[0].text.startsWith(`${ANSWER}\n\n`));
 });

@@ -21,7 +21,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `openai-codex` requests get `service_tier` priority (`DECISIONS.md` Settings, «GPT Fast»). Luna models remain Fast under `[D-CODEX-LUNA-FAST]`. Tests: `test/extensions/RQW-settings/`.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
-- `extensions/RQW-tools/`: extension 3, the base tools. Our own `rqw_readfile`, `rqw_glob`, `rqw_rg` replace stock `read`, `find`, `grep` for the model, with Cursor-based descriptions and a search funnel appended to `rqw_rg`; `rqw_readfile` prefixes every tenth line like Cursor, e.g. `    10|` (stock tools stay as the fallback); stock `bash`, `edit`, `write` with our descriptions, multi-file edit and write, bounded Windows retry and counts. Bash refuses commands that search, list or read files. File tools use stock parallel execution, with an in-memory resolved-path lock serializing edit and write on the same file; different files stay parallel. Bash and codemode run independently. A call still running after 12 s returns `job#N`; `job wait` stays open until its result, timeout or interruption, while `status` and `kill` manage the job. There is no later completion notification. The `rqw:stop-background:v1` notice cancels waits and stops the main session's process jobs; file calls finish on their own. Tests: `test/extensions/RQW-tools/`.
+- `extensions/RQW-tools/`: extension 3, the base tools. Our own `rqw_readfile`, `rqw_glob`, `rqw_rg` replace stock `read`, `find`, `grep` for the model, with Cursor-based descriptions and a search funnel appended to `rqw_rg`; `rqw_readfile` prefixes every tenth line like Cursor, e.g. `    10|` (stock tools stay as the fallback); stock `bash`, `edit`, `write` with our descriptions, multi-file edit and write, bounded Windows retry and counts. Bash refuses commands that search, list or read files. File tools use stock parallel execution, with an in-memory resolved-path lock serializing edit and write on the same file; different files stay parallel. Bash and codemode run independently. A call still running after 12 s returns `job#N`; `job` has `status` and `kill`, no wait; a finished job's result arrives automatically (`[D-AUTO-WAIT-EVERYWHERE]`). The `rqw:stop-background:v1` notice stops the main session's process jobs; file calls finish on their own. Tests: `test/extensions/RQW-tools/`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   physical window W = min(contextWindow, 500000) and compacts strictly above W - R, where R = round(W / 10).
   Explicit settings and physical request scopes remain; Pi 1.4.0 summaries use native output limits, not R.
@@ -30,7 +30,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `rqw-context:background-compaction` `{ sessionId, active }`; dispatch `rqw:background-summary:v1` (`[D-CONTEXT-BACKGROUND]`).
   Contract: `extensions/RQW-context/README.md`. Tests: `npm test`.
 - `extensions/RQW-agent/`: extension 5, subagents; description and reminder adapt Codex 0.165.0 agent texts. `agent`
-  (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
+  (start, status, send, resume, interrupt, stop, restart; no wait) runs in-process Pi sessions. Optional `agent_type`
   selects a Codex TOML profile; without it the generic defaults stay. `start` with `fork_turns: "all"` copies the caller's current branch
   into a child with the caller's model, prompt and tools (no model, thinking, `agent_type`, prompt options or `include`; durable when its parent has a session file,
   `[D-AGENT-FORK-SELFCHECK]`); Main's coordinator guard lets such a start pass without a model category. A profile's `developer_instructions` supplies the default role
@@ -41,13 +41,13 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   The optional `title` appears in status and results. Every child has recursive `agent` delegation without a depth
   limit. Children get codemode/tool_search as the caller has them, the caller's session settings and the same profile
   catalog. With RQW-tools, codemode uses the child's background-job registry.
-  Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers caller-chosen mechanical wait and diagnostic status;
-  final results arrive through explicit waits or the optional main-chat auto-wait, not waiting receipts or `child_wait` wakeups. Native idle input starts immediately even while background work remains; no follow-up hold remains. The `rqw:stop-background:v1` notice cancels waits and interrupts children. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
+  Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers diagnostic status;
+  final results arrive automatically as one hidden message (main chat: RQW-auto-wait; a child's loop sleeps while its helpers and jobs run and wakes on their results), not waiting receipts or `child_wait` wakeups (`[D-AUTO-WAIT-EVERYWHERE]`). Native idle input starts immediately even while background work remains; no follow-up hold remains. The `rqw:stop-background:v1` notice interrupts children. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
   A response cut at the output limit is continued automatically, three cuts in a row, in the main chat too (`[D-AGENT-LENGTH-CONTINUE]`). Every child request and resume repairs broken tool-call pairs and adds a request-only continue line instead of restarting from zero (`[D-AGENT-HISTORY-REPAIR]`).
-  A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` explicitly retries an interrupted or failed provider request with no new message, also after a Pi restart; no automatic retry loop is added. `/resume-agents` remains children-only and does not retry failed requests. A direct `wait` stays open as a native tool call; see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
+  A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` explicitly retries an interrupted or failed provider request with no new message, also after a Pi restart; no automatic retry loop is added. `/resume-agents` remains children-only and does not retry failed requests. After a restart a waiting child gets its ready results and its lost work (`rqw-agent-waiting`); see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
-  The tool supports `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
-  diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
+  The tool supports read-only status `depth` and optional `alert_after_ms`
+  diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#results-status-and-management).
   Every 50 non-final tool-call responses or 30 minutes without parent communication trigger an isolated background context-fork
   summary. The parent receives a notification and workflow skill reminder, never a subagent final answer; the child
   keeps working and its chat is unchanged. Contract: `DECISIONS.md` `[D-AGENT-PROGRESS]`.
@@ -61,7 +61,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   overrides it (`false` when the user forbids Fast for subagents). An explicit `fast_gpt` on
   `send` or `restart` updates the retained value.
   Tests: `npm test`.
-- `extensions/RQW-auto-wait/`: independent main-chat automatic wait for agent and job results. It shows a local wait card and wakes only for final results; explicit waits remain available. Tests: `test/extensions/RQW-auto-wait/`.
+- `extensions/RQW-auto-wait/`: independent main-chat automatic wait for agent and job results. It is the only delivery of agent and job results (no `wait` action): a local wait card, a wake for final results in tui and rpc, and a hold of the end of the turn in print and json. Tests: `test/extensions/RQW-auto-wait/`.
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
   `profiles/spotty.toml` defaults to `gpt-6.1-terra` medium; `profiles/bossy.toml` defaults to the same model xhigh. Both embed the same
   reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through
@@ -142,7 +142,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   preserving the old name. `/rename-gen` regenerates; native
   `/name` stays unchanged. The `rename_session` tool (one `name`) lets the agent set the native name. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
   Details: [Naming](DECISIONS.md#naming); tests: `test/extensions/RQW-naming/`.
-- `extensions/RQW-agent-ui/`: extension 17, compact result cards for the `agent` `wait` result, including reviewer profiles,
+- `extensions/RQW-agent-ui/`: extension 17, compact result cards for older stored `agent` `wait` results, including reviewer profiles,
   full originals through Ctrl+O; a one-line `agent_progress` notice card with its summary. Cards of older stored `agent`
   and `child_wait` messages stay; stored `review`, `job`, `code_writer` and `shell_runner` messages have no card. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
   live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its

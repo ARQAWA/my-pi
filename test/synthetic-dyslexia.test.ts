@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
 import { call, isTask, reportTimings, text, world } from "./synthetic/world.ts";
+import { untilWake } from "./synthetic/wake.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -27,8 +28,9 @@ it("the rule follows the user message in the request and is not in the session f
 it("the request of a subagent does not carry the rule", async (t) => {
 	const w = await world(t);
 	w.model.when(isTask("count files"), text("three"));
-	w.model.script(call("agent", { action: "start", task: "count files" }, "a1"), call("agent", { action: "wait", ids: ["agent#1"] }, "a2"), text("done"));
+	w.model.script(call("agent", { action: "start", task: "count files" }, "a1"), text("waiting"), text("done"));
 	await w.submit("go");
+	await untilWake(w);
 
 	const child = w.requests.find((request) => isTask("count files")(request));
 	assert.ok(child, "the child asked the model");

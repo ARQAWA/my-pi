@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
 import { call, fail, isTask, reportTimings, text, world } from "./synthetic/world.ts";
+import { untilWake } from "./synthetic/wake.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -18,20 +19,20 @@ const userTexts = (entries: any[]): string[] =>
 const lastAssistantText = (entries: any[]): string =>
 	entries.filter((entry) => entry.type === "message" && entry.message.role === "assistant").at(-1).message.content[0].text;
 
-it("start and wait: the child works on its task, its answer reaches the model, the screen and its own session file", async (t) => {
+it("start: the child works on its task, its answer reaches the model, the screen and its own session file", async (t) => {
 	const w = await world(t);
 	w.model.when(isTask("count files"), text("three files"));
 	w.model.script(
 		call("agent", { action: "start", task: "count files", title: "Count" }, "a1"),
-		call("agent", { action: "wait", ids: ["agent#1"] }, "a2"),
+		text("started"),
 		text("child said three"),
 	);
 	await w.submit("go");
+	const delivered = await untilWake(w);
 
-	w.see("Waited for 1 agent");
 	w.see("child said three");
 	assert.match(toolResultText(w, "a1"), /agent#1 started/);
-	assert.match(toolResultText(w, "a2"), /three files/);
+	assert.match(delivered, /three files/);
 	const [file] = w.childFiles(1);
 	assert.equal(lastAssistantText(w.jsonl(file)), "three files");
 	assert.deepEqual(userTexts(w.jsonl(file)), ["count files"]);
@@ -41,22 +42,22 @@ it("start and wait: the child works on its task, its answer reaches the model, t
 it("resume retries a child whose last request failed, after a restart, without a new message", async (t) => {
 	const w = await world(t);
 	w.model.when(isTask("fix"), fail("network down"));
-	w.model.script(call("agent", { action: "start", task: "fix", title: "Fix" }, "c1"), call("agent", { action: "wait", ids: ["agent#1"] }, "c0"), text("the child failed"));
+	w.model.script(call("agent", { action: "start", task: "fix", title: "Fix" }, "c1"), text("started"), text("the child failed"));
 	await w.submit("go");
+	assert.match(await untilWake(w), /network down/);
 	w.see("the child failed");
-	assert.match(toolResultText(w, "c0"), /network down/);
 
 	const w2 = await w.restart();
 	w2.model.when(isTask("fix"), text("fixed"));
 	w2.model.script(
 		call("agent", { action: "resume", id: "agent#1" }, "c2"),
-		call("agent", { action: "wait", ids: ["agent#1"] }, "c3"),
+		text("resumed"),
 		text("done"),
 	);
 	await w2.submit("retry");
+	assert.match(await untilWake(w2), /fixed/);
 
 	w2.see("done");
-	assert.match(toolResultText(w2, "c3"), /fixed/);
 	const child = w2.jsonl(w2.childFiles(1)[0]);
 	assert.deepEqual(userTexts(child), ["fix"]);
 	assert.equal(lastAssistantText(child), "fixed");

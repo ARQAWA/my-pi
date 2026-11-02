@@ -101,9 +101,11 @@ it("a restart continues the same session file: the screen, the file and the next
 it("a subagent's session file is found under the parent's children folder", async (t) => {
 	const w = await world(t);
 	w.model.when(isTask("count files"), text("three files"));
-	w.model.script(call("agent", { action: "start", task: "count files" }, "a1"), call("agent", { action: "wait", ids: ["agent#1"] }, "a2"), text("child said three"));
+	w.model.script(call("agent", { action: "start", task: "count files" }, "a1"), text("started, waiting"), text("child said three"));
 	await w.submit("go");
 	w.see("child said three");
+	const wake = w.requests.filter((request) => request.background === undefined).at(-1)!;
+	assert.match(JSON.stringify(wake.context.messages), /three files/, "the automatic result reached the model");
 	const [file] = w.childFiles(1);
 	assert.ok(file, "the child has a session file");
 	const reply = w.jsonl(file).filter((entry) => entry.type === "message" && entry.message.role === "assistant").at(-1);

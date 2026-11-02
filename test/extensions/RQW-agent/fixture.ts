@@ -58,7 +58,7 @@ export function runtime(cwd: string, root: string, thinking = "off", extraModels
 		getThinkingLevel: () => thinking, getActiveTools: () => activeTools,
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
 	return {
 		live, requests, efforts, events: pi.events, parent, description: () => definition.description as string,
 		async emit(name: string) { for (const hook of hooks.get(name) ?? []) await hook({}, ctx); },

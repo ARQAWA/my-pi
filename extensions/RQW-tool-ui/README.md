@@ -60,8 +60,9 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 
 ### Wait results
 
-`agent` calls with `action: "wait"` count as `waited for N agents` in the summary line and the live block shows
-`wait <ids>`. Reviewer profiles `spotty` and `bossy` run as ordinary `agent` children and use these same waits.
+Stored `agent` calls with `action: "wait"` (older sessions only; the action no longer exists, results arrive
+automatically as a hidden message) count as `waited for N agents` in the summary line and the live block shows
+`wait <ids>`. Reviewer profiles `spotty` and `bossy` run as ordinary `agent` children; their results arrive automatically.
 RQW-agent-ui is registered before tool-ui; while collapsed it delegates to tool-ui, and Ctrl+O shows agent-ui's
 expanded wait cards with the full answers. Without tool-ui, agent-ui renders its collapsed wait cards.
 

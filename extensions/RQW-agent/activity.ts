@@ -202,7 +202,6 @@ export class Activity {
 	private readonly onChange: (() => void) | undefined;
 	private readonly alertAfter: number | undefined;
 	private alerts: ActivityAlert[] = [];
-	private alertSerial = 0;
 	private cancelTurnTimer: (() => void) | undefined;
 	private rejectionCounts = new Map<string, number>();
 	private repeatedStreams = new Set<string>();
@@ -219,9 +218,6 @@ export class Activity {
 		this.unsubscribe = session.subscribe(event => this.onEvent(event));
 	}
 
-	/** Monotonic across logical runs, even when the bounded alert history is reset. */
-	alertVersion(): number { return this.alertSerial; }
-
 	/** Runtime failures outside native message events, such as a rejected prompt(). */
 	reportError(detail: string): void {
 		const key = fingerprint("error", detail);
@@ -231,7 +227,6 @@ export class Activity {
 	}
 
 	private alert(kind: AlertKind, detail: string): void {
-		this.alertSerial++;
 		this.alerts.push({ kind, at: new Date().toISOString(), detail: headTail(detail, ERROR_CHARS).text });
 		if (this.alerts.length > ALERTS) this.alerts.shift();
 		this.changed();

@@ -111,9 +111,6 @@ export default function autoWait(pi: ExtensionAPI) {
 		requestCheck();
 	}
 	pi.events.on("rqw:auto-wait:offer:v1", (offer: any) => { if (offer?.sessionId === sessionId) adopt(offer.source); });
-	pi.events.on("rqw:auto-wait:capability:v1", (request: any) => {
-		if (ctx && request?.sessionId === sessionId && typeof request.offer === "function") request.offer();
-	});
 	pi.events.on("rqw:stop-background:v1", (request: any) => {
 		if (!ctx || request?.sessionId !== sessionId) return;
 		generation++; armed = false; aborted = true; card.close("stop"); setActive(false); releaseHold();
