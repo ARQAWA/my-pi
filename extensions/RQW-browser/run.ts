@@ -87,12 +87,12 @@ export async function checkRunModel(ctx: ExtensionContext, signal: AbortSignal) 
 	signal.throwIfAborted();
 	const provider = ctx.model?.provider;
 	const selection = provider === "anthropic" || provider === "openai-codex" ? models[provider] : undefined;
-	if (!selection || !provider) throw new Error("Browser run has no model for the caller's provider.");
+	if (!selection || !provider) throw new Error("Browser run is unavailable for this provider.");
 	const available = await untilAborted(ctx.modelRegistry.getAvailableOfType("chat", provider, { signal }), signal);
 	signal.throwIfAborted();
 	const model = available.find(item => item.provider === provider && item.id === selection.id);
-	if (!model) throw new Error(`Browser run requires an available authenticated model ${provider}/${selection.id}.`);
-	if (!getSupportedThinkingLevels(model).includes(selection.reasoning)) throw new Error(`Browser run requires ${selection.reasoning} reasoning for ${provider}/${selection.id}.`);
+	if (!model) throw new Error("Browser run is unavailable for this account.");
+	if (!getSupportedThinkingLevels(model).includes(selection.reasoning)) throw new Error("Browser run requires supported reasoning.");
 	return { model, reasoning: selection.reasoning };
 }
 
@@ -199,12 +199,19 @@ export async function executeRun(input: RunInput, ctx: ExtensionContext, selecti
 			const message = await untilAborted(ctx.modelRegistry.streamSimple(selection.model, context, { reasoning: selection.reasoning, signal }).result(), signal);
 			await log({ message });
 			aborted(signal);
-			if (message.stopReason === "error" || message.stopReason === "aborted" || message.stopReason === "length") throw new Error(message.errorMessage ?? `Model stopped: ${message.stopReason}`);
+			if (message.stopReason === "error" || message.stopReason === "aborted" || message.stopReason === "length") {
+				const detail = message.errorMessage;
+				if (detail) {
+					const modelId = selection.model.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					throw new Error(detail.replace(new RegExp(modelId, "gi"), "request").replace(/model|executor/gi, "request"));
+				}
+				throw new Error(`Request stopped: ${message.stopReason}.`);
+			}
 			const calls = message.content.filter(part => part.type === "toolCall");
 			if (!calls.length) {
 				let answer: { summary?: unknown; reached?: unknown };
-				try { answer = JSON.parse(contentText(message.content)); } catch { return result("Model returned an invalid result.", "error"); }
-				if (typeof answer.summary !== "string" || typeof answer.reached !== "boolean") return result("Model returned an invalid result.", "error");
+				try { answer = JSON.parse(contentText(message.content)); } catch { return result("Invalid result.", "error"); }
+				if (typeof answer.summary !== "string" || typeof answer.reached !== "boolean") return result("Invalid result.", "error");
 				if (!shortened && (answer.summary.length > 1200 || answer.summary.split(/\n\s*\n/).length > 2) && request < 7) {
 					shortened = true;
 					const instruction = { role: "user" as const, content: "Shorten to two paragraphs, at most 1200 characters. Return the same JSON.", timestamp: 0 };
@@ -213,7 +220,7 @@ export async function executeRun(input: RunInput, ctx: ExtensionContext, selecti
 					continue;
 				}
 				if (incomplete) return result(answer.summary, "limit");
-				if (completed !== input.actions.length) return result("Model stopped before completing the actions.", "error");
+				if (completed !== input.actions.length) return result("Stopped before completing the actions.", "error");
 				return result(answer.summary, null, answer.reached);
 			}
 			context.messages.push(message);
@@ -289,7 +296,7 @@ export async function executeRun(input: RunInput, ctx: ExtensionContext, selecti
 				await log({ message: response });
 			}
 		}
-		return result("Model request limit reached.", "limit");
+		return result("Request limit reached.", "limit");
 	} catch (error) {
 		return result(error instanceof Error ? error.message : String(error), signal.aborted ? "cancelled" : "error");
 	}

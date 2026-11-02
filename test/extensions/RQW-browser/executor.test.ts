@@ -49,6 +49,7 @@ it("does not report success before all actions or with an incomplete view", asyn
 	const earlyResult = await early.call(task);
 	assert.equal(earlyResult.reached, false);
 	assert.equal(earlyResult.stopped, "error");
+	assert.doesNotMatch(earlyResult.summary, /model|executor/i);
 	await early.shutdown();
 	const incomplete = setup([reply(call(0)), reply(call(1)), reply(call(2)), done()], { incomplete: true });
 	const result = await incomplete.call(task);
@@ -56,6 +57,29 @@ it("does not report success before all actions or with an incomplete view", asyn
 	assert.equal(result.reached, false);
 	assert.equal(result.stopped, "limit");
 	await incomplete.shutdown();
+});
+
+it("returns neutral errors for failed or invalid responses", async () => {
+	for (const response of [
+		{ ...reply(), stopReason: "error", errorMessage: "model executor failed" },
+		{ ...reply(), stopReason: "error", errorMessage: "claude-haiku-5-5 failed" },
+		reply({ type: "text", text: "invalid" }),
+		reply({ type: "text", text: "{}" }),
+	]) {
+		const env = setup([response]);
+		const result = await env.call(task);
+		assert.equal(result.stopped, "error");
+		assert.doesNotMatch(result.summary, /model|executor/i);
+		await env.shutdown();
+	}
+	for (const [errorMessage, reason] of [["Account quota exceeded", "Account quota exceeded"], ["Model authentication failed", "authentication failed"], ["claude-haiku-5-5 rate limit reached", "rate limit reached"]]) {
+		const env = setup([{ ...reply(), stopReason: "error", errorMessage }]);
+		const result = await env.call(task);
+		assert.equal(result.stopped, "error");
+		assert.ok(result.summary.includes(reason));
+		assert.doesNotMatch(result.summary, /model|executor|claude-haiku-5-5/i);
+		await env.shutdown();
+	}
 });
 
 it("translates short model ids to current browser ids", async () => {
@@ -384,7 +408,9 @@ it("does not retry a failed mutating action or execute the remaining chain", asy
 it("bounds model requests and rejects unsupported methods before actions", async () => {
 	const view = (id: number) => ({ type: "toolCall", id: `v${id}`, name: "view", arguments: {} });
 	const env = setup(Array.from({ length: 8 }, (_, i) => reply(view(i))));
-	assert.equal((await env.call(task)).stopped, "limit");
+	const result = await env.call(task);
+	assert.equal(result.stopped, "limit");
+	assert.doesNotMatch(result.summary, /model|executor/i);
 	assert.equal(env.requests.length, 8);
 	await env.shutdown();
 	const bad = setup([reply({ type: "toolCall", id: "bad", name: "call", arguments: { action: 0, chain: [{ method: "evaluate", args: ["1"] }] } })]);

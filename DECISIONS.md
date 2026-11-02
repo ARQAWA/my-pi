@@ -1208,6 +1208,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
   «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
   Owner source: [D-AGENT-PROMPT-FILES].
+  Owner approval of the tool-name and truncation-note changes, 2026-11-02: «1» (to the presented diffs for `rqw_readfile`, `rqw_rg` and `rqw_glob`). The canonical role and both profile copies use those names; stock tools remain the fallback when RQW-tools is unavailable.
   Existing profile precedence remains governed by `[D-AGENT-PROFILES]`.
   Reason: preserve the working reviewer while making sufficient evidence explicit and concise, including when a
   higher-precedence personal profile still demands a bare verdict. Carriers: `extensions/RQW-review/REVIEWER.md`,
@@ -2162,6 +2163,7 @@ Since: web-search-tool.
   Owner: «И надо у browser tool убрать режим call, чтобы агент сам не мог напрямую работать с браузером. Надо, чтобы он только в Run режиме с ним взаимодействовал, чтобы он мог запросить скриншот страницы, либо markdown версию страницы»
   Owner: «У агента, у снотдона не должно быть возможности напрямую управлять браузером, как он сейчас делает.»
   Owner: «Да, надо лишний код браузера удалять нахуй. У нас всё должно быть суперминималистично, суперлегковесно, супертопорно и прямолинейно»
+  Owner approval of the two presented `browser` description sentence changes and neutral run errors, 2026-11-02: «1». The description and the named run error texts no longer identify the internal model or executor.
 
 - **The main model looks at a tab with `screenshot` and `markdown`** `[D-BROWSER-LOOK]`. Both take only `name`. `screenshot` returns the visible area as a Pi image; `markdown` returns the page as Markdown with the `[id:N]` marks removed, since the ids belong to the executor's views. Further arguments are refused. Carriers: `extensions/RQW-browser/index.ts`, `test/extensions/RQW-browser/look.test.ts`.
   Owner: «чтобы он мог запросить скриншот страницы, либо markdown версию страницы»

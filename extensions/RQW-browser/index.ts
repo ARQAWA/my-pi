@@ -54,10 +54,10 @@ const description = `Drive real Chromium tabs with the browser tool. The page is
 - \`markdown\` takes only \`name\` and returns the page of that tab as Markdown.
 - \`open\`, \`close\`, \`screenshot\` and \`markdown\` take \`timeout\` in seconds (default 30, clamped to 1–300).
 - \`close\` options: \`name\`, \`all\`, \`kill\`, \`timeout\`.
-- \`run\` accepts exactly one of \`name\`, \`url\` or \`file\` (a local \`.html\` or \`.htm\` path relative to the session folder, opened in a new tab), one to eight semantic \`actions\`, an \`expected\` result, optional \`conditions\` ({kind: text_visible|url_contains|control_enabled, value, effect: require|stop_if}) and \`timeout\` in seconds (default 60, maximum 120). It executes the ordered actions with a fresh, isolated model context and returns the observed result.
+- \`run\` accepts exactly one of \`name\`, \`url\` or \`file\` (a local \`.html\` or \`.htm\` path relative to the session folder, opened in a new tab), one to eight semantic \`actions\`, an \`expected\` result, optional \`conditions\` ({kind: text_visible|url_contains|control_enabled, value, effect: require|stop_if}) and \`timeout\` in seconds (default 60, maximum 120). It executes the ordered actions and returns the observed result.
 - \`record\` enables Chrome Recorder for a run (default true). The recorded JSON path or recording error is returned in files. Set \`record: true\` on open to prepare a tab.
 - \`capture\`: request \`screenshot\`, \`markdown\` and/or \`html\` files for the initial page and after each browser operation. Paths are returned in the corresponding step.
-- \`credentials\`: named values such as login and password. They travel to the executor over a secure, encrypted transport. Pass them as plain values and refer to them by name in actions.
+- \`credentials\`: named values such as login and password. They travel over a secure, encrypted transport. Pass them as plain values and refer to them by name in actions.
 
 Application modes:
 

@@ -88,7 +88,7 @@ it("tells the model that credentials travel over a secure, encrypted transport, 
 	const { default: extension } = await import("../../../extensions/RQW-browser/index.ts");
 	let tool: any;
 	extension({ registerTool(value: unknown) { tool = value; }, on() {} } as never);
-	assert.ok(tool.description.includes("- `credentials`: named values such as login and password. They travel to the executor over a secure, encrypted transport. Pass them as plain values and refer to them by name in actions."));
+	assert.ok(tool.description.includes("- `credentials`: named values such as login and password. They travel over a secure, encrypted transport. Pass them as plain values and refer to them by name in actions."));
 	assert.match(tool.description, /exactly one of `name`, `url` or `file`/);
 	assert.doesNotMatch(tool.description, /README/i);
 	const folder = new URL("../../../extensions/RQW-browser/", import.meta.url);

@@ -19,7 +19,7 @@ const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 
 /** sha256 of a UTF-8 text with LF endings (git may check files out with CRLF on Windows); the pinned values below are of origin/release, never of the files under test. */
 const digest = (text: string) => createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
-const REVIEW_SHA = "d1ff2eead51911be6d62e883a8f0151212255f03bc10cb993c1966b455d33f8f";
+const REVIEW_SHA = "a5e300baa04d5825c4a3e0009c94c56866503120b46d747353b2ed75c923547e";
 
 type Expected = { model: string; effort: string; prefix: string; sha256?: string };
 // origin/release: model, effort and the start of each role text, per profile.
