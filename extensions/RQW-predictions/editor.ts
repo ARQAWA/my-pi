@@ -20,7 +20,7 @@ type FocusTUI = TUI & { getFocusedComponent(): unknown };
 type Input = (data: string) => void;
 type Render = (width: number) => string[];
 type EditorShape = { getPaddingX(): number; insertTextAtCursor(text: string): void };
-type Layout = { state: unknown; tui: { terminal: { rows: number } }; layoutText?(width: number): { text: string }[] };
+type Layout = { state: unknown; layoutText?(width: number): { text: string }[] };
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const firstGrapheme = (line: string) => [...graphemes.segment(line)][0]?.segment ?? "";
 type Decoration = { editor: CustomEditor; release(): void };
@@ -32,7 +32,7 @@ export function installEditor(actions: EditorActions) {
 	let session: ExtensionContext | undefined;
 	// The suggestion as the last render drew it: Tab takes only what was really shown.
 	let shown: string | undefined;
-	let cached: { text: string; width: number; limit: number; padding: number; marker: string; paint: string; rows: string[] } | undefined;
+	let cached: { text: string; width: number; padding: number; marker: string; paint: string; rows: string[] } | undefined;
 	let cachedHint: { text: string; width: number; padding: number; marker: string; theme: ExtensionContext["ui"]["theme"]; row: string } | undefined;
 	// Pi's own submit handler: every editor of the main chat, default or replaced, carries this exact function.
 	let mainSubmit: unknown;
@@ -44,35 +44,33 @@ export function installEditor(actions: EditorActions) {
 		return tui?.getFocusedComponent() === editor ? text : undefined;
 	}
 
-	/** The editor's own wrapped lines of `text`, as if it were typed, with its height limit: its buffer is swapped for the call and given back. */
-	function layoutLines(editor: CustomEditor, text: string, room: number, limit: number): string[] {
+	/** Wrap the suggestion using the editor's layout, restoring its buffer afterwards. */
+	function layoutLines(editor: CustomEditor, text: string, room: number): string[] {
 		const own = editor as unknown as Layout;
 		const buffer = own.state;
 		own.state = { lines: text.split("\n"), cursorLine: 0, cursorCol: 0 };
 		try {
-			return own.layoutText!(room).slice(0, limit).map(line => line.text);
+			return own.layoutText!(room).map(line => line.text);
 		} finally {
 			own.state = buffer;
 		}
 	}
 
-	/** The gray body rows, built once and rebuilt only when the text, the width, the height limit, the cursor marker or the theme change. */
+	/** The gray body rows, rebuilt when their text or appearance changes. */
 	function grayRows(editor: CustomEditor, text: string, width: number, padding: number, marker: string): string[] {
 		const paint = session!.ui.theme.fg("dim", "x");
-		// The editor shows at most 30% of the terminal rows, five at the least.
-		const limit = Math.max(5, Math.floor((editor as unknown as Layout).tui.terminal.rows * 0.3));
-		if (cached && cached.text === text && cached.width === width && cached.limit === limit && cached.padding === padding && cached.marker === marker && cached.paint === paint) return cached.rows;
+		if (cached && cached.text === text && cached.width === width && cached.padding === padding && cached.marker === marker && cached.paint === paint) return cached.rows;
 		const contentWidth = Math.max(1, width - padding * 2);
 		const room = Math.max(1, contentWidth - (padding ? 0 : 1));
 		const margin = " ".repeat(padding);
-		const lines = layoutLines(editor, text, room, limit);
+		const lines = layoutLines(editor, text, room);
 		const rows = lines.map((line, index) => {
 			const first = index === 0 ? firstGrapheme(line) : "";
 			const display = index === 0 ? marker + renderFakeCursor(first || " ") + gray(line.slice(first.length)) : gray(line);
 			const fill = " ".repeat(Math.max(0, contentWidth - Math.max(visibleWidth(line), 1)));
 			return `${margin}${display}${fill}${margin}`;
 		});
-		cached = { text, width, limit, padding, marker, paint, rows };
+		cached = { text, width, padding, marker, paint, rows };
 		return rows;
 	}
 

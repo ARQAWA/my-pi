@@ -69,7 +69,7 @@ it("a ready prediction is shown while a turn runs or a message waits, and nothin
 	h.fire("session_shutdown", { reason: "quit" });
 });
 
-it("hides the idle hint without an answer or a saved login", () => {
+it("hides the hint without an answer, but shows it without a saved login", () => {
 	const empty = harness();
 	empty.state.branch = [];
 	empty.fire("session_tree");
@@ -78,6 +78,6 @@ it("hides the idle hint without an answer or a saved login", () => {
 	const noLogin = harness();
 	noLogin.ctx.modelRegistry.getProviderAuthStatus = () => ({ configured: false, source: undefined as never });
 	noLogin.fire("session_tree");
-	assert.equal(plain(noLogin.screen()[1]).trim(), "");
+	assert.equal(plain(noLogin.screen()[1]).trim(), "ctrl+e to suggest");
 	noLogin.fire("session_shutdown", { reason: "quit" });
 });

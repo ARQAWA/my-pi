@@ -22,11 +22,10 @@ Nothing is sent by the extension; every other mode and every child session stays
 - The prompt comes from `codex-prompt.ts`: Codex's own endpoint, the saved `openai-codex` login read-only, a 300000 ms cache.
   Predictions therefore need that login also in an Anthropic chat.
 - The suggestion is kept until the next finished answer. Typing hides it, clearing the input shows the same one again.
-  It is drawn in the theme's `dim` colour, wrapped by the editor's own layout (`layoutText`) and cut at the editor's own
-  height limit (30% of the terminal rows, five at the least), so the input grows exactly as if the text were typed; there is
-  no scrolling. The real buffer stays `""` until Tab.
+  It is drawn in the theme's `dim` colour and wrapped by the editor's own layout (`layoutText`). The input grows to
+  show every line, without a scrolling widget. The real buffer stays `""` until Tab.
   Tab inserts it as one undoable edit. Enter, Right, Shift+Tab and key releases do nothing special.
-- In an empty input the key hint is dim and italic, two spaces after the cursor. A chat with a saved Codex login and an
+- In an empty input the key hint is dim and italic, two spaces after the cursor. A chat with a user message and an
   answer shows `ctrl+e to suggest` in every state, also while a request runs. It is the only hint of the input. The Esc
   hints are not in the input: RQW-statusbar draws them on the activity line. A ready suggestion is always drawn, in every chat state, and no hint covers it; it stays
   non-italic. Typing, including a space, hides both. Hints never enter the buffer or history.
@@ -51,5 +50,5 @@ indicator from the channel, so the status stays right after `/statusbar off`. A 
 
 - Own folder only; no import from another extension. Each of RQW-statusbar, RQW-skill-dollar and the transports can be off.
 - The editor is decorated in place (`render`, `handleInput`); an editor shape other than border, one row, border stays stock.
-- Not done: speed measurements on macOS and Windows. A suggestion taller than the editor's height limit is cut there, as typed text would be, with no scrolling.
+- Not done: speed measurements on macOS and Windows. The terminal cannot show rows beyond its screen.
 - Tests: `test/extensions/RQW-predictions/`.

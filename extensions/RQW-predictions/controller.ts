@@ -178,11 +178,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 
 	return {
 		suggestion: () => ready,
-		available: () => {
-			if (!ctx || !ctx.model || !hasHistory) return false;
-			const status = ctx.modelRegistry.getProviderAuthStatus?.("openai-codex");
-			return status?.configured === true && status.source === "stored";
-		},
+		available: () => Boolean(ctx?.model && hasHistory),
 		start(next) {
 			stop();
 			ctx = next;
@@ -192,7 +188,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		stop,
 		answered(event) {
 			if (!ctx) return;
-			updateHistory();
+			if (!hasHistory) updateHistory();
 			deps.changed?.();
 			if (event.outcome !== "completed" || event.message.role !== "assistant" || event.message.stopReason !== "stop") return;
 			if (seenAnswer === event.messageEntryId) return;

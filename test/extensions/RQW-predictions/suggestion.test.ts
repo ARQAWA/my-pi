@@ -132,24 +132,13 @@ describe("RQW-predictions gray suggestion", () => {
 		}
 	});
 
-	it("a tall text gets the same height as the same text typed: 30% of the terminal rows, no scrolling widget of its own", async () => {
+	it("shows every line of a tall suggestion before Tab inserts it", async () => {
 		const tall = Array.from({ length: 70 }, (_, i) => `step ${i}`).join("\n");
-		const typed = new CustomEditor({ requestRender() {}, terminal: { rows: 40, columns: 80 } } as never,
-			{ borderColor: (row: string) => row, selectList: {} } as never, { matches: () => false } as never);
-		typed.setText(tall);
 		const h = await ready(tall);
-		const rows = h.screen();
-		assert.equal(rows.length, typed.render(80).length);
-		assert.equal(rows.length, 14);
-		assert.equal(plain(rows[1]).trimEnd(), "step 0");
-		assert.equal(plain(rows[2]), "step 1".padEnd(80));
-		assert.equal(plain(rows.at(-1)!), "─".repeat(80));
-		// A terminal of another height changes the limit, also at the same width.
-		(h.editor as unknown as { tui: { terminal: { rows: number } } }).tui.terminal.rows = 20;
-		assert.equal(h.screen().length, 8);
-		// Drawing it never leaves the suggestion in the editor's buffer.
+		assert.deepEqual(body(h.screen()).map(row => row.trimEnd()), tall.split("\n"));
 		assert.equal(h.editor.getText(), "");
-		assert.deepEqual(h.editor.getCursor(), { line: 0, col: 0 });
+		h.key(TAB);
+		assert.equal(h.editor.getText(), tall);
 	});
 
 	it("Tab is one undo step", async () => {
