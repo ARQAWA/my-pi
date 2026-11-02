@@ -589,8 +589,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
   Coordinator text: option a in entry `b4093268`, line 970 means at most four whitespace-separated words AND
   32 Unicode code points. Prompt and validation enforce both; overlong candidates are rejected, never truncated.
-  Background generation runs once after first user input and after every successful compaction, using all available
-  projected context including summary and kept messages. One request generates 1-10 candidates ranked by meaning;
+  Background generation runs once after first user input and after every successful compaction, using the latest
+  50,000 estimated tokens of user and assistant text in the active session branch, including before compaction. Tool calls, results, thinking, images,
+  custom entries and compaction summaries are excluded before applying the limit. Owner, verbatim:
+  «Так блять обрезать сессию что бы помещалась в 50к токенов - типа отдать ему последние 50к токенов сессии и с них делать нейминг».
+  «Да, и во время rename можно даже выбросить из отправки на rename весь tool call, оставить только входящие и исходящие сообщения и всё. Чтобы по их концовке агент понимал, чем сейчас занимается сессия и во что её надо переименовать.»
+  One request generates 1-10 candidates ranked by meaning;
   the first valid candidate is selected. The current session provider selects the naming model, all with `low`
   reasoning: `anthropic` → `anthropic/claude-haiku-5-5`, `openai-codex` → `openai-codex/gpt-5.6-luna`, without fallback.
   USER entry `202bfbdd`, line 13422, naming excerpt:

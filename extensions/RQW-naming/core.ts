@@ -1,5 +1,5 @@
 import {
-	type AssistantMessage, type Context, contentText, type ImageContent, type Message, type Model, type TextContent,
+	type AssistantMessage, type Context, contentText, type Model, type TextContent,
 } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
@@ -12,6 +12,7 @@ export const NAME_COUNT = 10;
 export const MAX_NAME_WORDS = 4;
 export const MAX_NAME_CODE_POINTS = 32;
 
+export type NamingMessage = { role: "user" | "assistant"; content: string };
 export type NamingRegistry = Pick<ModelRegistry, "getAvailableOfType" | "streamSimple">;
 export type NamingSelection = { model: Model<any>; reasoning: typeof NAMING_REASONING };
 
@@ -37,32 +38,43 @@ export async function selectNamingModel(registry: NamingRegistry, signal: AbortS
 	return { model, reasoning: NAMING_REASONING };
 }
 
-function generationPrompt(messages: Message[]): (TextContent | ImageContent)[] {
-	const content: (TextContent | ImageContent)[] = [{ type: "text", text: [
+function generationPrompt(messages: NamingMessage[]): TextContent[] {
+	const intro: TextContent = { type: "text", text: [
 		`Read the conversation and propose 1 to ${NAME_COUNT} different short names for this session.`,
 		"Rank them by how well their meaning describes the conversation, best first.",
 		"Reply with only a JSON array of strings.",
 		`Each name must have at most ${MAX_NAME_WORDS} words and at most ${MAX_NAME_CODE_POINTS} Unicode code points.`,
-		"Image attachments follow their message in the order numbered in its content.",
 		"<conversation>",
-	].join("\n") }];
-	for (const message of messages) {
-		const images: ImageContent[] = [];
-		let serialized: unknown = message;
-		if ((message.role === "user" || message.role === "toolResult") && Array.isArray(message.content)) {
-			serialized = { ...message, content: message.content.map((block) => {
-				if (block.type !== "image") return block;
-				images.push(block);
-				return { type: "image", attachment: images.length, mimeType: block.mimeType };
-			}) };
+	].join("\n") };
+	// Pi estimates 3.5 characters per token; bytes are conservative for non-ASCII text.
+	let budget = 50000 * 3.5;
+	const recent: TextContent[] = [];
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		let text = JSON.stringify(message);
+		let cost = Buffer.byteLength(text);
+		if (cost > budget) {
+			const bytes = Buffer.from(message.content);
+			let low = Math.max(0, bytes.length - budget);
+			let high = bytes.length;
+			while (low < high) {
+				const middle = Math.floor((low + high) / 2);
+				text = JSON.stringify({ role: message.role, content: bytes.subarray(middle).toString("utf8") });
+				if (Buffer.byteLength(text) <= budget) high = middle;
+				else low = middle + 1;
+			}
+			while (low < bytes.length && (bytes[low] & 0xc0) === 0x80) low++;
+			text = JSON.stringify({ role: message.role, content: bytes.subarray(low).toString("utf8") });
+			if (low < bytes.length && Buffer.byteLength(text) <= budget) recent.push({ type: "text", text });
+			break;
 		}
-		content.push({ type: "text", text: JSON.stringify(serialized) }, ...images);
+		recent.push({ type: "text", text });
+		budget -= cost;
 	}
-	content.push({ type: "text", text: "</conversation>" });
-	return content;
+	return [intro, ...recent.reverse(), { type: "text", text: "</conversation>" }];
 }
 
-async function complete(registry: NamingRegistry, selected: NamingSelection, prompt: (TextContent | ImageContent)[], signal: AbortSignal): Promise<string> {
+async function complete(registry: NamingRegistry, selected: NamingSelection, prompt: TextContent[], signal: AbortSignal): Promise<string> {
 	signal.throwIfAborted();
 	const context: Context = { systemPrompt: SYSTEM, messages: [{ role: "user", content: prompt, timestamp: 0 }] };
 	const message: AssistantMessage = await registry.streamSimple(selected.model, context, { reasoning: selected.reasoning, signal }).result();
@@ -81,7 +93,7 @@ export function parseCandidates(text: string): string[] {
 }
 
 /** One request generates and ranks candidates; use the best valid name. */
-export async function generateSessionName(input: { context: Message[]; registry: NamingRegistry; signal: AbortSignal; provider: string | undefined }): Promise<string> {
+export async function generateSessionName(input: { context: NamingMessage[]; registry: NamingRegistry; signal: AbortSignal; provider: string | undefined }): Promise<string> {
 	const { context, registry, signal, provider } = input;
 	if (signal.aborted) throw new Error("Naming aborted");
 	const selected = await selectNamingModel(registry, signal, provider);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { it } from "node:test";
 import naming from "../../../extensions/RQW-naming/index.ts";
 
-it("passes images from the first user message as attachments with their conversation positions", async () => {
+it("uses only user and assistant text for the first-message trigger", async () => {
 	const handlers: Record<string, (event: any, ctx: any) => void> = {};
 	let finish!: (name: string) => void;
 	const named = new Promise<string>((resolve) => { finish = resolve; });
@@ -14,30 +14,32 @@ it("passes images from the first user message as attachments with their conversa
 		setSessionName: finish,
 	};
 	naming(pi as never);
-	const image1 = { type: "image", mimeType: "image/png", data: "first-base64" };
-	const image2 = { type: "image", mimeType: "image/jpeg", data: "second-base64" };
-	const previous = { role: "custom", content: [{ type: "text", text: "Earlier context" }, image1], timestamp: 1 };
-	const user = { role: "user", content: [{ type: "text", text: "What is this?" }, image2], timestamp: 2 };
+	const image = { type: "image", mimeType: "image/png", data: "excluded-image" };
+	const user = { role: "user", content: [{ type: "text", text: "user words" }, image], timestamp: 2 };
+	const messages = [
+		{ role: "custom", content: "excluded-custom", timestamp: 1 },
+		{ role: "compactionSummary", summary: "excluded-summary", timestamp: 1 },
+		{ role: "assistant", content: [{ type: "thinking", thinking: "excluded-thinking" }, { type: "text", text: "assistant words" }, { type: "toolCall", id: "1", name: "excluded-tool", arguments: { secret: "excluded-args" } }], timestamp: 1 },
+		{ role: "toolResult", content: [{ type: "text", text: "excluded-result" }], timestamp: 1 },
+	];
 	const ctx = {
 		model: { provider: "anthropic" },
-		sessionManager: { getSessionId: () => "session", getEntries: () => [], buildSessionProjection: () => ({ messages: [previous] }) },
+		sessionManager: { getSessionId: () => "session", getEntries: () => [], getBranch: () => messages.map((message, index) => ({ type: "message", id: String(index), message })) },
 		modelRegistry: {
-			getAvailableOfType: async () => [{ id: "claude-haiku-5-5" }],
+			getAvailableOfType: async () => [{ id: "claude-haiku-5-5", contextWindow: 1000000 }],
 			streamSimple: (_model: unknown, context: unknown) => {
 				request = context;
-				return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: '["Image question"]' }] }) };
+				return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: '["Text conversation"]' }] }) };
 			},
 		},
 	};
 	handlers.session_start({}, ctx);
 	handlers.message_end({ message: user }, ctx);
-	assert.equal(await named, "Image question");
+	assert.equal(await named, "Text conversation");
 	const content = request.messages[0].content;
-	assert.deepEqual(content.slice(1, 5), [
-		{ type: "text", text: JSON.stringify({ role: "user", content: [{ type: "text", text: "Earlier context" }, { type: "image", attachment: 1, mimeType: "image/png" }], timestamp: 1 }) },
-		image1,
-		{ type: "text", text: JSON.stringify({ ...user, content: [user.content[0], { type: "image", attachment: 1, mimeType: "image/jpeg" }] }) },
-		image2,
-	]);
-	assert.ok(!content.filter((block: any) => block.type === "text").some((block: any) => block.text.includes("base64")));
+	assert.ok(content.every((block: any) => block.type === "text"));
+	const text = content.map((block: any) => block.text).join("\n");
+	assert.ok(text.includes("user words"));
+	assert.ok(text.includes("assistant words"));
+	assert.ok(!text.includes("excluded-"));
 });
