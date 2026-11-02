@@ -7,8 +7,6 @@ after(() => reportTimings(import.meta.filename));
 type World = Awaited<ReturnType<typeof world>>;
 
 const RESULTS = "rqw-auto-wait-results";
-/** Ctrl+backslash: aborts the turn and stops background work, so no wake is claimed afterwards. */
-const STOP_BACKGROUND = "\x1c";
 const customEntries = (w: World, type: string) => w.jsonl().filter((entry) => entry.type === "custom" && entry.customType === type);
 
 /** The results the hidden wake message carries, when the request ends with it. */
@@ -75,27 +73,15 @@ it("a message from the user closes the wait card as interrupted, the child keeps
 	assert.equal(w.requests.filter((request) => request.background === undefined && isTask("count files")(request)).length, 1);
 });
 
-// Product bug, found by this scenario: the child's result arrives while the chat is idle, and nothing wakes it.
-// RQW-agent's `publishRun` and the `finally` of the run both persist the child to the session, one after the other.
-// RQW-auto-wait's `requestCheck` has by then marked a check as scheduled with the first leaf; the microtask finds a
-// changed leaf, returns without a new check, and the second `coordinator.notify()` is ignored while `scheduled` is set.
-// A second finding: the lost wake is claimed later, while the session shuts down (RQW-tools' job close calls
-// `requestCheck` before RQW-auto-wait's own `session_shutdown` handler has run), so a wake request can leave a
-// disposed session. The `finally` below stops it, so it cannot reach the next test.
-it("a child that finishes while the chat is idle wakes it once", { todo: "product bug: the wake is lost when the leaf changes between the notify and its check" }, async (t) => {
+it("a child that finishes while the chat is idle wakes it once", async (t) => {
 	const w = await world(t);
 	const child = w.model.hold(isTask("count files"));
 	w.model.script(call("agent", { action: "start", task: "count files", title: "Count" }, "c1"), text("started"), text("child said 3"));
 	await w.submit("go");
 	child.reply(text("3"));
-	try {
-		await w.until(() => wakeRequests(w).length === 1, "the wake request");
-		await w.settle();
-		w.see("child said 3");
-		assert.equal(wakeRequests(w).length, 1);
-	} finally {
-		// While the session shuts down a ready result can still start a wake that outlives the world; stop it first.
-		w.press(STOP_BACKGROUND);
-		await w.settle();
-	}
+	await w.until(() => wakeRequests(w).length === 1, "the wake request");
+	await w.settle();
+
+	w.see("child said 3");
+	assert.equal(wakeRequests(w).length, 1);
 });
