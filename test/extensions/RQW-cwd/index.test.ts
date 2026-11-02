@@ -2,16 +2,18 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { AgentSessionRuntime, InteractiveMode, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import tempCwd, { installTempCwd, registerTempCwd } from "../../../extensions/RQW-cwd/index.ts";
 
 let root: string, home: string, target: string;
 let log: string[];
 const platform = process.platform === "win32" ? "win32" : "darwin";
-const realInit = InteractiveMode.prototype.init;
+let realInit: typeof InteractiveMode.prototype.init;
 
+describe("temporary working directory init", () => {
 beforeEach(async () => {
+	realInit = InteractiveMode.prototype.init;
 	root = await mkdtemp(join(tmpdir(), "rqw-cwd-init-"));
 	home = join(root, "home");
 	target = join(root, "temp");
@@ -110,4 +112,5 @@ it("the extension patches Pi's real InteractiveMode, and another Pi version keep
 	handlers.get("session_start")?.({ reason: "startup" }, ctx(join(home, "project")));
 	assert.equal(log.length, 1);
 	assert.match(log[0]!, /not supported by RQW-cwd; the chat stays in/);
+});
 });

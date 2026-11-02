@@ -1,6 +1,6 @@
 # RQW-auto-wait
 
-Independent main-chat automatic waiting for direct agents and main background jobs. After the current turn settles, live work gets one context-free wait card. Final results from available sources are collected into one hidden custom message and start one model turn. No polling or timer is used. Explicit `agent wait` and `job wait` remain available.
+Independent main-chat automatic waiting for direct agents and main background jobs. After the current turn settles, live work gets one context-free wait card. Final results from available sources are collected into one hidden custom message and start one model turn. No polling or timer is used. Explicit `agent wait` and `job wait` remain available. The settled turn's final answer stays visible; intermediate work follows the normal worked-for fold.
 
 Input closes the card without stopping work. An input accepted before a result claim runs first. During an auto-wake run, a prompt without a streaming behavior is queued as a normal follow-up. A narrow `AgentSession.prompt` runtime patch is checked against Pi 1.4.0 and restored on shutdown. An incompatible shape disables auto-wake and leaves native input and explicit waits unchanged.
 

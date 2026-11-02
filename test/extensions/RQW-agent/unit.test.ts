@@ -224,7 +224,7 @@ function timerFixture(t: TestContext, offers = true) {
 	});
 	const model = fauxProvider({ provider: "progress", models: [{ id: "model" }] }).getModel("model")!;
 	progress.capture(model, { messages: [{ role: "user", content: "task", timestamp: 1 }] } as never);
-	const response = fauxAssistantMessage([fauxToolCall("read", { path: "a" })], { stopReason: "toolUse" });
+	const response = fauxAssistantMessage([fauxToolCall("read", { path: "a" }, { id: "progress-read" })], { stopReason: "toolUse" });
 	t.after(() => progress.invalidate());
 	return { progress, requests, notices, respond: (count = 1) => { for (let i = 0; i < count; i++) progress.response(response, "low"); },
 		tick: (ms: number) => t.mock.timers.tick(ms), settle: () => new Promise<void>(resolve => setImmediate(resolve)) };

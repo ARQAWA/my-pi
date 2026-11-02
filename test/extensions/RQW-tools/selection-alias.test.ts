@@ -11,7 +11,7 @@ function host(allow?: string[], exclude?: string[], codemode?: any, definitions 
 	const registered = definitions.map((definition) => ({ definition, sourceInfo: { source: "extension", path: "test" } }));
 	const session: any = Object.create(AgentSession.prototype);
 	Object.assign(session, {
-		sessionManager: {}, agent: { state: { tools: [] } }, _pendingToolNames: new Set(),
+		sessionManager: { getSessionId: () => "test-session" }, agent: { state: { tools: [] } }, _pendingToolNames: new Set(),
 		_usesDefaultTools: true, _defaultToolModifiers: [],
 		_allowedTools: allow && ((name: string) => allow.includes(name)),
 		_excludedTools: exclude && ((name: string) => exclude.includes(name)),
