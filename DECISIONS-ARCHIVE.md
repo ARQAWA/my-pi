@@ -7714,3 +7714,25 @@ Status: MERGED by [D-AGENT-PROFILES] (DECISIONS.md#agent): the profile rule alre
 Introduced: `61f850da`. Source: `d1f2b7e5:DECISIONS.md`, lines 2107-2108. Verbatim replaced text:
 
 > ; this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers
+
+## A-0460 · archived 2026-11-02 · Send now · follow-up hold pointer
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `c8e8ceee`. Source: `cdaae4c8:DECISIONS.md`, lines 1839-1840. Verbatim replaced text:
+
+> (`extensions/RQW-agent/README.md`
+>   describes the hold)
+
+## A-0461 · archived 2026-11-02 · Send now · held follow-ups
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `acc4a0a7`. Source: `cdaae4c8:DECISIONS.md`, lines 1887-1887. Verbatim replaced text:
+
+> Follow-ups held for the real final (`extensions/RQW-agent/followup-hold.ts`) are taken too.
+
+## A-0462 · archived 2026-11-02 · Send now · superseded public API restriction
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `a9873f64`. Source: `cdaae4c8:DECISIONS.md`, lines 1846-1846. Verbatim replaced text:
+
+> The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
