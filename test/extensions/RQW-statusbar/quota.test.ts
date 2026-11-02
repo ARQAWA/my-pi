@@ -54,8 +54,8 @@ function setup(t: TestContext) {
 	};
 	setAccount("first");
 	const cacheDir = join(temporary, "rqw-quota");
-	const file = (provider: "CX" | "CC", account = "first") => join(cacheDir,
-		`${provider}-${createHash("sha256").update(provider === "CX" ? `fake-account-${account}` : `fake-cc-refresh-${account}`).digest("hex").slice(0, 16)}.json`);
+	const file = (provider: "CX" | "CC", account = "first", name: string = provider === "CX" ? "CX-credits" : "CC") => join(cacheDir,
+		`${name}-${createHash("sha256").update(provider === "CX" ? `fake-account-${account}` : `fake-cc-refresh-${account}`).digest("hex").slice(0, 16)}.json`);
 	const reads = { CX: 0, CC: 0 };
 	t.mock.method(globalThis, "fetch", async (url: unknown) => {
 		assert.equal(url, "https://chatgpt.com/backend-api/wham/usage");
@@ -305,6 +305,21 @@ it("CXC takes the colour of CX and gets the stale star with CX, then loses it on
 	cache.response.credits = { has_credits: false };
 	t.mock.timers.tick(3 * MINUTE);
 	await until(() => !shown().includes("CXC") && cache.idle());
+});
+
+it("CXC survives a cache file written by a release that does not know credits", async (t) => {
+	const cache = setup(t);
+	cache.response.credits = { has_credits: true, unlimited: false, balance: "25" };
+	mkdirSync(cache.cacheDir);
+	const oldTab = () => writeFileSync(cache.file("CX", "first", "CX"), JSON.stringify({ percent: 77, okAt: Date.now(), checkedAt: Date.now() }));
+	oldTab();
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CXC 25  CX 77%") && cache.idle());
+	t.mock.timers.tick(3 * MINUTE);
+	oldTab();
+	t.mock.timers.tick(MINUTE);
+	await until(() => cache.idle());
+	assert.ok(shown().includes("CXC 25  CX 77%"));
 });
 
 it("CXC follows the Codex login and is hidden without it", async (t) => {

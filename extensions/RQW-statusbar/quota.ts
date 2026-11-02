@@ -8,6 +8,9 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 // Missing sources never imply a full or empty subscription.
 export const QUOTA_REFRESH_MS = 60 * 1000;
 const QUOTA_CHECK_MS = 3 * 60 * 1000;
+// Releases before CXC wrote CX-<account>.json without credits. They may still run in other tabs and
+// would erase the credits from a shared file, so the credits-aware CX record has its own file.
+const CACHE_NAME = { CX: "CX-credits", CC: "CC" } as const;
 // Object order is the display order: credits, Codex weekly quota, Claude weekly quota.
 export const QUOTA_COLORS = { CXC: "139;197;255", CX: "139;197;255", CC: "255;152;170" } as const;
 export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
@@ -174,7 +177,7 @@ export class QuotaConsumer {
 				const key = accountKey(credential);
 				if (!key) throw new Error("Quota account unavailable");
 				if (this.accounts[id] !== key) { this.forget(id); this.accounts[id] = key; }
-				const file = join(tmpdir(), "rqw-quota", `${id}-${key}.json`);
+				const file = join(tmpdir(), "rqw-quota", `${CACHE_NAME[id]}-${key}.json`);
 				const show = (record: Reading) => {
 					if (!current()) return;
 					if (record.percent !== undefined) {
