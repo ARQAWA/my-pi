@@ -69,8 +69,13 @@ it("a held process keeps the tool call open until the test finishes it", async (
 
 it("ripgrep is answered from a simulated tree through the real rqw_rg tool", async (t) => {
 	const w = await world(t);
+	process.env.PATH = "";
 	const tree: VFile[] = [{ path: "src/a.ts", text: "const needle = 1;\nconst other = 2;\n" }, { path: "src/b.ts", text: "nothing here\n" }];
-	w.processes.reply(ripgrep, (spawned) => simulateRipgrep(tree, w.dirs.project, spawned.args, spawned.cwd ?? w.dirs.project));
+	w.processes.reply(ripgrep, (spawned) => {
+		assert.notDeepEqual(spawned.args, ["--version"]);
+		return simulateRipgrep(tree, w.dirs.project, spawned.args, spawned.cwd ?? w.dirs.project);
+	});
+	assert.equal(spawnSync("rg", ["--version"]).status, 0);
 	w.model.script(call("rqw_rg", { pattern: "needle", output_mode: "files_with_matches" }, "g1"), text("searched"));
 	await w.submit("find it");
 	w.see("searched");
