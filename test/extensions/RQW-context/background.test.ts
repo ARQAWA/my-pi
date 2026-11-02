@@ -285,6 +285,34 @@ describe("RQW-context background compaction: projected snapshot", () => {
 		});
 	}
 
+	it("projects through the offered safe projection when Pi's own call overflows on a long tail", () => {
+		const stamp = "2026-01-01T00:00:00.000Z";
+		const big: any[] = [
+			{ type: "message", id: "a", parentId: null, timestamp: stamp, message: user(10) },
+			{ type: "compaction", id: "c", parentId: "a", timestamp: stamp, summary: "sum", firstKeptEntryId: "a", tokensBefore: 1 },
+		];
+		for (let i = 0; i < 200_000; i++) {
+			big.push({ type: "custom_message", id: `t${i}`, parentId: i === 0 ? "c" : `t${i - 1}`, timestamp: stamp, customType: "x", content: "c", display: false });
+		}
+		const settings = { enabled: true, reserveTokens: 100, keepRecentTokens: 150 };
+		const small = fixtures["split turn"]!().getBranch();
+		const key = Symbol.for("rqw:safe-projection:v1");
+		const shared = globalThis as Record<symbol, unknown>;
+		const previous = shared[key];
+		try {
+			delete shared[key];
+			assert.throws(() => prepareSnapshot(big, settings, 0), RangeError);
+			const seen: unknown[] = [];
+			shared[key] = (entries: unknown) => { seen.push(entries); return PiRoot.buildSessionProjection(small as never); };
+			const snapshot = prepareSnapshot(big, settings, 0);
+			assert.deepEqual(seen, [big]);
+			assert.ok(snapshot);
+			assert.deepEqual(comparable(snapshot.preparation), comparable(prepareCompaction(small, settings)));
+		} finally {
+			if (previous === undefined) delete shared[key]; else shared[key] = previous;
+		}
+	});
+
 	it("uses only helpers that both the npm root and the compiled bundle export", () => {
 		const names = ["buildSessionProjection", "getLatestCompactionEntry", "estimateTokens", "sessionEntryToContextMessages", "shouldCompact"];
 		for (const name of names) assert.equal(typeof (PiRoot as Record<string, unknown>)[name], "function", name);

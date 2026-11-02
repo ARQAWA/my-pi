@@ -1,7 +1,8 @@
-import { UserMessageSelectorComponent, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { SessionManager, UserMessageSelectorComponent, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import { commitEdit, type CommitResult } from "./commit.ts";
+import { installSafeProjection } from "./projection.ts";
 
 type CountsSource = { version: number; snapshot(): { agents?: number; reviews?: number; backgroundProcesses?: number } };
 type Focused = { actionHandlers?: unknown; isShowingAutocomplete?(): boolean };
@@ -30,6 +31,8 @@ function isCountsOffer(data: unknown): data is { version: number; source: Counts
 }
 
 export default function historyEdit(pi: ExtensionAPI): void {
+	// A tail of ~120000 entries after a compaction overflows Pi's projection; see projection.ts.
+	installSafeProjection(SessionManager.prototype as unknown as Record<string | symbol, unknown>);
 	// RQW-agent offers agents and reviews, RQW-tools offers background processes; each on the same channel.
 	const sources = new Set<CountsSource>();
 	let dispose: (() => void) | undefined;

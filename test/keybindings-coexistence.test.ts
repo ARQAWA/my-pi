@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { AgentSession, createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { AgentSession, createEventBus, SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { stripVTControlCharacters } from "node:util";
 import { getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import predictions from "../extensions/RQW-predictions/index.ts";
 import historyEdit from "../extensions/RQW-history-edit/index.ts";
+import { uninstallSafeProjection } from "../extensions/RQW-history-edit/projection.ts";
 import scroll from "../extensions/RQW-scroll/index.ts";
 import sendNow from "../extensions/RQW-send-now/index.ts";
 import { assistant, CTRL_R, harness, OTHER, settle, suggestion, USER } from "./extensions/RQW-predictions/harness.ts";
+
+// The history-edit extension patches SessionManager.prototype when it loads; every test puts Pi's methods back.
+afterEach(() => uninstallSafeProjection(SessionManager.prototype as never));
 
 it("Ctrl+R restarts an interrupted turn with predictions loaded, and generates nothing", async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});

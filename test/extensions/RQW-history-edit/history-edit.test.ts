@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
-import { it } from "node:test";
+import { afterEach, it } from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initTheme, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import historyEdit from "../../../extensions/RQW-history-edit/index.ts";
+import { uninstallSafeProjection } from "../../../extensions/RQW-history-edit/projection.ts";
+
+// The extension patches SessionManager.prototype when it loads; every test puts Pi's methods back.
+afterEach(() => uninstallSafeProjection(SessionManager.prototype as never));
 
 it("refuses history editing while a child runs", async () => {
 	const handlers = new Map<string, any>();

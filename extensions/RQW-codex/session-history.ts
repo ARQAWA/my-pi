@@ -64,10 +64,18 @@ type Coverage = { baseIndex: number; covered: Set<string>; responses: Set<string
 
 const SOURCE_ROLES: ReadonlySet<string> = new Set(["user", "system", "toolResult", "assistant"]);
 
+/** Optional process-wide offer of RQW-history-edit: Pi's projection that survives a long tail after a compaction. */
+const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
+type Projection = ReturnType<SessionManagerLike["buildSessionProjection"]>;
+type Project = (entries: SessionEntry[], leafId: string | null) => Projection;
+
 /** Pi's projected messages per raw entry id on the branch ending at leafId (edits and omissions applied). */
 function projectedMessages(entries: SessionEntry[], leafId: string | null): Map<string, unknown[]> {
 	const out = new Map<string, unknown[]>();
-	for (const entry of buildSessionProjection(entries, leafId).entries) out.set(entry.sourceEntry.id, entry.messages);
+	// Pi's own call overflows the stack on a tail of about 120000 entries after a compaction.
+	const offered = (globalThis as { [SAFE_PROJECTION]?: unknown })[SAFE_PROJECTION];
+	const project: Project = typeof offered === "function" ? offered as Project : buildSessionProjection as unknown as Project;
+	for (const entry of project(entries, leafId).entries) out.set(entry.sourceEntry.id, entry.messages);
 	return out;
 }
 

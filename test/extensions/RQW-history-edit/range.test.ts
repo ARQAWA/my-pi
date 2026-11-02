@@ -3,9 +3,13 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { it, type TestContext } from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { afterEach, it, type TestContext } from "node:test";
+import { SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import historyEdit from "../../../extensions/RQW-history-edit/index.ts";
+import { uninstallSafeProjection } from "../../../extensions/RQW-history-edit/projection.ts";
+
+// The extension patches SessionManager.prototype when it loads; every test puts Pi's methods back.
+afterEach(() => uninstallSafeProjection(SessionManager.prototype as never));
 
 type Fault = "write" | "rename" | "navigate" | "navigate-cancel" | "switch-cancel" | "switch-throw" | "loaded-switch-throw" | "restore-cancel" | "restore-throw" | "rollback-write" | "backup-remove";
 

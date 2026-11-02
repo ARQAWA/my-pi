@@ -57,6 +57,10 @@ jobs:
       - name: npm test
         run: npm test
 
+      # Measurement only, no time assertion: Pi's projection against the safe copy on a long tail.
+      - name: Safe projection measurement
+        run: node scripts/measure-safe-projection.ts
+
       - name: Tests in a path with spaces and Cyrillic
         run: |
           DIR="$RUNNER_TEMP/проба с пробелом"

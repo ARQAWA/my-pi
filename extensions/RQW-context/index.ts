@@ -8,6 +8,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AgentSession, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { type BackgroundSession, bindBackground, installBackground, maybeStart, ready, supersede } from "./background.ts";
+import { compactSafeTail } from "./large-tail.ts";
 
 export const MAX_WINDOW = 500_000;
 const VIRTUAL_MODEL_API = "pi-virtual";
@@ -287,11 +288,12 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 				// Native compact aborts the current run before reading settings. Read its response limits then, not now.
 				return physicalScope.run({ agent: this.agent, session,
 					get selectedModel() { return session.model; }, get physical() { return session._limitsModel(); } },
-					() => original.apply(this, args));
+					() => compactSafeTail(this, () => original.apply(this, args), "manual", false, args[0]));
 			}
 			const scope = physicalScope.getStore();
 			const physical = scope?.session === this ? scope.physical : this._limitsModel();
-			return Promise.resolve(withPhysical(this, physical, () => original.apply(this, args))).finally(finishBackground);
+			return Promise.resolve(withPhysical(this, physical,
+				() => compactSafeTail(this, () => original.apply(this, args), args[0], args[1]))).finally(finishBackground);
 		});
 	}
 	proto[WRAPPED_ROUTING] = true;
