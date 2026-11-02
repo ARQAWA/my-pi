@@ -38,6 +38,11 @@ export default function autoWait(pi: ExtensionAPI) {
 		for (const claim of claims) claim.source.commit(claim.token);
 		return true;
 	}
+	/** A wake whose start failed before any run existed gives its results back at once; the next settle or an explicit wait takes them. */
+	function startFailed(batch: unknown) {
+		if (pending?.id !== batch || !ctx?.isIdle() || reconcile()) return;
+		flight = false; release();
+	}
 	function clearSources() {
 		for (const unsubscribe of sources.values()) unsubscribe();
 		sources.clear();
@@ -97,7 +102,9 @@ export default function autoWait(pi: ExtensionAPI) {
 		if (current.mode !== "tui") { ctx = undefined; return; }
 		const proto = AgentSession.prototype;
 		const descriptor = Object.getOwnPropertyDescriptor(proto, "prompt");
-		if (VERSION !== "1.4.0" || !descriptor || typeof descriptor.value !== "function" || !descriptor.writable || !descriptor.configurable) {
+		const sendDescriptor = Object.getOwnPropertyDescriptor(proto, "sendCustomMessage");
+		const patchable = (value?: PropertyDescriptor): value is PropertyDescriptor => !!value && typeof value.value === "function" && !!value.writable && !!value.configurable;
+		if (VERSION !== "1.4.0" || !patchable(descriptor) || !patchable(sendDescriptor)) {
 			current.ui.notify("RQW-auto-wait: incompatible Pi prompt; automatic wake disabled.", "warning");
 			ctx = undefined; return;
 		}
@@ -108,7 +115,18 @@ export default function autoWait(pi: ExtensionAPI) {
 			return original.call(this, text, options);
 		};
 		Object.defineProperty(proto, "prompt", { ...descriptor, value: wrapped });
-		restore = () => { if (Object.getOwnPropertyDescriptor(proto, "prompt")?.value === wrapped) Object.defineProperty(proto, "prompt", descriptor); };
+		// Pi reports a failed custom-message start only as an extension error, so watch the rejection here.
+		const originalSend = sendDescriptor.value;
+		const wrappedSend = function(this: AgentSession, message: { customType?: string; details?: { batch?: unknown } }, options?: unknown) {
+			const result = originalSend.call(this, message, options);
+			if (this.sessionManager !== manager || message?.customType !== "rqw-auto-wait-results") return result;
+			return Promise.resolve(result).catch(error => { startFailed(message.details?.batch); throw error; });
+		};
+		Object.defineProperty(proto, "sendCustomMessage", { ...sendDescriptor, value: wrappedSend });
+		restore = () => {
+			if (Object.getOwnPropertyDescriptor(proto, "prompt")?.value === wrapped) Object.defineProperty(proto, "prompt", descriptor);
+			if (Object.getOwnPropertyDescriptor(proto, "sendCustomMessage")?.value === wrappedSend) Object.defineProperty(proto, "sendCustomMessage", sendDescriptor);
+		};
 		pi.events.emit("rqw:auto-wait:request:v1", { sessionId, offer: adopt });
 	});
 	pi.on("session_tree", (_event, current) => { setActive(false); generation++; armed = flight = false; release(); card.restore(current); });

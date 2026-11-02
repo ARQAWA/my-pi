@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { AgentSession, createEventBus } from "@earendil-works/pi-coding-agent";
 import autoWait from "../../../extensions/RQW-auto-wait/index.ts";
 
-function setup(t: any, mode = "tui") {
+function setup(t: any, mode = "tui", nativeSend = false) {
 	const original = Object.getOwnPropertyDescriptor(AgentSession.prototype, "prompt")!;
 	const prompts: any[] = [];
 	Object.defineProperty(AgentSession.prototype, "prompt", { ...original, value: function(text: string, options: any) { prompts.push({ text, options }); return Promise.resolve(); } });
@@ -22,7 +22,11 @@ function setup(t: any, mode = "tui") {
 	const pi: any = { events, on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]),
 		registerEntryRenderer: (_type: string, fn: Function) => { renderer = fn; },
 		appendEntry: (customType: string, data: any) => { branch.push({ id: `entry-${branch.length}`, type: "custom", customType, data }); },
-		sendMessage: (message: any, options: any) => { sent.push({ message, options }); session._isAgentRunActive = true; } };
+		sendMessage: (message: any, options: any) => {
+			sent.push({ message, options });
+			if (nativeSend) void session.sendCustomMessage(message, options).catch(() => {});
+			else session._isAgentRunActive = true;
+		} };
 	autoWait(pi);
 	const emit = (name: string, event: any = {}) => { for (const fn of hooks.get(name) ?? []) fn(event, ctx); };
 	emit("session_start");
@@ -114,14 +118,40 @@ test("two ready sources produce one request", async t => {
 	assert.deepEqual(JSON.parse(f.sent[0].message.content).results.map((item: any) => item.id), ["agent#1", "job#4"]);
 });
 
-test("failed preflight releases the claim on the next user turn", async t => {
-	const f = setup(t);
+test("failed auto-answer start immediately releases the result for an explicit wait", async t => {
+	const f = setup(t, "tui", true);
+	const start = Promise.withResolvers<void>();
+	f.session._startRun = () => start.promise;
 	f.finish(); f.emit("agent_settled", { aborted: false }); await Promise.resolve();
 	assert.equal(f.reserved(), true);
-	f.session._isAgentRunActive = false;
-	f.emit("input"); f.emit("before_agent_start", { messageType: "user" });
+	start.reject(new Error("preflight failed"));
+	await new Promise(resolve => setImmediate(resolve));
 	assert.equal(f.reserved(), false);
 	assert.equal(f.delivered(), false);
+	assert.equal(f.source.claim()?.results[0].text, "answer");
+});
+
+test("a failed start does not release a saved result", async t => {
+	const f = setup(t, "tui", true);
+	const start = Promise.withResolvers<void>();
+	f.session._startRun = () => start.promise;
+	f.finish(); f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	f.save(); start.reject(new Error("after save"));
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(f.delivered(), true);
+	assert.equal(f.source.claim(), undefined);
+});
+
+test("a failed start does not release a result while Pi is busy", async t => {
+	const f = setup(t, "tui", true);
+	const start = Promise.withResolvers<void>();
+	f.session._startRun = () => start.promise;
+	f.finish(); f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	f.session._isAgentRunActive = true; start.reject(new Error("busy"));
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(f.reserved(), true);
+	f.session._isAgentRunActive = false; f.emit("agent_settled", { aborted: true });
+	assert.equal(f.reserved(), false);
 });
 
 test("incompatible prompt descriptor leaves native input and waits untouched", t => {

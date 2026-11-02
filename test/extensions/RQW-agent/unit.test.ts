@@ -316,6 +316,78 @@ test("compaction and a model change drop the snapshot but keep the 30 minute lim
 	assert.equal(f.requests.length, 1);
 });
 
+/** A resumed child with a pending progress report and a running 30 minute limit. */
+async function resumedProgressChild(t: TestContext) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await mkdtemp(join(tmpdir(), "rqw-agent-unit-"));
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	// The resumed run emits 50 tool responses, then stays live with its progress report pending.
+	let requests = 0;
+	const firstReady = Promise.withResolvers<void>();
+	const resumedReady = Promise.withResolvers<void>();
+	const respond = () => {
+		requests++;
+		if (requests === 1 || (requests >= 3 && requests <= 52)) return fauxAssistantMessage([fauxToolCall("read", { path: "missing.txt" }, { id: `call-${requests}` })], { stopReason: "toolUse" });
+		(requests === 2 ? firstReady : resumedReady).resolve();
+		return new Promise<never>(() => {});
+	};
+	const first = runtimeFixture(parent, root, respond);
+	await first.execute({ action: "start", task: "long task", tools: ["read"] });
+	await firstReady.promise;
+	first.runtime.close();
+	const forks: ContextForkRequest[] = [];
+	const report = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, respond, 60, false,
+		events => { events.on(CONTEXT_FORK, value => {
+			const request = value as ContextForkRequest;
+			forks.push(request);
+			request.offer(() => report.promise);
+		}); });
+	// Only a restored or resumed child binds the extension hooks; keep that session to raise their events.
+	const bind = Object.getOwnPropertyDescriptor(AgentSession.prototype, "bindExtensions")!;
+	let session: any;
+	Object.defineProperty(AgentSession.prototype, "bindExtensions", { ...bind, value(this: AgentSession, ...args: unknown[]) { session = this; return bind.value.apply(this, args); } });
+	t.after(async () => {
+		restored.runtime.close();
+		await rm(root, { recursive: true, force: true });
+		Object.defineProperty(AgentSession.prototype, "bindExtensions", bind);
+	});
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await resumedReady.promise;
+	assert.ok(session, "the resumed child binds its extension hooks");
+	assert.equal(forks.length, 1);
+	return { session, forks, report, parent: restored.ctx.sessionManager, other: restored.ctx.modelRegistry.find("persist-test", "other") };
+}
+
+test("a model change in a running child drops its snapshot but keeps the 30 minute deadline", async t => {
+	const f = await resumedProgressChild(t);
+	t.mock.timers.tick(10 * 60 * 1000);
+	await f.session.setModel(f.other);
+	assert.equal(f.forks[0].signal.aborted, true);
+	f.report.resolve(fauxAssistantMessage("stale"));
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(f.parent.getBranch().some((entry: any) => entry.customType === "agent_progress"), false);
+	t.mock.timers.tick(20 * 60 * 1000 - 1);
+	assert.equal(f.forks.length, 1);
+	t.mock.timers.tick(1);
+	assert.equal(f.forks.length, 2);
+});
+
+test("compaction in a running child drops its snapshot but keeps the 30 minute deadline", async t => {
+	const f = await resumedProgressChild(t);
+	t.mock.timers.tick(10 * 60 * 1000);
+	f.session._emit({ type: "compaction_start", reason: "threshold" });
+	assert.equal(f.forks[0].signal.aborted, true);
+	f.report.resolve(fauxAssistantMessage("stale"));
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(f.parent.getBranch().some((entry: any) => entry.customType === "agent_progress"), false);
+	t.mock.timers.tick(20 * 60 * 1000 - 1);
+	assert.equal(f.forks.length, 1);
+	t.mock.timers.tick(1);
+	assert.equal(f.forks.length, 2);
+});
+
 test("a failed summary is tried again only after another 30 minutes", t => {
 	const f = timerFixture(t, false);
 	f.respond(1);
