@@ -3,7 +3,7 @@ import v8 from "node:v8";
 import vm from "node:vm";
 import { it } from "node:test";
 import { initTheme, InteractiveMode, SessionManager, VERSION, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
-import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
+import { Container, stripTerminalSequences, Text, visibleWidth } from "@earendil-works/pi-tui";
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
@@ -11,7 +11,7 @@ import { PI_FALLBACK_VERSION } from "../../../extensions/RQW-tool-ui/fallback.ts
 import { buildGroups } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { renderLive } from "../../../extensions/RQW-tool-ui/live.ts";
 import { collapsedRows, ToolUi } from "../../../extensions/RQW-tool-ui/render.ts";
-import { renderSummary } from "../../../extensions/RQW-tool-ui/summary.ts";
+import { fitStart, renderSummary } from "../../../extensions/RQW-tool-ui/summary.ts";
 
 const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text } as Theme;
 const ok = (text = "", extra: object = {}) => ({ content: [{ type: "text", text }], ...extra });
@@ -175,6 +175,61 @@ it("shows a tool update after a cached frame", () => {
 	ui.toolUpdate({ toolCallId: "b", partialResult: ok("new output") });
 	assert.ok(row.render(80).some((line) => line.includes("new output")));
 	ui.shutdown();
+});
+
+it("streams call arguments without rebuilding or reclassifying the earlier calls of the turn", () => {
+	// An earlier call of the same open group, with counters on what a rebuild and a classification read.
+	let rebuildReads = 0;
+	let classifyReads = 0;
+	const earlierArgs = new Proxy({ path: "a.ts" }, { get: (target, key) => { if (key === "path") classifyReads++; return Reflect.get(target, key); } });
+	const earlier = { type: "toolCall", id: "r", name: "read", get arguments() { rebuildReads++; return earlierArgs; } };
+	const ui = new ToolUi();
+	ui.start({ getBranch: () => entries(assistant([earlier]), result("r")), getCwd: () => "/w" } as never);
+	const command = "npm test -- render";
+	const message = (partial: string) => ({ ...assistant([call("b", "bash", { command: partial })]), timestamp: 3 });
+	ui.messageStart(message(""));
+	ui.messageUpdate(message(""), { type: "toolcall_start", contentIndex: 0 });
+	let invalidates = 0;
+	const context = { state: {}, toolCallId: "b", outputPad: 0, invalidate() { invalidates++; }, expanded: false } as never;
+	const row = ui.resolve("bash", () => undefined).renderCall!({ command: "" } as never, theme, context);
+	row.render(80);
+	rebuildReads = classifyReads = 0;
+	for (let n = 1; n <= command.length; n++) {
+		ui.messageUpdate(message(command.slice(0, n)), { type: "toolcall_delta", contentIndex: 0 });
+		assert.equal(row.render(80).map((line) => line.trim())[1], `$ ${command.slice(0, n)}`.trim());
+	}
+	assert.equal(rebuildReads, 0, "a delta rebuilt the groups of the turn");
+	assert.equal(classifyReads, 0, "a delta classified an earlier call again");
+	assert.equal(invalidates, command.length, "one redraw of the leader per delta");
+	ui.shutdown();
+});
+
+it("cuts a long streaming header from its end without segmenting the whole text", () => {
+	// The cut of the whole text, grapheme by grapheme from its end.
+	const whole = (text: string, width: number) => {
+		if (visibleWidth(text) <= width) return text;
+		let used = 1, kept = "";
+		for (const { segment: g } of [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].reverse()) {
+			if (used + visibleWidth(g) > width) break;
+			kept = g + kept;
+			used += visibleWidth(g);
+		}
+		return `…${kept}`;
+	};
+	const flag = "\u{1F1FA}";
+	const flags = [5_000, 5_001].flatMap((x) => [700, 701, 702, 703].map((n) => `${"x".repeat(x)}${flag.repeat(n)}`));
+	const expected = flags.map((text) => whole(text, 10));
+	const segment = Intl.Segmenter.prototype.segment;
+	let segmented = 0;
+	Intl.Segmenter.prototype.segment = function (this: Intl.Segmenter, input: string) { segmented += input.length; return segment.call(this, input); };
+	try {
+		assert.equal(fitStart(`${"x".repeat(100_000)}END`, 10), "…xxxxxxEND");
+		assert.equal(fitStart("界".repeat(50_000), 11), `…${"界".repeat(5)}`);
+		assert.ok(segmented < 1_000, `segmented ${segmented} code units`);
+		assert.deepEqual(flags.map((text) => fitStart(text, 10)), expected);
+	} finally {
+		Intl.Segmenter.prototype.segment = segment;
+	}
 });
 
 it("keeps earlier groups and updates the open one after entries are saved", () => {
