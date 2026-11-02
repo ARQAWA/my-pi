@@ -1,5 +1,6 @@
 // A tool call still unsettled after the threshold returns as job#N and keeps running.
-import { appendFileSync, createWriteStream, rmSync, writeFileSync, type WriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
+import { rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +40,6 @@ type Job = {
 	started: number;
 	ended?: number;
 	exitCode?: number;
-	killable: boolean;
 	controller: AbortController;
 	done: Promise<void>;
 	finish: () => void;
@@ -52,6 +52,8 @@ type Job = {
 	pendingBytes: number;
 	path?: string;
 	stream?: WriteStream;
+	outputStatus?: "writing" | "ready" | "failed";
+	logClosed?: Promise<void>;
 	spec: RunSpec;
 };
 
@@ -159,23 +161,25 @@ export function createJobs(options: JobsOptions = {}) {
 	function openLog(job: Job) {
 		if (job.stream) return;
 		job.path = join(tmpdir(), `rqw-job-${randomUUID()}.log`);
-		try {
-			writeFileSync(job.path, "");
-			for (const chunk of job.pending) appendFileSync(job.path, chunk);
-		} catch {}
-		job.stream = createWriteStream(job.path, { flags: "a" });
-		job.stream.on("error", () => {});
+		job.stream = createWriteStream(job.path, { flags: "w" });
+		job.outputStatus = "writing";
+		job.stream.on("error", () => { job.outputStatus = "failed"; });
+		job.logClosed = new Promise((resolve) => job.stream!.once("close", () => {
+			if (job.outputStatus !== "failed") job.outputStatus = "ready";
+			resolve();
+		}));
+		for (const chunk of job.pending) job.stream.write(chunk);
 		job.pending = [];
 		job.pendingBytes = 0;
 	}
 
-	function closeLog(job: Job, remove: boolean) {
-		const { stream, path } = job;
+	async function closeLog(job: Job, remove: boolean) {
+		const { stream, path, logClosed } = job;
 		job.stream = undefined;
 		if (!stream) return;
-		stream.end(() => {
-			if (remove && path) try { rmSync(path, { force: true }); } catch {}
-		});
+		stream.end();
+		await logClosed;
+		if (remove && path) await rm(path, { force: true }).catch(() => {});
 	}
 
 	const idOf = (job: Job) => `job#${job.number}`;
@@ -191,6 +195,7 @@ export function createJobs(options: JobsOptions = {}) {
 			elapsed_seconds: Math.round((now - job.started) / 100) / 10,
 			tail: lastLines(job.tail || job.latest, lines),
 			output_path: job.path,
+			output_status: job.outputStatus,
 			output_bytes: job.bytes,
 			// A finished job's result reaches its owner once; `pending` means it has not yet.
 			...(job.ended !== undefined ? { result_delivery: deliveryOf(job) } : {}),
@@ -200,7 +205,7 @@ export function createJobs(options: JobsOptions = {}) {
 		if (job.ended === undefined) job.controller.abort();
 	}
 	function abortAll() {
-		for (const job of jobs.values()) if (job.killable) kill(job);
+		for (const job of jobs.values()) kill(job);
 	}
 	function find(id: string): Job {
 		const match = /^job#([1-9]\d*)$/.exec(id);
@@ -219,7 +224,7 @@ export function createJobs(options: JobsOptions = {}) {
 			`elapsed: ${current.elapsed_seconds} s`,
 			`output so far (last ${DEFAULT_LINES} lines):`,
 			current.tail || "(no output yet)",
-			`full output: ${job.path}`,
+			`full output: ${job.path} (log is written asynchronously and may not be ready yet)`,
 			"Its final result arrives automatically in one message when it ends: end your turn to receive it. The job tool offers status and kill.",
 		].join("\n");
 	}
@@ -243,7 +248,6 @@ export function createJobs(options: JobsOptions = {}) {
 			command,
 			state: "running",
 			started: performance.now(),
-			killable: spec.process,
 			controller,
 			done,
 			finish: () => {
@@ -287,7 +291,7 @@ export function createJobs(options: JobsOptions = {}) {
 		clearTimeout(timer);
 		if (first !== "handoff") {
 			signal?.removeEventListener("abort", onAbort);
-			closeLog(job, true);
+			void closeLog(job, true);
 			if ("error" in first) throw first.error;
 			return first.value;
 		}
@@ -298,8 +302,8 @@ export function createJobs(options: JobsOptions = {}) {
 		jobs.set(job.number, job);
 		activityChanged();
 		openLog(job);
-		if (!job.bytes && job.latest) try { appendFileSync(job.path!, job.latest + "\n"); } catch {}
-		void work$.then((outcome) => {
+		if (!job.bytes && job.latest) job.stream?.write(job.latest + "\n");
+		void work$.then(async (outcome) => {
 			signal?.removeEventListener("abort", onAbort);
 			if (job.ended !== undefined) return closeLog(job, false);
 			let state: JobState;
@@ -307,8 +311,10 @@ export function createJobs(options: JobsOptions = {}) {
 			let exitCode: number | undefined;
 			if ("error" in outcome) {
 				const text = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
-				result = text;
-				state = controller.signal.aborted ? "killed" : /Command timed out after/.test(text) ? "timed_out" : "failed";
+				state = controller.signal.aborted && (outcome.error?.name === "AbortError" || /abort/i.test(text))
+					? "killed" : /Command timed out after/.test(text) ? "timed_out" : "failed";
+				result = state === "killed" && (job.tool === "edit" || job.tool === "write")
+					? `Possibly changed: ${job.command}: ${text}. Read this file before retrying.` : text;
 			} else {
 				const value: any = outcome.value;
 				result = textOf(value);
@@ -320,15 +326,14 @@ export function createJobs(options: JobsOptions = {}) {
 			job.state = state;
 			if (exitCode !== undefined) job.exitCode = exitCode;
 			if (!job.bytes) job.stream?.write(result + "\n");
+			void closeLog(job, false);
 			job.finish();
-			closeLog(job, false);
 		});
 		return { content: [{ type: "text", text: handoffText(job) }], details: { job: status(job) } };
 	}
 
 	async function killJob(id: string) {
 		const job = find(id);
-		if (job.ended === undefined && !job.killable) return { ...status(job), cannot_kill: "a running file tool call finishes on its own" };
 		kill(job);
 		await sleep(5000, job.done);
 		return status(job);
@@ -367,7 +372,7 @@ export function createJobs(options: JobsOptions = {}) {
 					owned.set(token, selected);
 					return { token, results: selected.map(job => ({ id: idOf(job), outcome: job.state,
 						...(job.exitCode !== undefined ? { exit_code: job.exitCode } : {}),
-						text: job.result ?? "", ...(job.path ? { output_path: job.path } : {}) })) };
+						text: job.result ?? "", ...(job.path ? { output_path: job.path, output_status: job.outputStatus } : {}) })) };
 				},
 				commit: (token: string) => {
 					const selected = owned.get(token);
@@ -397,7 +402,7 @@ export function createJobs(options: JobsOptions = {}) {
 		stopBackground() {
 			const active = [...jobs.values()].filter(job => job.ended === undefined);
 			abortAll();
-			return { backgroundProcesses: active.filter(job => job.killable).length, unstoppable: active.filter(job => !job.killable).length };
+			return { backgroundProcesses: active.length, unstoppable: 0 };
 		},
 		dispose() { disposed = true; activityChanged(); activityListeners.clear(); abortAll(); },
 		seen(n: number) { if (Number.isSafeInteger(n) && n > counter) counter = n; },

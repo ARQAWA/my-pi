@@ -1,5 +1,5 @@
 Check or kill your background jobs. A bash, codemode, rqw_readfile, edit, write, rqw_rg or rqw_glob call still running after 12 seconds returns a job id (job#N) and keeps running. Calls run independently.
 Need a result of your agents or jobs? End your turn. Their final results arrive automatically in one message, and you continue. A subagent's own final answer reaches its parent only when nothing it started is still running; stop or kill what you no longer need.
 - status: state, exit code, elapsed time, the last `lines` lines of output (default 20), `result_delivery` of a finished job (`pending` while its result has not arrived) and the log file of each job in `ids`, or of all your jobs without `ids`. Read the log file with rqw_readfile or rqw_rg for more. Do not poll it.
-- kill: stops a process job and all its child processes. A running file-tool call finishes on its own.
+- kill: requests cancellation of a job and its child processes.
 A background job is independent of the user's messages and of Esc: it stops only on `job kill`, a child's interrupt or the end of the session. Kill jobs you no longer need before your final answer, unless the user wants them left running.

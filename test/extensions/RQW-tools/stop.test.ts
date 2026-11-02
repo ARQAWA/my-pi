@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { FakeRipgrep } from "./rg-fake.ts";
 import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { installRqwTools } from "../../../extensions/RQW-tools/index.ts";
+import { withFileLock } from "../../../extensions/RQW-tools/lock.ts";
 
 test("stop background notice reaches only the owning tools session", async () => {
 	const events = createEventBus();
@@ -88,6 +89,45 @@ test("stop kills a searched job; its killed result arrives once through the sour
 	assert.equal(source.claim(), undefined);
 	assert.equal(fake.killed, 1);
 	assert.deepEqual(messages, []);
+	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
+});
+
+for (const action of ["stop", "kill"] as const) test(`${action} cancels a background write waiting for a file lock`, async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const cwd = await mkdtemp(join(tmpdir(), "rqw-stop-file-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const gate = Promise.withResolvers<void>();
+	const locked = Promise.withResolvers<void>();
+	const path = join(cwd, "file.txt");
+	const holding = withFileLock(path, async () => { locked.resolve(); await gate.promise; });
+	await locked.promise;
+	const events = createEventBus(), hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
+	const pi: any = { events, registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
+	const ctx = { cwd, mode: "tui", sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
+	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
+	const pending = tools.get("write").execute("call", { path, content: "data" }, undefined, undefined, ctx);
+	t.mock.timers.tick(12);
+	await pending;
+	let source: any;
+	events.emit("rqw:auto-wait:request:v1", { sessionId: "main", offer: (value: any) => { source = value; } });
+	const ready = Promise.withResolvers<void>();
+	source.subscribe(() => { if (source.snapshot().ready) ready.resolve(); });
+	const replies: any[] = [];
+	const killed = action === "kill" ? tools.get("job").execute("kill", { action: "kill", id: "job#1" }) : undefined;
+	if (action === "stop") {
+		events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (value: any) => replies.push(value) });
+		assert.deepEqual(replies, [{ backgroundProcesses: 1, unstoppable: 0 }]);
+	}
+	await ready.promise;
+	if (killed) assert.equal((await killed).details.state, "killed");
+	const claim = source.claim();
+	assert.equal(claim.results[0].outcome, "killed");
+	source.commit(claim.token);
+	assert.equal(source.claim(), undefined);
+	gate.resolve();
+	await holding;
+	await assert.rejects(import("node:fs/promises").then(fs => fs.stat(path)), { code: "ENOENT" });
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });
 

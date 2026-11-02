@@ -27,7 +27,7 @@ it("a double Escape within 500 ms while the turn works stops the background", (t
 	h.tick(499);
 	assert.deepEqual(h.press(), { consume: true });
 	assert.equal(h.stops.length, 1);
-	assert.match(h.notices.at(-1)!, /Stopped: 2 agents/);
+	assert.match(h.notices.at(-1)!, /Stop requested: 2 agents/);
 });
 
 it("with only background running the first Escape is taken and the second stops it", (t) => {

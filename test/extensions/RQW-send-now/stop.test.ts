@@ -8,7 +8,7 @@ test("Ctrl+backslash aborts the active turn and asks the session to stop its bac
 	let shutdown = () => {};
 	let shortcut: ((ctx: any) => void) | undefined;
 	let event: any;
-	events.on("rqw:stop-background:v1", (value: any) => { event = value; value.reply({ agents: 1 }); });
+	events.on("rqw:stop-background:v1", (value: any) => { event = value; value.reply({ agents: 1, backgroundProcesses: 1 }); });
 	const pi: any = { events, on(name: string, handler: () => void) { if (name === "session_shutdown") shutdown = handler; }, registerShortcut: (key: string, options: any) => { if (key === "ctrl+\\") shortcut = options.handler; } };
 	sendNow(pi as ExtensionAPI);
 	t.after(() => shutdown());
@@ -18,5 +18,5 @@ test("Ctrl+backslash aborts the active turn and asks the session to stop its bac
 	shortcut(ctx);
 	assert.equal(aborted, 1);
 	assert.equal(event.sessionId, "session");
-	assert.match(notices[0], /1 agent/);
+	assert.match(notices[0], /Stop requested: 1 agent, 1 background process/);
 });

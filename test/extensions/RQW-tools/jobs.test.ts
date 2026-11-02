@@ -1,6 +1,10 @@
 import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { Writable } from "node:stream";
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
 import { createJobs } from "../../../extensions/RQW-tools/jobs.ts";
 import { createCountsProducer } from "../../../extensions/RQW-tools/counts.ts";
@@ -133,6 +137,217 @@ test("kill aborts a process job and returns the result itself", async (t) => {
 	const killed = await job({ action: "kill", id: "job#1" });
 	assert.equal(killed.details.state, "killed");
 	await flush();
+});
+
+test("kill signals a background file call and waits for its actual result", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const jobs = createJobs({ backgroundAfterMs: 12 });
+	const write = Promise.withResolvers<any>();
+	let signal!: AbortSignal;
+	const pending = jobs.run({ tool: "write", command: "file", process: false }, async (handle) => {
+		signal = handle.signal;
+		return write.promise;
+	});
+	t.mock.timers.tick(12);
+	await pending;
+	const killing = jobs.kill("job#1");
+	assert.equal(signal.aborted, true);
+	assert.equal(jobs.status(["job#1"], 20)[0].state, "running");
+	write.resolve(result("written"));
+	assert.equal((await killing).state, "exited");
+	const auto = jobs.autoSource();
+	const claim = auto.source.claim()!;
+	assert.equal(claim.results[0].text, "written");
+	auto.source.commit(claim.token);
+	assert.equal(auto.source.claim(), undefined);
+	auto.close();
+});
+
+test("background stop cancels file work but not the already detached parent signal", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const jobs = createJobs({ backgroundAfterMs: 12 });
+	const parent = new AbortController();
+	let signal!: AbortSignal;
+	let startedNext = false;
+	const gate = Promise.withResolvers<void>();
+	const pending = jobs.run({ tool: "edit", command: "file", process: false, signal: parent.signal }, async (handle) => {
+		signal = handle.signal;
+		await gate.promise;
+		if (signal.aborted) throw new Error("Operation aborted");
+		startedNext = true;
+		return result("edited");
+	});
+	t.mock.timers.tick(12);
+	await pending;
+	parent.abort();
+	assert.equal(signal.aborted, false);
+	assert.deepEqual(jobs.stopBackground(), { backgroundProcesses: 1, unstoppable: 0 });
+	assert.equal(signal.aborted, true);
+	gate.resolve();
+	await jobs.settled("job#1");
+	assert.equal(startedNext, false);
+	const auto = jobs.autoSource();
+	const claim = auto.source.claim()!;
+	assert.equal(claim.results[0].outcome, "killed");
+	auto.source.commit(claim.token);
+	assert.equal(auto.source.claim(), undefined);
+	auto.close();
+});
+
+test("an aborted in-flight write warns that the file may have changed", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const jobs = createJobs({ backgroundAfterMs: 12 });
+	const write = Promise.withResolvers<any>();
+	const pending = jobs.run({ tool: "write", command: "file", process: false }, () => write.promise);
+	t.mock.timers.tick(12);
+	await pending;
+	const killing = jobs.kill("job#1");
+	write.reject(new Error("Operation aborted"));
+	await killing;
+	const auto = jobs.autoSource();
+	const claim = auto.source.claim()!;
+	assert.match(claim.results[0].text, /[Pp]ossibly changed/);
+	assert.match(claim.results[0].text, /[Rr]ead.*before retry/);
+	auto.source.commit(claim.token);
+	auto.close();
+});
+
+test("a separate file error after abort remains a failure", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const jobs = createJobs({ backgroundAfterMs: 12 });
+	const write = Promise.withResolvers<any>();
+	const pending = jobs.run({ tool: "write", command: "file", process: false }, () => write.promise);
+	t.mock.timers.tick(12);
+	await pending;
+	const killing = jobs.kill("job#1");
+	write.reject(new Error("disk failed"));
+	assert.equal((await killing).state, "failed");
+});
+
+test("a delayed log write leaves other work free to run", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const writeGate = Promise.withResolvers<void>();
+	const chunks: string[] = [];
+	const stream = new Writable({
+		write(chunk, _encoding, callback) {
+			if (chunk.length) chunks.push(chunk.toString());
+			void writeGate.promise.then(() => callback());
+		},
+	});
+	const closed = new Promise<void>((resolve) => stream.once("close", resolve));
+	t.mock.method(fs, "createWriteStream", () => stream as any);
+	for (const name of ["writeFileSync", "appendFileSync", "rmSync"] as const) {
+		t.mock.method(fs, name, () => { throw new Error("synchronous log I/O"); });
+	}
+	syncBuiltinESMExports();
+	try {
+		const jobs = createJobs({ backgroundAfterMs: 12 });
+		const finish = Promise.withResolvers<void>();
+		const pending = jobs.run(spec, async (handle) => {
+			handle.data("before\n");
+			await finish.promise;
+			handle.data("after\n");
+			return result("done");
+		});
+		t.mock.timers.tick(12);
+		const handoff: any = await pending;
+		assert.match(handoff.content[0].text, /log is written asynchronously/);
+		let otherRan = false;
+		await Promise.resolve().then(() => { otherRan = true; });
+		assert.equal(otherRan, true);
+		finish.resolve();
+		await flush();
+		const auto = jobs.autoSource();
+		const claim = auto.source.claim()!;
+		assert.equal(claim.results[0].text, "done");
+		assert.equal(claim.results[0].output_status, "writing");
+		assert.equal(jobs.status(["job#1"], 20)[0].output_status, "writing");
+		auto.source.commit(claim.token);
+		auto.close();
+		writeGate.resolve();
+		await closed;
+		await flush();
+		assert.equal(jobs.status(["job#1"], 20)[0].output_status, "ready");
+		assert.deepEqual(chunks, ["before\n", "after\n"]);
+	} finally {
+		writeGate.resolve();
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+	}
+});
+
+test("a background log keeps chunks in order in the temporary file", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const create = fs.createWriteStream;
+	const closed = Promise.withResolvers<void>();
+	t.mock.method(fs, "createWriteStream", ((path: fs.PathLike, options: any) => {
+		const stream = create(path, options);
+		stream.once("close", () => closed.resolve());
+		return stream;
+	}) as typeof fs.createWriteStream);
+	syncBuiltinESMExports();
+	let path = "";
+	try {
+		const jobs = createJobs({ backgroundAfterMs: 12 });
+		const finish = Promise.withResolvers<void>();
+		let data!: (chunk: string) => void;
+		const pending = jobs.run(spec, async (handle) => {
+			data = handle.data;
+			data("first\n");
+			await finish.promise;
+			data("third\n");
+			return result("done");
+		});
+		t.mock.timers.tick(12);
+		const handoff: any = await pending;
+		path = handoff.details.job.output_path;
+		data("second\n");
+		finish.resolve();
+		await closed.promise;
+		assert.equal(await fsPromises.readFile(path, "utf8"), "first\nsecond\nthird\n");
+	} finally {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+		if (path) await fsPromises.rm(path, { force: true });
+	}
+});
+
+test("a foreground call removes its temporary log without synchronous I/O", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const create = fs.createWriteStream;
+	const remove = fsPromises.rm;
+	const closed = Promise.withResolvers<void>();
+	let removal: Promise<void> | undefined;
+	let logPath = "";
+	let synchronousRemovals = 0;
+	t.mock.method(fs, "createWriteStream", ((path: fs.PathLike, options: any) => {
+		logPath = String(path);
+		const stream = create(path, options);
+		stream.once("close", () => closed.resolve());
+		return stream;
+	}) as typeof fs.createWriteStream);
+	t.mock.method(fs, "rmSync", () => { synchronousRemovals++; });
+	t.mock.method(fsPromises, "rm", ((path: fs.PathLike, options: any) => {
+		removal = remove(path, options);
+		return removal;
+	}) as typeof fsPromises.rm);
+	syncBuiltinESMExports();
+	try {
+		const jobs = createJobs({ backgroundAfterMs: 12 });
+		await jobs.run(spec, async (handle) => {
+			handle.data("x".repeat(1024 * 1024 + 1));
+			return result("done");
+		});
+		await closed.promise;
+		await flush();
+		assert.equal(synchronousRemovals, 0);
+		assert.ok(removal, "the temporary log is removed");
+		await removal;
+		await assert.rejects(fsPromises.stat(logPath), { code: "ENOENT" });
+	} finally {
+		t.mock.restoreAll();
+		syncBuiltinESMExports();
+	}
 });
 
 test("counts follow a handed-off job until it ends", async (t) => {

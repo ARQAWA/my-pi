@@ -60,7 +60,7 @@ export default function sendNow(pi: ExtensionAPI) {
 			agents += part.agents ?? 0; processes += part.backgroundProcesses ?? 0; unstoppable += part.unstoppable ?? 0;
 		} });
 		const parts = [agents && `${agents} ${agents === 1 ? "agent" : "agents"}`, processes && `${processes} background ${processes === 1 ? "process" : "processes"}`].filter(Boolean);
-		ctx.ui.notify(`${parts.length ? `Stopped: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
+		ctx.ui.notify(`${parts.length ? `Stop requested: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
 	}
 	pi.registerShortcut?.("ctrl+\\", { description: "Stop session background work", handler: stopSession });
 	let pending: Pending | undefined;
