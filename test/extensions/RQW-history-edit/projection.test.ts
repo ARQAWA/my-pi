@@ -178,6 +178,75 @@ it("the offer projects an entry list directly, with Pi's own result when Pi does
 	} finally { restoreOffer(previous); }
 });
 
+it("append-only steps project only the appended entries and preserve earlier results", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	const first = manager.appendMessage(user("unused", null, "one").message);
+	manager.appendCustomEntry("state", {});
+	const before = manager.buildSessionProjection();
+	const context = manager.buildContextEntries();
+	let reads = 0;
+	const entry = manager.getEntry(first)!;
+	Object.defineProperty(entry, "type", { get() { reads++; return "message"; }, configurable: true });
+	let walks = 0;
+	Object.defineProperty(entry, "parentId", { get() { walks++; return null; }, configurable: true });
+	let copies = 0;
+	const getEntries = manager.getEntries.bind(manager);
+	manager.getEntries = () => { copies++; return getEntries(); };
+	manager.appendCustomEntry("state", {});
+	manager.appendMessage({ role: "user", content: "two", timestamp: 2 });
+	const after = manager.buildSessionProjection();
+	const nextContext = manager.buildContextEntries();
+	assert.equal(reads, 0, "old entries are not reprojected or rescanned");
+	assert.equal(walks, 0, "the manager does not walk the old parent chain");
+	assert.equal(copies, 0, "the manager does not copy its whole history");
+	assert.equal(before.entries.length, 2);
+	assert.equal(before.messages.length, 1);
+	assert.equal(context.length, 2);
+	assert.equal(after.messages.at(-1)!.content, "two");
+	assert.equal(nextContext.length, 4);
+	assert.deepEqual(after, stockPi.buildSessionProjection(getEntries(), manager.getLeafId()));
+	assert.ok(walks > 0, "the parent counter catches the original full branch walk");
+});
+
+it("keeps the cached projection separate from mutable runtime message arrays", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	manager.appendMessage({ role: "user", content: "one", timestamp: 1 });
+	const runtime = manager.buildSessionProjection();
+	// Pi assigns projection.messages to agent.state.messages, then pushes message_end events into it.
+	runtime.messages.push({ role: "user", content: "not persisted", timestamp: 2 });
+	runtime.entries.pop();
+	manager.buildContextEntries().pop();
+	const expected = () => stockPi.buildSessionProjection(manager.getEntries(), manager.getLeafId());
+	assert.deepEqual(manager.buildSessionProjection(), expected());
+	manager.appendMessage({ role: "user", content: "two", timestamp: 3 });
+	assert.deepEqual(manager.buildSessionProjection(), expected());
+	assert.equal(manager.buildContextEntries().length, 2);
+});
+
+it("incremental projection rebuilds on edits, compaction, branch changes and session replacement", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	const first = manager.appendMessage(user("unused", null, "one").message);
+	const check = () => {
+		assert.deepEqual(manager.buildSessionProjection(), stockPi.buildSessionProjection(manager.getEntries(), manager.getLeafId()));
+		assert.deepEqual(manager.buildContextEntries(), stockPi.buildContextEntries(manager.getEntries(), manager.getLeafId()));
+	};
+	check();
+	manager.appendModelChange("p", "new"); check();
+	manager.appendThinkingLevelChange("high"); check();
+	manager.appendMessage(assistant("unused", first, "reply").message); check();
+	manager.appendContextEdit(first, { content: "edited" }); check();
+	manager.appendCompaction("sum", first, 1); check();
+	manager.appendMessage(user("unused", null, "tail").message); check();
+	manager.branch(first); check();
+	manager.appendMessage(user("unused", null, "side").message); check();
+	manager.resetLeaf(); check();
+	manager.newSession(); check();
+	manager.appendMessage(user("unused", null, "fresh").message); check();
+});
+
 it("a changed Pi shape leaves the stock methods and offers nothing", () => {
 	const previous = (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
 	try {
