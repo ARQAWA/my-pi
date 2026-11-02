@@ -51,6 +51,26 @@ function fixture(randomInt: (max: number) => number, callerModel?: { provider: s
 	return Object.assign(call, { end, started, delivered });
 }
 
+test("only coordinator disables todo on session start", () => {
+	const key = Symbol.for("my-pi.coordinator-guard.shared");
+	const globals = globalThis as Record<symbol, unknown>;
+	const old = globals[key];
+	try {
+		for (const role of ["coordinator", "direct"] as const) {
+			globals[key] = { role };
+			let start: Function = () => {};
+			const events: unknown[] = [];
+			const pi = { on(name: string, handler: Function) { if (name === "session_start") start = handler; }, events: { emit(name: string, value: unknown) { events.push({ name, value }); } } } as unknown as ExtensionAPI;
+			createCoordinatorGuard({ root: "/not-a-git-repository" })(pi);
+			const ctx = { hasUI: false };
+			start({ reason: "startup" }, ctx);
+			assert.deepEqual(events, role === "coordinator" ? [{ name: "rqw-todo:disable:v1", value: { ctx } }] : []);
+		}
+	} finally {
+		if (old === undefined) delete globals[key]; else globals[key] = old;
+	}
+});
+
 test("schema-valid category calls reach the guard and receive the drawn pair", () => {
 	const expected = [
 		["openai-codex/gpt-6.1-terra", "xhigh"],

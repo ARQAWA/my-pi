@@ -1,8 +1,10 @@
 # RQW-todo
 
-An independent main-chat todo list and compact panel. Disable the extension alone in `pi config`.
+An independent main-chat todo list and compact panel. Disable the extension alone in `pi config`. Another extension can emit `rqw-todo:disable:v1` with `{ ctx }` to disable the tool, panel, summary and reminder for this session without saving a mode change.
 
 Use `$todo` or `/skill:todo` to enable the mode for the session. Ask «выключи список» to turn it off. The model uses `todo` with `off: true`; this hides the panel and stops the request summary and reminder. The list remains in the branch and reappears when the mode is enabled again. Closing a list does not turn the mode off.
+
+Every subagent, including nested agents, receives `todo` with its own session list. Its summary and reminder are always on; it has no skill, command or panel. Ask the subagent in its task to keep a list.
 
 The `todo` tool updates multiple items by `id` in one call. New items need `text`. Statuses are `pending`, `active`, `done`, `dropped` and `blocked`. `dropped` and `blocked` require a `note` with a reason. Steps replace the item's previous steps and have `pending`, `active` or `done` status. `new: true` starts another list only after every item in the previous one is `done` or `dropped`. A blocked item remains open.
 

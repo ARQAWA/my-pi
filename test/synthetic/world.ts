@@ -101,6 +101,9 @@ export interface WorldOptions {
 	credentials?: Record<string, Credential>;
 	/** Routes installed before startup and kept across restart. */
 	routes?: ReturnType<typeof networkRoutes>;
+	/** Additional inline extensions before or after the package extensions. */
+	beforeExtensions?: NamedFactory[];
+	afterExtensions?: NamedFactory[];
 }
 
 type NamedFactory = { name: string; path?: string; factory: (pi: ExtensionAPI) => void };
@@ -314,7 +317,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover, peer
 				eventBus: bus, noExtensions: true, noPromptTemplates: true, noContextFiles: true,
 				additionalThemePaths: [theme],
 				additionalExtensionPaths: ["builtin:codemode", "builtin:tool-search"],
-				extensionFactories: [...builtins, ...extensions.map(({ name, factory }) => ({ name, factory })), probe] as never,
+				extensionFactories: [...builtins, ...(options.beforeExtensions ?? []), ...extensions.map(({ name, factory }) => ({ name, factory })), ...(options.afterExtensions ?? []), probe] as never,
 				extensionsOverride: (result: any) => {
 					for (const extension of result.extensions) {
 						const entry = extensions.find(({ name }) => extension.path === `<inline:${name}>`);

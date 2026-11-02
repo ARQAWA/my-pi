@@ -8,7 +8,7 @@ When RQW-web is loaded, its optional `rqw-search:subagent-web` registration offe
 including nested agents. Each call uses that child's model and thinking; no import reaches RQW-web.
 
 Any extension can explicitly offer inline child factories on `rqw-agent:subagent-extension-factories` with
-`{ offer(factory) }`. Before each child loader reload, RQW-agent collects and deduplicates those factories and appends
+`{ offer(factory, tools?) }`. Optional tool names are added to the child's tools without duplicates. Before each child loader reload, RQW-agent collects and deduplicates those factories and appends
 them to `DefaultResourceLoader.extensionFactories`. Each runs with the child's own `ExtensionAPI` and can reoffer itself
 for nested children on the same channel. `noExtensions: true` stays unchanged; no project or package resources are loaded.
 
@@ -549,6 +549,7 @@ Persisted entries with unknown child kinds are ignored without deleting their hi
 network/provider error, from saved history without a new task message. The caller explicitly chooses to retry after
 seeing the failure; this adds no automatic retry loop. Failed requests stay idle on parent continuation and
 `/resume-agents`; only the explicit `resume` action retries them.
+For a restored child, the core run calls Pi's own `_runBeforeSettleBoundary` before its final result and continues when requested, so extension reminders run too. If that private method is absent, recovery keeps its previous behavior without the boundary.
 Active or cancellation-pending children cannot be resumed;
 successfully completed children stay idle and require `send` for a new task. A child paused by hand with `interrupt` gets a durable
 `paused` state with its reason. It stays paused after reload, session switch and Pi restart until an explicit `resume` or

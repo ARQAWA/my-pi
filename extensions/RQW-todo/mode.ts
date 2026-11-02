@@ -32,8 +32,9 @@ function summary(items: Item[]): string | undefined {
 	return lines.join("\n");
 }
 
-export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChange: (enabled: boolean, ctx: ExtensionContext) => void = () => {}): { off(ctx?: ExtensionContext): void; isEnabled(): boolean } {
-	let enabled = false;
+export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChange: (enabled: boolean, ctx: ExtensionContext) => void = () => {}, child = false): { off(ctx?: ExtensionContext): void; disable(ctx: ExtensionContext): void; isEnabled(): boolean } {
+	let disabled = false;
+	let enabled = child;
 	let reminded = false;
 
 	function selectTool() {
@@ -42,9 +43,9 @@ export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChang
 		pi.setActiveTools(enabled ? [...active, "todo"] : active.filter(name => name !== "todo"));
 	}
 	function restore(_event: unknown, ctx: ExtensionContext) {
-		enabled = false;
+		enabled = child;
 		reminded = false;
-		const branch = ctx.sessionManager.getBranch();
+		const branch = child ? [] : ctx.sessionManager.getBranch();
 		for (let i = branch.length - 1; i >= 0; i--) {
 			const entry = branch[i];
 			if (entry.type !== "custom" || entry.customType !== ENTRY) continue;
@@ -54,10 +55,12 @@ export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChang
 				break;
 			}
 		}
+		if (disabled) enabled = false;
 		selectTool();
 		onChange(enabled, ctx);
 	}
 	function setEnabled(value: boolean, ctx?: ExtensionContext) {
+		if (disabled || child) return;
 		if (enabled !== value) {
 			enabled = value;
 			pi.appendEntry(ENTRY, { enabled });
@@ -66,8 +69,8 @@ export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChang
 		selectTool();
 	}
 
-	pi.on("resources_discover", () => ({ skillPaths: [SKILL] }));
-	pi.on("input", (event, ctx) => {
+	if (!child) pi.on("resources_discover", () => ({ skillPaths: [SKILL] }));
+	if (!child) pi.on("input", (event, ctx) => {
 		if (event.source !== "interactive") return;
 		const text = event.text.replace(/^\/skill:[^\s]+\s+/, "");
 		if (hasTodoSkill(text) || /^\/skill:todo(?:\s|$)/.test(event.text)) setEnabled(true, ctx);
@@ -138,7 +141,7 @@ export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChang
 						part.type === "text" ? { ...part, text: errorReason(part.text) } : part) };
 				}
 				const { details: _details, ...result } = message;
-				const text = !enabled && message.toolCallId === lastSuccess && content ? content : message.isError ? "Todo update failed." : "Todo updated.";
+				const text = !disabled && !enabled && message.toolCallId === lastSuccess && content ? content : message.isError ? "Todo update failed." : "Todo updated.";
 				return { ...result, content: [{ type: "text" as const, text }] };
 			}
 			return message;
@@ -154,5 +157,14 @@ export function installTodoMode(pi: ExtensionAPI, getState: () => State, onChang
 		const content = `Остались открытые пункты: ${open.map(item => item.text).join(", ")}. Продолжи работу или отметь препятствие с причиной.`;
 		return { entries: [...event.entries, { type: "custom_message" as const, customType: "rqw-todo-reminder", content, display: false }], continue: true };
 	});
-	return { off: ctx => setEnabled(false, ctx), isEnabled: () => enabled };
+	return {
+		off: ctx => setEnabled(false, ctx),
+		disable(ctx) {
+			disabled = true;
+			enabled = false;
+			selectTool();
+			onChange(false, ctx);
+		},
+		isEnabled: () => enabled,
+	};
 }

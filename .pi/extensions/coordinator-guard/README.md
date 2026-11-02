@@ -83,6 +83,8 @@ guard code.
 
 ## What it does for Main
 
+- On session start, disables Main's todo through `rqw-todo:disable:v1`. Workers can keep their own lists when asked in their tasks.
+
 - `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): Main supplies an executor
   category in `model`; the guard draws a model and effort pair randomly from that category. A named or inherited reviewer
   profile instead uses its exact pair. A reviewer-profile call supplies matching explicit model and effort values; restart

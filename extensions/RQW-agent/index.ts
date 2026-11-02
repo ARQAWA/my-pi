@@ -287,10 +287,14 @@ type ExtensionFactory = (child: ExtensionAPI) => void;
 const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
 
 /** Inline extensions explicitly offered for each child, without enabling resource discovery. */
-export function collectExtensionFactories(events: ExtensionAPI["events"]): ExtensionFactory[] {
+export function collectExtensionFactories(events: ExtensionAPI["events"], tools = new Set<string>()): ExtensionFactory[] {
 	const factories = new Set<ExtensionFactory>();
 	events.emit(SUBAGENT_EXTENSION_FACTORIES, {
-		offer: (factory: ExtensionFactory) => { if (typeof factory === "function") factories.add(factory); },
+		offer: (factory: ExtensionFactory, names?: string[]) => {
+			if (typeof factory !== "function") return;
+			factories.add(factory);
+			for (const name of names ?? []) tools.add(name);
+		},
 	});
 	return [...factories];
 }
@@ -1058,7 +1062,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (offer) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
 			else createCodemodeExtension()(sub);
 		};
-		const childExtensions = collectExtensionFactories(toolEvents);
+		const extensionTools = new Set<string>();
+		const childExtensions = collectExtensionFactories(toolEvents, extensionTools);
 		const resourceLoader = new DefaultResourceLoader({
 			cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
@@ -1104,7 +1109,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-				tools: [...names, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins],
+				tools: [...new Set([...names, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins, ...extensionTools])],
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {
@@ -1354,7 +1359,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					}
 					else {
 						// The child's own agents decide when this logical run is final: nothing live and nothing ready.
-						if (!backgroundLive(background)) break;
+						if (!backgroundLive(background)) {
+							const boundary = (session as unknown as { _runBeforeSettleBoundary?: () => Promise<boolean> })._runBeforeSettleBoundary;
+							if (a.core.on && typeof boundary === "function" && await boundary.call(session)) {
+								await session.agent.continue();
+								a.children?.settle?.(signal.aborted);
+								continue;
+							}
+							break;
+						}
 						// What the child said before this is "started, waiting", not its final answer.
 						outputs.length = 0; lastPushed = 0;
 						await untilBackgroundChange({ sources: background, signal,

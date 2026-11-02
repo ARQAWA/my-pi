@@ -9,6 +9,7 @@ it("updates several items atomically and restores the last state of the current 
 	let active = ["todo"];
 	const savedEntries: unknown[] = [];
 	todo({
+		events: { on: () => {} },
 		on: (name: string, handler: Function) => { (handlers[name] ??= []).push(handler); },
 		registerTool: (value: unknown) => { tool = value; }, registerCommand: () => {},
 		getActiveTools: () => active, setActiveTools: (names: string[]) => { active = names; },

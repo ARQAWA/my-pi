@@ -62,6 +62,7 @@ it("reads history from actual todo tool results after a branch change", async ()
 	let tool: any;
 	let active = ["todo"];
 	todo({
+		events: { on: () => {} },
 		on: (name: string, handler: Function) => { (handlers[name] ??= []).push(handler); },
 		registerTool: (value: unknown) => { tool = value; }, registerCommand: () => {},
 		getActiveTools: () => active, setActiveTools: (names: string[]) => { active = names; }, appendEntry: () => {},

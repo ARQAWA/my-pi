@@ -42,6 +42,7 @@ export function promptSection(loaded: Loaded, processFile: string): string {
 		`- Every executor start or restart by Main passes the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional. The guard draws the pair at random among the models that still have a free slot: ${describePairs(rules)} (${LINK}).`,
 		`- Reviewer-profile starts and restarts instead use the exact pair for their agent_type: ${describeReviewerProfiles(rules)}. Existing agents keep their model through send/resume and are not restarted merely to switch models.`,
 		"- An `agent` start with `fork_turns: \"all\"` passes no model: the fork inherits the caller's model, so the prompt cache is reused, and the guard draws nothing and rewrites nothing.",
+		"- Main does not use todo. A worker can keep its own list; ask for it in the task.",
 		...(Object.keys(rules.slots).length ? [`- Slots: one direct start with all its own helpers is one slot; helpers are not counted. Limits: ${describeSlots(rules)}. Reviewer and fork starts count on their model. A start whose models are all full is refused with "slots full: <model> n/n". A slot frees when the agent's final result is delivered (it arrives automatically as one message) or the agent is stopped; send and restart keep it.`] : []),
 	].join("\n");
 }
@@ -128,6 +129,7 @@ export function createCoordinatorGuard(options: GuardOptions) {
 					notice = `coordinator-guard: coordinator lock failed (${(error as Error).message}); guard stays on.`;
 				}
 			}
+			if (coordinator) pi.events.emit("rqw-todo:disable:v1", { ctx });
 			if (!ctx.hasUI) return;
 			if (!coordinator) ctx.ui.setStatus("coordinator-guard", "coordinator-guard: direct agent");
 			else {
