@@ -29,6 +29,7 @@ The executor corrects format slips itself. Initial review covers the whole objec
 all fixes, changed lines and affected paths, not the whole object again. Stop when no admitted finding remains
 and the required evidence is complete.
 
+The verdict is the first line: `CLEAN` or `FINDINGS: N`, N being the number of findings; the agent card reads N from it.
 Findings need exact source evidence, `SEVERITY`, a concrete `TRIGGER` and `RESULT_IF_UNFIXED` in the ordered result.
 P0 is critical, P1 high and P2 medium, including real regression-detection gaps. Data, security and destructive-action
 risks are at least P2. Grade missed owner conditions and unagreed additions by their impact, not automatically critical.

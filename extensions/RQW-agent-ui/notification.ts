@@ -5,7 +5,7 @@ import { cached, clean, fit, padded, wrap } from "./fit.ts";
 
 function detailsOf(content: string, details: unknown): Record<string, unknown> {
 	if (details && typeof details === "object") return details as Record<string, unknown>;
-	try { return JSON.parse(content.replace(/^\[job\]\s*/, "")) ?? {}; }
+	try { return JSON.parse(content) ?? {}; }
 	catch { return {}; }
 }
 
@@ -27,7 +27,7 @@ function progressSummary(text: string): string {
 
 /** Display only: expanded notifications retain all original text, including embedded skills. */
 export const createNotificationCard: MessageRenderer = (message, options, theme) => {
-	if (!["agent_progress", "child_wait", "job"].includes(message.customType)) return undefined;
+	if (!["agent_progress", "child_wait"].includes(message.customType)) return undefined;
 	const text = messageText(message.content);
 	const details = detailsOf(text, message.details);
 	const paint = (role: Parameters<typeof theme.fg>[0], value: string) => theme.fg(role, clean(value));
@@ -40,16 +40,9 @@ export const createNotificationCard: MessageRenderer = (message, options, theme)
 	} else {
 		const targets = ids(details);
 		const reason = typeof details.reason === "string" ? details.reason.replace(/_/g, " ") : "notification";
-		if (message.customType === "job" && reason === "exit") {
-			const failed = Array.isArray(details.results) && details.results.some((item) =>
-				["failed", "killed", "timed_out"].includes(item?.state) || (typeof item?.exit_code === "number" && item.exit_code !== 0));
-			summary = muted(`${targets || "job"} `) + paint(failed ? "error" : "success", failed ? "failed" : "done");
-		} else {
-			const status = reason === "timeout" ? "timed out" : reason;
-			const failed = ["timeout", "timed out", "failed", "error"].includes(reason);
-			summary = muted(`${message.customType === "job" ? "job" : "wait"} `)
-				+ paint(failed ? "error" : "muted", status) + muted(targets ? `: ${targets}` : "");
-		}
+		const status = reason === "timeout" ? "timed out" : reason;
+		const failed = ["timeout", "timed out", "failed", "error"].includes(reason);
+		summary = muted("wait ") + paint(failed ? "error" : "muted", status) + muted(targets ? `: ${targets}` : "");
 	}
 	const progress = message.customType === "agent_progress" ? progressSummary(text) : "";
 	const collapsed = (width: number): string[] => {

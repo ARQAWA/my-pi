@@ -5,9 +5,8 @@ import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
 import agentUi from "../../../extensions/RQW-agent-ui/index.ts";
 import { type CardTheme, createAgentCard, setModelLookup } from "../../../extensions/RQW-agent-ui/card.ts";
 import { createChildWaitCard } from "../../../extensions/RQW-agent-ui/child-wait.ts";
-import { createReviewCard, reviewCounts } from "../../../extensions/RQW-agent-ui/review.ts";
 import { selfShellWaitRenderers } from "../../../extensions/RQW-agent-ui/self.ts";
-import { waitCards } from "../../../extensions/RQW-agent-ui/wait.ts";
+import { waitCards, waitResultRenderer } from "../../../extensions/RQW-agent-ui/wait.ts";
 
 const identity: CardTheme = { fg: (_color, text) => text, bold: (text) => text };
 const message = (customType: string, content: unknown, details?: unknown) => ({
@@ -19,9 +18,9 @@ it("renders collapsed and expanded agent answers", () => {
 		outcome: "finished", model: "anthropic/claude-opus-5-5", thinking: "medium", seconds: 42,
 	});
 	const collapsed = createAgentCard(input as never, { expanded: false, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus-5-5 md · 42s", "  First Second"]);
+	assert.deepEqual(collapsed.render(80), ["agent#3 finished · claude-opus-5-5 md · 42s", "  First Second"]);
 	const expanded = createAgentCard(input as never, { expanded: true, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus-5-5 md · 42s", "  First", "  Second"]);
+	assert.deepEqual(expanded.render(80), ["agent#3 finished · claude-opus-5-5 md · 42s", "  First", "  Second"]);
 });
 
 it("shows the picker model label and the short effort in the card", () => {
@@ -35,7 +34,7 @@ it("shows the picker model label and the short effort in the card", () => {
 	};
 	assert.equal(render("anthropic/claude-sonnet-5-5", "medium"), "agent#3 finished · Sonnet 5.5 md · 5s");
 	assert.equal(render("openai-codex/gpt-6.1-terra", "xhigh"), "agent#3 finished · GPT-6.1 Terra xh · 5s");
-	assert.equal(render("anthropic/claude-unknown-1", "high"), "agent#3 finished · unknown-1 hi · 5s");
+	assert.equal(render("anthropic/claude-unknown-1", "high"), "agent#3 finished · claude-unknown-1 hi · 5s");
 	const tagged: CardTheme = { fg: (color, text) => `<${color}>${text}</>`, bold: (text) => `<b>${text}</b>` };
 	const wide = (thinking: string) => render("anthropic/claude-sonnet-5-5", thinking, tagged, 400);
 	assert.match(wide("low"), /<text>Sonnet 5\.5<\/>/);
@@ -50,9 +49,10 @@ it("shows verdict labels with semantic colors", () => {
 	const theme: CardTheme = { fg: (color, text) => `\u001b[${color === "success" ? 32 : color === "error" ? 31 : 0}m${text}\u001b[0m`, bold: (text) => text };
 	for (const [body, label, color] of [
 		["\n CLEAN \nchecked", "CLEAN", 32],
-		["FINDINGS:\nFINDING 1  \nproof", "1 finding", 31],
+		["FINDINGS: 1\nFINDING 1  \nproof", "1 finding", 31],
 		[" FINDINGS: \nproof", "findings", 31],
-		["FINDINGS:\nFINDING 1\nproof\nFINDING 2", "2 findings", 31],
+		["FINDINGS:\nFINDING 1\nproof\nFINDING 2", "findings", 31],
+		["FINDINGS: 0\nproof", "findings", 31],
 		[" FINDINGS: 3 \nproof", "3 findings", 31],
 		["ordinary answer", "finished", 32],
 	] as const) {
@@ -95,6 +95,7 @@ it("reads the verdict of a finished answer without splitting the whole body", ()
 		assert.equal(render("x".repeat(100000)), "agent#7 finished");
 		assert.equal(render(`CLEAN${" ".repeat(300)}text`), "agent#7 finished");
 		assert.equal(render("FINDINGS: 2 \r\nproof"), "agent#7 2 findings");
+		assert.equal(render(`FINDINGS:\n${longAnswer}`), "agent#7 findings");
 	} finally {
 		String.prototype.split = split;
 		String.prototype.trim = trim;
@@ -135,14 +136,6 @@ it("cuts the collapsed tail on whole graphemes and cleans terminal sequences", (
 	assert.equal(card.render(8)[1], "  … e\u0301e\u0301e\u0301");
 });
 
-it("renders review verdicts and counts real sections", () => {
-	const clean = createReviewCard(message("review", "[review#2] CLEAN\nCHECKED:\n- proof", { n: 2 }) as never,
-		{ expanded: false, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(clean.render(80), ["review#2 CLEAN", "  CLEAN"]);
-	const body = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: x\nREQUIRED OUTCOME: x\nUNCHECKED:\n- missing";
-	assert.deepEqual(reviewCounts(body), { findings: 1, unchecked: 1 });
-});
-
 it("renders child wait results and preserves expanded answers", () => {
 	const details = { reason: "result", results: [
 		{ id: "agent#3", outcome: "completed", text: "First\nSecond" },
@@ -163,6 +156,20 @@ it("parses delivered wait cards and rejects diagnostics", () => {
 	assert.deepEqual(waitCards("agent", { action: "wait" }, { details })?.map((card) => [card.id, card.body]), [["agent#3", "Done"]]);
 	assert.equal(waitCards("agent", { action: "wait" }, { details: { reason: "alert", results: [] } }), undefined);
 	for (const reason of ["steered", "timeout", "receipt"]) assert.equal(waitCards("agent", { action: "wait" }, { details: { reason, results: [], receipts: [] } }), undefined);
+});
+
+it("draws a collapsed wait card without tool-ui and leaves diagnostics to the stock view", () => {
+	const renderer = waitResultRenderer("agent", {});
+	const theme = { ...identity, bg: (_role: string, text: string) => text };
+	const context = (details: unknown) => ({ args: { action: "wait" }, state: {}, outputPad: 0, isError: false, invalidate() {}, expanded: false, details });
+	const answered = { content: [{ type: "text", text: "RAW" }], details: {
+		reason: "result", results: [{ id: "agent#3", text: "Done at last", display: { outcome: "finished" } }],
+	} };
+	const rows = renderer(answered as never, { expanded: false, isPartial: false }, theme as never, context(answered.details) as never).render(80).map(strip);
+	assert.deepEqual(rows, ["agent#3 finished", "  Done at last"]);
+	const timeout = { content: [{ type: "text", text: "timed out" }], details: { reason: "timeout", results: [] } };
+	const stock = renderer(timeout as never, { expanded: false, isPartial: false }, theme as never, context(timeout.details) as never).render(80);
+	assert.deepEqual(stock.map((row) => row.trimEnd()), ["timed out"]);
 });
 
 it("keeps folded self-shell rows and replaces expanded ones with cards", () => {
@@ -198,32 +205,13 @@ it("hides the follow-up sentence in collapsed and expanded cards and keeps other
 
 const painted: CardTheme = { fg: (color, text) => `<${color}>${text}`, bold: (text) => text };
 
-it("counts only real findings of a protocol body, not quoted examples", () => {
-	const body = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: example\n```\nFINDING 99\n```\nREQUIRED OUTCOME: x\nCHECKED:\n- x";
+it("reads the findings number from the first line and never counts the answer", () => {
+	const body = "FINDINGS: 2\nFINDING 1\nREQUIREMENT: x\nEVIDENCE: example\n```\nFINDING 99\n```\nFINDING 2\nFINDING 3";
 	const card = createAgentCard(message("agent", `[agent#3] ${body}`, { outcome: "finished" }) as never,
 		{ expanded: false, outputPad: 0 }, painted as never)!;
 	const header = card.render(100)[0];
-	assert.ok(header.includes("<error>1 finding"), header);
+	assert.ok(header.includes("<error>2 findings"), header);
 	assert.ok(!header.includes("<success>"), header);
-});
-
-it("counts findings when the heading and FINDING lines have surrounding whitespace", () => {
-	const body = "  FINDINGS:  \n  FINDING 1  \nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: e\nREQUIRED OUTCOME: x\n\t FINDING 2 \nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: e\nREQUIRED OUTCOME: x\nCHECKED:\n- x";
-	assert.deepEqual(reviewCounts(body), { findings: 2, unchecked: 0 });
-	const card = createAgentCard(message("agent", `[agent#3] ${body}`, { outcome: "finished" }) as never,
-		{ expanded: false, outputPad: 0 }, painted as never)!;
-	assert.ok(card.render(100)[0].includes("<error>2 findings"));
-	const quoted = "FINDINGS:\n  FINDING 1 \nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: ex\n```\n  FINDING 99  \n```\nREQUIRED OUTCOME: x";
-	assert.equal(reviewCounts(quoted).findings, 1);
-});
-
-it("colours a stored review verdict after trimming its first line", () => {
-	const card = createReviewCard(message("review", "[review#2]  CLEAN \nCHECKED:\n- x") as never,
-		{ expanded: false, outputPad: 0 }, painted as never)!;
-	assert.ok(card.render(80)[0].includes("<success>CLEAN"));
-	const none = createReviewCard(message("review", "[review#3] FINDINGS:\nproof") as never,
-		{ expanded: false, outputPad: 0 }, painted as never)!;
-	assert.ok(!none.render(80)[0].includes("0 "));
 });
 
 const LONG = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango";
@@ -233,14 +221,14 @@ it("does not repaint the remaining cards at an unchanged width and refreshes aft
 	let paints = 0;
 	const counting: CardTheme = { fg: (_color, text) => (paints++, text), bold: (text) => text };
 	const options = { expanded: true, outputPad: 0 };
-	const review = createReviewCard(message("review", `[review#2] CLEAN\nCHECKED:\n- ${LONG}`) as never, options, counting as never)!;
+	const card = createAgentCard(message("agent", `[agent#2] ${LONG}`) as never, options, counting as never)!;
 	const self = selfShellWaitRenderers("agent", { renderShell: "self", renderCall: () => ({ render: () => [], invalidate() {} }) } as never);
 	const theme = { ...counting, bg: (_role: string, text: string) => text };
 	const base = { args: { action: "wait" }, state: {}, outputPad: 0, isError: false, invalidate() {}, expanded: true };
 	const view = self.renderCall!(base.args, theme as never, base as never);
 	self.renderResult!({ content: [], details: { reason: "result", results: [{ id: "agent#3", text: LONG, display: { outcome: "finished" } }] } },
 		{ expanded: true, isPartial: false }, theme as never, base as never);
-	for (const [component, id, answer] of [[review, "review#2", LONG], [view, "agent#3", LONG]] as const) {
+	for (const [component, id, answer] of [[card, "agent#2", LONG], [view, "agent#3", LONG]] as const) {
 		const first = [...component.render(80)];
 		const before = paints;
 		assert.deepEqual(component.render(80), first);
@@ -275,4 +263,14 @@ it("takes the model names from the registry of the started session", () => {
 	const input = message("agent", "[agent#3] Done", { outcome: "finished", model: "anthropic/claude-sonnet-5-5", thinking: "medium" });
 	assert.equal(renderers.get("agent")!(input as never, { expanded: false, outputPad: 0 }, identity as never)!.render(80)[0], "agent#3 finished · Sonnet 5.5 md");
 	setModelLookup(undefined);
+});
+
+it("registers only the cards of live messages: agent, child_wait and agent_progress", () => {
+	const renderers = new Map<string, MessageRenderer>();
+	agentUi({ on() {}, registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {} } as never);
+	assert.deepEqual([...renderers.keys()].sort(), ["agent", "agent_progress", "child_wait"]);
+	// A message of a removed type goes to Pi's stock view even when drawn by the agent card.
+	for (const type of ["code_writer", "shell_runner", "review", "job"]) {
+		assert.equal(createAgentCard(message(type, `[${type}#1] Done`) as never, { expanded: false, outputPad: 0 }, identity as never), undefined);
+	}
 });

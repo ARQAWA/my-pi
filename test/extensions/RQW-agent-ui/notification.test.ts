@@ -11,7 +11,6 @@ const colored = { ...theme, fg: (role: string, text: string) => `\x1b[${codes[ro
 for (const [type, content, expected] of [
 	["agent_progress", '[notification] agent#711 has worked 50 tool-call steps without communication.\n\nThe agent continues working.\n\n<skill name="agent-progress">\nFull instructions\n</skill>', "agent#711 progress: 50 steps"],
 	["child_wait", JSON.stringify({ reason: "timeout", timed_out: true, results: [], statuses: [{ id: "agent#5", state: "running" }] }), "wait timed out: agent#5"],
-	["job", '[job] ' + JSON.stringify({ reason: "exit", results: [{ id: "job#3", state: "exited", result: "Full output\nSecond line" }], statuses: [] }), "job#3 done"],
 ]) {
 	it(`renders ${type} as one line with the full original expanded`, () => {
 		const renderers = new Map<string, MessageRenderer>();
@@ -21,18 +20,12 @@ for (const [type, content, expected] of [
 		const message = { role: "custom", customType: type, content, display: true, timestamp: 0 };
 		assert.deepEqual(renderer(message as never, { expanded: false, outputPad: 0 }, theme as never)!.render(80), [expected]);
 		assert.equal(renderer(message as never, { expanded: true, outputPad: 0 }, theme as never)!.render(1000).join("\n"), content);
-		const status = type === "agent_progress" ? "progress" : type === "child_wait" ? "timed out" : "done";
-		const role = type === "agent_progress" ? "thinkingHigh" : type === "child_wait" ? "error" : "success";
+		const status = type === "agent_progress" ? "progress" : "timed out";
+		const role = type === "agent_progress" ? "thinkingHigh" : "error";
 		const rows = renderer(message as never, { expanded: false, outputPad: 0 }, colored as never)!.render(80);
 		assert.equal(rows.length, 1);
 		assert.ok(rows[0].includes(colored.fg(role, status)));
-		assert.ok(rows[0].includes(colored.fg("muted", type === "agent_progress" ? "agent#711 " : type === "job" ? "job#3 " : ": agent#5")));
-		if (type === "job") {
-			for (const failure of [{ state: "failed" }, { state: "exited", exit_code: 1 }]) {
-				const failed = { ...message, content: "[job] " + JSON.stringify({ reason: "exit", results: [{ id: "job#3", ...failure }] }) };
-				assert.ok(renderer(failed as never, { expanded: false, outputPad: 0 }, colored as never)!.render(80)[0].includes(colored.fg("error", "failed")));
-			}
-		}
+		assert.ok(rows[0].includes(colored.fg("muted", type === "agent_progress" ? "agent#711 " : ": agent#5")));
 	});
 }
 

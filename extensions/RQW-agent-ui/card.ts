@@ -1,11 +1,10 @@
-// The agent / worker result card: a pure component factory for the custom messages `agent`, `code_writer` and
-// `shell_runner` that RQW-agent delivers (content `[<name>#<id>] <text>`). Registration and wiring are not here.
+// The agent result card: a pure component factory for the custom message `agent` that RQW-agent delivered
+// (content `[<name>#<id>] <text>`). Registration and wiring are not here.
 import type { MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { cached, clean, fit, fitTail, padded, wrap } from "./fit.ts";
-import { reviewCounts } from "./review.ts";
 
-export const CARD_TYPES = ["agent", "code_writer", "shell_runner"] as const;
+export const CARD_TYPE = "agent";
 
 /** The display details RQW-agent may attach (any part can be missing); other fields are ignored. */
 export interface CardDetails {
@@ -67,9 +66,9 @@ export function splitPrefix(type: string, text: string): { id?: string; body: st
 	return match ? { id: match[1], body: text.slice(match[0].length) } : { body: text };
 }
 
-/** `anthropic/claude-sonnet-5-5` → `sonnet-5-5`; any other `provider/id` → `id`. */
+/** `provider/id` → `id`: the model id without its provider. */
 export function shortModel(model: string): string {
-	return model.slice(model.lastIndexOf("/") + 1).replace(/^claude-/, "");
+	return model.slice(model.lastIndexOf("/") + 1);
 }
 
 /** The short effort labels of the status bar (local copy of its rules). */
@@ -149,10 +148,10 @@ export function parseCard(message: { customType: string; content: unknown; detai
 	return cardParts(id, message.details, body, message.customType);
 }
 
-/** The red verdict label of a findings answer; a zero count is never shown as a number. */
+/** The red verdict label of a findings answer; a missing or zero count is never shown as a number. */
 export const findingsLabel = (count: number): string => (count === 0 ? "findings" : `${count} ${count === 1 ? "finding" : "findings"}`);
 
-/** Matches a verdict (CLEAN or FINDINGS[: N]) that fills its line; the trailing blanks are only looked ahead, so no long string is built. */
+/** Matches a verdict (CLEAN or FINDINGS: N, the number optional for older answers) that fills its line; the trailing blanks are only looked ahead, so no long string is built. */
 const VERDICT = /(?:(CLEAN)|FINDINGS:(?: (\d+))?)(?=[^\S\n]*(?:\n|$))/y;
 
 type Verdict = { label: string; color: "success" | "error" };
@@ -171,9 +170,8 @@ function verdictOf(card: ParsedCard, outcome: string): Verdict {
 		const match = start < 0 ? null : VERDICT.exec(card.body);
 		if (match?.[1]) verdict = { label: "CLEAN", color: "success" };
 		else if (match) {
-			// An explicit count wins; otherwise the protocol parser counts real findings, not quoted examples.
-			const count = match[2] === undefined ? reviewCounts(clean(card.body)).findings : Number(match[2]);
-			verdict = { label: findingsLabel(count), color: "error" };
+			// The reviewer states the number itself; an older answer without it shows no number.
+			verdict = { label: findingsLabel(Number(match[2] ?? 0)), color: "error" };
 		}
 	}
 	verdicts.set(card, verdict);
@@ -232,9 +230,9 @@ export function cardLines(card: ParsedCard, expanded: boolean, theme: CardTheme,
 	return rows;
 }
 
-/** The renderer for the three custom types; any other type is left to Pi (undefined). */
+/** The renderer for the `agent` custom type; any other type is left to Pi (undefined). */
 export const createAgentCard: MessageRenderer<CardDetails> = (message, options, theme) => {
-	if (!(CARD_TYPES as readonly string[]).includes(message.customType)) return undefined;
+	if (message.customType !== CARD_TYPE) return undefined;
 	const card = parseCard(message);
 	const expanded = options.expanded;
 	return cached(padded((width) => cardLines(card, expanded, theme, width), options.outputPad));
