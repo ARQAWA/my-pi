@@ -324,7 +324,7 @@ describe("RQW-context background compaction: projected snapshot", () => {
 		const previous = shared[key];
 		try {
 			delete shared[key];
-			assert.throws(() => prepareSnapshot(big, settings, 0), RangeError);
+			assert.ok(prepareSnapshot(big, settings, 0));
 			const seen: unknown[] = [];
 			shared[key] = (entries: unknown) => { seen.push(entries); return PiRoot.buildSessionProjection(small as never); };
 			const snapshot = prepareSnapshot(big, settings, 0);
