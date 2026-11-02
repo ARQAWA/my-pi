@@ -219,7 +219,6 @@ interface SharedWorld {
 }
 
 async function build(t: TestContext, options: WorldOptions, from: Handover, peer?: SharedWorld, pair = false) {
-	const { extensions, theme } = await loadManifest();
 	const { builtInExtensions } = await import(new URL("./extensions/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 	const builtins = builtInExtensions.filter(({ name }: { name: string }) => name === "codemode" || name === "tool-search");
 	const created = from.created ?? process.hrtime.bigint();
@@ -276,6 +275,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover, peer
 		syncBuiltinESMExports();
 	}
 	shared ??= pair ? { guard, clock, networkAttempts, processAttempts, exitCodes, processes: processes!, active: 1 } : undefined;
+	const { extensions, theme } = await loadManifest();
 
 	const settingsPath = join(dirs.agent, "settings.json");
 	let applyScenarioSettings = !existsSync(settingsPath);
