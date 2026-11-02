@@ -23,6 +23,7 @@ import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { steeringWait } from "./steering-wait.ts";
+import { type AutoSource, backgroundLive, takeBackground, untilBackgroundChange } from "./background.ts";
 import { continueOnLength, isContinuedCut } from "./length-continue.ts";
 import { installCutLine } from "./cut-line.ts";
 import { registerHerdrActivity } from "./herdr-state.ts";
@@ -141,6 +142,7 @@ const INBOX_ENTRY = "rqw-agent-inbox";
 class NotificationBridge {
 	readonly lifetime = new AbortController();
 	wake?: () => void;
+	private listeners = new Set<() => void>();
 	private manager: SessionManager;
 	private inbox = new Map<string, InboxMessage>();
 
@@ -177,13 +179,21 @@ class NotificationBridge {
 		}
 	}
 	close(): void { this.lifetime.abort(); this.changed(); }
-	private changed(): void { this.wake?.(); }
+	/** For a waiting child loop: told of every inbox change. */
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => { this.listeners.delete(listener); };
+	}
+	private changed(): void {
+		this.wake?.();
+		for (const listener of [...this.listeners]) listener();
+	}
 }
 /** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
 type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile; profile?: ProfileRef };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
-type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean };
-type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
+type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean; backgroundCount?(): number; autoSource?(): { source: AutoSource; close(): void } };
+type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -211,6 +221,8 @@ type Agent = Child & {
 	recovers?: string;
 	idleSince?: number;
 	cancelSleep?: () => void;
+	/** Set while this child's run waits for its background: a `send` wakes it at once. */
+	nudge?: () => void;
 };
 
 /** The run's own record (startRun), from its assistant message_end events: last executed model and last stop reason. */
@@ -324,7 +336,7 @@ type OwnSettings = ReturnType<ExtensionAPI["getSettings"]>;
 
 /** Descendant supervision stays compact: no message, argument or tool-output previews. */
 function compactStatus(status: Record<string, unknown>): Record<string, unknown> {
-	const keys = ["id", "run", "error", "recovery_error", "title", "profile", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "cancellation_requested", "pending_sends", "children"];
+	const keys = ["id", "run", "error", "recovery_error", "title", "profile", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "pending_jobs", "cancellation_requested", "pending_sends", "children"];
 	return Object.fromEntries(keys.filter(key => key in status).map(key => [key, status[key]]));
 }
 
@@ -578,6 +590,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
 				...(a.next?.length ? { pending_sends: a.next.length } : {}),
 				...(a.children?.pending() ? { pending_children: a.children.ids() } : {}),
+				...(a.jobs?.backgroundCount?.() ? { pending_jobs: a.jobs.backgroundCount() } : {}),
 				...(depth > 0 ? { children: a.children?.status?.(depth - 1) ?? [] } : {}) }),
 		};
 	}
@@ -1108,6 +1121,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		// Reload can create a nested caller; failure or cancellation ends its lifetime too.
 		let creating: Promise<Child> | undefined;
 		let jobs: JobControl | undefined;
+		let jobsAuto: Child["jobsAuto"];
 		try {
 			await untilAborted(resourceLoader.reload(), signal);
 			if (!builtins.includes("codemode")) offer = offeredFactory();
@@ -1115,6 +1129,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const customTools = offer ? offeredTools(offer.factory, cwd, names, codemode) : [];
 			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
 			jobs = jobTool?.jobs;
+			jobsAuto = jobs?.autoSource?.();
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
@@ -1186,7 +1201,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						if (!activity?.isRunning()) armSleep(a);
 					}
 				}, { alert_after_ms: config.alert_after_ms });
-				return { session, progress, controller, guard, children, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
+				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: policy.release, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
@@ -1197,6 +1212,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			throw error;
 		}
 	}
+
+	/** The result sources (its agents and jobs) whose live work keeps a child's logical run open. */
+	const backgroundSources = (a: Agent): AutoSource[] => [a.children?.autoSource?.(), a.jobsAuto?.source].filter((source): source is AutoSource => !!source);
 
 	/** Wait only for an active SDK run, not its answer. Caller cancellation ends only an unaccepted run. */
 	async function startRun(a: Agent, task: string | undefined, signal: AbortSignal, { skipRequest = false, communication: startsCommunication = false, queued = false, recovery = false } = {}): Promise<void> {
@@ -1295,6 +1313,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					const signal = a.guard.signal ?? a.controller.signal;
 					// A child may have woken a new native run after the original prompt settled.
 					await untilAborted(a.core.on ? session.agent.waitForIdle() : session.waitForIdle(), signal);
+					// Ready results of the child's agents and jobs come first: with a queued send they make one request.
+					const background = backgroundSources(a);
+					if (takeBackground(background, message => a.bridge.deliver(message))) {
+						// What the child said before this is "started, waiting", not its final answer.
+						outputs.length = 0; lastPushed = 0;
+					}
 					const notifications = a.bridge.messages();
 					if (notifications.length) {
 						if (a.core.on) {
@@ -1303,8 +1327,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 							await session.agent.prompt(notifications.map(message => ({ role: "custom", ...message, timestamp: Date.now() })));
 							a.children?.settle?.(signal.aborted);
 						} else {
-							for (const message of notifications.slice(0, -1)) await session.sendCustomMessage(message, { triggerTurn: false });
-							await session.sendCustomMessage(notifications.at(-1)!, { triggerTurn: true });
+							// A queued send starts the one request below; the notifications only join its context.
+							const queuedSend = session.getSteeringMessages().length + session.getFollowUpMessages().length > 0;
+							for (const message of queuedSend ? notifications : notifications.slice(0, -1)) await session.sendCustomMessage(message, { triggerTurn: false });
+							if (!queuedSend) await session.sendCustomMessage(notifications.at(-1)!, { triggerTurn: true });
 						}
 						a.bridge.reconcile();
 						continue;
@@ -1325,7 +1351,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						}
 						await session.prompt([...queued.steering, ...queued.followUp].join("\n\n"));
 					}
-					else break;
+					else {
+						// The child's own agents decide when this logical run is final: nothing live and nothing ready.
+						if (!backgroundLive(background)) break;
+						// What the child said before this is "started, waiting", not its final answer.
+						outputs.length = 0; lastPushed = 0;
+						await untilBackgroundChange({ sources: background, signal,
+							subscribe: wake => { a.nudge = wake; const stop = a.bridge.subscribe(wake); return () => { a.nudge = undefined; stop(); }; },
+							settled: () => a.bridge.pending() || (a.core.on ? session.agent.hasQueuedMessages() : session.getSteeringMessages().length + session.getFollowUpMessages().length > 0) });
+					}
 				}
 				if (!run.quiet && !a.guard.signal?.aborted) {
 					const outcome = outputs.some(output => output.error) ? "error" : "completed";
@@ -1394,6 +1428,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		a.release();
 		a.activity.close();
 		a.children?.close();
+		a.jobsAuto?.close();
 		a.jobs?.dispose();
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
@@ -1642,6 +1677,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 							toolEvents.emit("rqw:wait-steer:v1", { sessionId: a.session.sessionManager.getSessionId() });
 						} else await untilAborted(a.session.steer(params.task), signal);
 					} catch (error) { a.sends = a.sends.filter(item => item !== batch); persist(a); throw error; }
+					a.nudge?.();
 					a.progress.reset();
 					return ok(`${name}#${a.id}: queued after the current tool call`);
 				}
@@ -1768,6 +1804,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	pi.on("agent_start", () => { mainAborted = false; });
 	pi.on("agent_settled", event => { mainAborted = event.aborted; });
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
+	let auto: ReturnType<Coordinator["autoSource"]> | undefined;
 	const abortAll = () => {
 		// Fence queued/preflight starts as well as accepted children, but allow later assignments.
 		generation.abort(new Error("The caller interrupted its children"));
@@ -1789,6 +1826,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		payloads.close();
 		lifetime.abort(new Error("The caller session is shutting down"));
 		abortAll();
+		auto?.close(); auto = undefined;
 		for (const run of ownRuns) displays.delete(run);
 		ownRuns.clear();
 	};
@@ -1809,6 +1847,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	pi.on("agent_settled", queueAll);
 	return {
 		pending: () => runs().length > 0,
+		autoSource() {
+			if (!auto && main) auto = coordinator.autoSource(main);
+			return auto?.source;
+		},
 		async wait(signal) {
 			const active = runs();
 			if (active.length) await untilAborted(Promise.all(active).then(() => {}), signal);

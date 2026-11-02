@@ -152,6 +152,8 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 						const details = steering.reason && (steering.reason !== "steered" || statuses!.every(job => job.state === "running"))
 							? { reason: steering.reason, timed_out: false, running: statuses!.filter(job => job.state === "running").map(job => job.id) }
 							: await jobs.wait(waitIds, timeout, lines, signal, until, steering.signal);
+						// A direct wait's result is saved as the tool result, so it counts as delivered; inside codemode the script may still drop it.
+						if ("results" in details && !toolCallId.includes("/")) jobs.delivered(details.results?.map(result => result.id) ?? []);
 						const text = "results" in details && details.results?.length
 							? JSON.stringify(details.results)
 							: `${details.reason}; still running: ${details.running?.join(", ") || "none"}`;
@@ -167,7 +169,13 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 				default: throw new Error(`Unknown action: ${params.action}`);
 			}
 		},
-		jobs: { abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose(), hasJobs: () => jobs.size > 0 },
+		// A job keeps its owner awake only while it runs or its result has not been delivered.
+		jobs: {
+			abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose(),
+			hasJobs: () => jobs.backgroundCount() > 0 || jobs.undelivered() > 0,
+			backgroundCount: () => jobs.backgroundCount(),
+			autoSource: () => jobs.autoSource(),
+		},
 	};
 }
 
@@ -406,6 +414,11 @@ export function createJobs(options: JobsOptions = {}) {
 
 	return {
 		backgroundCount,
+		/** Results an explicit wait returned: the automatic source must not deliver them again. */
+		delivered(ids: string[]) {
+			for (const job of ids.map(find)) if (!job.autoDelivery) job.autoDelivery = "delivered";
+		},
+		undelivered: () => [...jobs.values()].filter(job => job.ended !== undefined && !job.autoDelivery).length,
 		autoSource() {
 			let ended = false;
 			const listeners = new Set<(value: true | null) => void>();

@@ -86,7 +86,7 @@ test("the child registry retains a background job and its result after final", a
 	await waiting.promise;
 	control.finish("late result");
 	await next;
-	assert.equal(wrap("job").jobs.hasJobs(), true);
+	assert.equal(wrap("job").jobs.hasJobs(), false, "a collected job no longer holds its owner");
 	assert.deepEqual(notifications, []);
 	const toolResult = agent.state.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === "collect") as any;
 	assert.equal(toolResult.details.results[0].result, "late result");
@@ -291,4 +291,38 @@ test("counts follow a handed-off job until it ends", async (t) => {
 	await jobs.settled("job#1");
 	assert.equal(source.snapshot().backgroundProcesses, 0);
 	counts.stop();
+});
+
+const ownerOf = (jobs: any) => (createTools(process.cwd(), () => ({}), { jobs }).find(tool => tool.name === "job") as any).jobs;
+
+test("the job tool hands its owner a running count, a result source and a hold only while a job runs or is undelivered", async (t) => {
+	const { jobs, control } = await handedOff(t);
+	const owner = ownerOf(jobs);
+	assert.equal(owner.backgroundCount(), 1);
+	assert.equal(owner.hasJobs(), true);
+	const auto = owner.autoSource();
+	assert.deepEqual(auto.source.snapshot().targets, ["job#1"]);
+	control.finish("done");
+	await jobs.settled("job#1");
+	assert.equal(owner.backgroundCount(), 0);
+	assert.equal(owner.hasJobs(), true, "a finished job's result is not delivered yet");
+	const claim = auto.source.claim();
+	assert.equal(claim.results[0].text, "done");
+	auto.source.commit(claim.token);
+	assert.equal(owner.hasJobs(), false);
+	auto.close();
+});
+
+test("a result a direct wait returned is not delivered again; one a codemode script took may still be", async (t) => {
+	const { jobs, control, job } = await handedOff(t);
+	control.finish("late");
+	await jobs.settled("job#1");
+	assert.equal((await job({ action: "wait", ids: ["job#1"] }, undefined, "outer/1")).details.results[0].result, "late");
+	assert.equal(ownerOf(jobs).hasJobs(), true, "the script may drop the result");
+	const auto = jobs.autoSource();
+	assert.equal(auto.source.snapshot().ready, true);
+	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.results[0].result, "late");
+	assert.equal(auto.source.snapshot().ready, false);
+	assert.equal(auto.source.claim(), undefined);
+	assert.equal(ownerOf(jobs).hasJobs(), false);
 });

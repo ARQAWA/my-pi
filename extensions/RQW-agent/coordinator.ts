@@ -1,6 +1,7 @@
 // One direct caller's registry and result broker. No process-global child or delivery state.
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AutoSource } from "./background.ts";
 import type { RunningCounts } from "./counts.ts";
 import { ACCEPT_ENTRY, recordDelivery } from "./persistence.ts";
 import { FOLLOW_UP } from "./prompt.ts";
@@ -8,6 +9,8 @@ import { FOLLOW_UP } from "./prompt.ts";
 /** Caller-owned children and results, including results not yet consumed by the caller model. */
 export type RuntimeHandle = {
 	pending(): boolean;
+	/** The caller's automatic result source for its own children; undefined until it has started or restored one. */
+	autoSource?(): AutoSource | undefined;
 	wait(signal: AbortSignal): Promise<void>;
 	ids(): string[];
 	/** Compact read-only diagnostics; depth counts generations below these direct children. */

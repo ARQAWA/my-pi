@@ -13,6 +13,7 @@ import { registerHerdrActivity } from "../../../extensions/RQW-agent/herdr-state
 import { registerRunningCounts } from "../../../extensions/RQW-agent/running-counts.ts";
 import { registerTerminalActivity } from "../../../extensions/RQW-agent/terminal-progress.ts";
 import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
+import { type AutoSource, takeBackground, untilBackgroundChange } from "../../../extensions/RQW-agent/background.ts";
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
 import { createCountsProducer, type CountsOffer, type RunningCounts } from "../../../extensions/RQW-agent/counts.ts";
 import { fastGpt, inheritedFastGpt } from "../../../extensions/RQW-agent/fast-gpt.ts";
@@ -870,7 +871,7 @@ test("a progress notice received by a busy caller gets one continuation", async 
 	assert.equal(await live.emit("agent_before_settle"), undefined);
 });
 
-test("nested progress wakes its idle parent after its final", async t => {
+test("nested progress wakes its waiting parent", async t => {
 	const root = await temp(t);
 	const parent = SessionManager.inMemory(root);
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
@@ -882,14 +883,12 @@ test("nested progress wakes its idle parent after its final", async t => {
 		if (task === "nested") return results.length < 50
 			? fauxAssistantMessage([fauxToolCall("rqw_readfile", {}, { id: `nested-${results.length}` })], { stopReason: "toolUse" }) : childGate.promise;
 		if (JSON.stringify(context.messages).includes("has worked 50 tool-call steps")) return "saw progress";
-		if (results.length) return "parent final";
+		if (results.length) return "parent waits";
 		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: ["rqw_readfile"] }, { id: "delegate" })], { stopReason: "toolUse" });
 	}, 60, false, offerCatalog);
 	t.after(() => { report.resolve(fauxAssistantMessage("progress")); childGate.resolve(fauxAssistantMessage("done")); live.runtime.close(); });
 	live.events.on("rqw:context-fork:v1", (request: any) => request.offer(() => report.promise));
 	await live.execute({ action: "start", task: "outer", tools: ["rqw_readfile"] });
-	const final = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.match(final.details.results[0].text, /^parent final/);
 	await until(() => live.requests.some((request: any) => userTexts(request)[0] === "nested" && request.messages.filter((message: any) => message.role === "toolResult").length === 50));
 	report.resolve(fauxAssistantMessage("progress"));
 	await until(() => live.requests.some((request: any) => JSON.stringify(request.messages).includes("has worked 50 tool-call steps")));
@@ -1173,39 +1172,141 @@ test("nested child codemode exposes exactly its selected tool subset", async t =
 	assert.deepEqual(JSON.parse(list), ["agent", "rqw_readfile"]);
 });
 
-test("a nested child continues after its parent's final and is collected by a later wait", async t => {
+const settle = async (ticks = 40) => { for (let i = 0; i < ticks; i++) await new Promise(resolve => setImmediate(resolve)); };
+const outerRequests = (live: { requests: any[] }) => live.requests.filter((request: any) => userTexts(request)[0] === "outer");
+
+/** An outer child that starts one gated helper and ends its turn; the helper's answer is "nested answer". */
+async function outerWithHelper(t: TestContext, outerReply: (context: any, results: number) => string | ReturnType<typeof fauxAssistantMessage>) {
 	const root = await temp(t);
 	const parent = SessionManager.inMemory(root);
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
 	const gate = Promise.withResolvers<string>();
 	const entered = Promise.withResolvers<void>();
 	const live = runtimeFixture(parent, root, context => {
-		const messages = context.messages;
-		const users = userTexts(context);
-		if (users[0] === "nested") { entered.resolve(); return gate.promise; }
-		const results = messages.filter((message: any) => message.role === "toolResult");
-		if (users.includes("collect")) {
-			if (results.some((message: any) => message.toolCallId === "collect-wait")) return "collected";
-			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "collect-wait" })], { stopReason: "toolUse" });
-		}
-		if (results.length) return "parent final";
-		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: [] }, { id: "start-nested" })], { stopReason: "toolUse" });
-	}, 12);
+		if (userTexts(context)[0] === "nested") { entered.resolve(); return gate.promise; }
+		const results = context.messages.filter((message: any) => message.role === "toolResult").length;
+		if (!results && !JSON.stringify(context.messages).includes("nested answer"))
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: [] }, { id: "start-nested" })], { stopReason: "toolUse" });
+		return outerReply(context, results);
+	}, 16);
 	t.after(() => { gate.resolve("nested answer"); live.runtime.close(); });
 	await live.execute({ action: "start", task: "outer", tools: [] });
 	await entered.promise;
-	let first: any;
-	void live.execute({ action: "wait", ids: ["agent#1"] }).then(result => { first = result; }).catch(() => {});
-	await until(() => first !== undefined);
-	assert.match(first.details.results[0].text, /^parent final/);
-	assert.equal(live.runtime.runningCounts().agents, 1);
-	await live.execute({ action: "send", id: "agent#1", task: "collect" });
-	await until(() => live.requests.some((request: any) => userTexts(request).includes("collect")));
+	return { live, gate, parent };
+}
+
+const waitingReply = (context: any) => JSON.stringify(context.messages).includes("nested answer") ? "all done" : "started it, waiting";
+
+test("a child whose helper still runs gives its parent no final; the helper's answer wakes it once", async t => {
+	const { live, gate } = await outerWithHelper(t, waitingReply);
+	let waited: any;
+	void live.execute({ action: "wait", ids: ["agent#1"] }).then(result => { waited = result; });
+	await settle();
+	assert.equal(waited, undefined, "the intermediate answer is not a final");
+	assert.equal(outerRequests(live).length, 2, "waiting for the helper makes no model request");
+	assert.equal(live.runtime.runningCounts().agents, 2);
 	gate.resolve("nested answer");
-	const second = await live.execute({ action: "wait", ids: ["agent#1"] }, "second");
-	assert.match(second.details.results[0].text, /^collected/);
-	const request = live.requests.findLast((item: any) => item.messages.some((message: any) => message.role === "toolResult" && message.toolCallId === "collect-wait"));
-	assert.match(JSON.stringify(request.messages), /nested answer/);
+	await until(() => waited !== undefined);
+	assert.equal(outerRequests(live).length, 3);
+	assert.deepEqual(waited.details.results.map((item: any) => item.text.split("\n\n")[0]), ["all done"]);
+	const woken = outerRequests(live).at(-1).messages.filter((message: any) => JSON.stringify(message.content).includes("nested answer"));
+	assert.equal(woken.length, 1);
+});
+
+test("send wakes a waiting child at once and keeps its run open", async t => {
+	const { live, gate } = await outerWithHelper(t, (context, results) => {
+		if (JSON.stringify(context.messages).includes("nested answer")) return "all done";
+		if (userTexts(context).includes("stop it") && results === 1) return fauxAssistantMessage([fauxToolCall("agent", { action: "stop", id: "agent#1" }, { id: "stop-nested" })], { stopReason: "toolUse" });
+		return userTexts(context).includes("stop it") ? "stopped it" : "started it, waiting";
+	});
+	let waited: any;
+	void live.execute({ action: "wait", ids: ["agent#1"] }).then(result => { waited = result; });
+	await settle();
+	await live.execute({ action: "send", id: "agent#1", task: "stop it" });
+	await until(() => waited !== undefined);
+	assert.equal(outerRequests(live).filter((request: any) => userTexts(request).includes("stop it")).length, 2, "one turn for the send, one after the stop");
+	assert.deepEqual(waited.details.results.map((item: any) => item.text.split("\n\n")[0]), ["stopped it"]);
+	gate.resolve("nested answer");
+});
+
+function readySource(id: string, log: string[], ready = true): AutoSource {
+	let pending = ready;
+	return {
+		version: 1, snapshot: () => ({ targets: [], ready: pending }), subscribe: () => () => {},
+		claim: () => { if (!pending) return undefined; pending = false; return { token: id, results: [{ id, run: `${id}:1`, delivery: `${id}:d`, outcome: "completed", text: `${id} done` }] }; },
+		commit: token => { log.push(`commit ${token}`); }, release: token => { log.push(`release ${token}`); },
+	};
+}
+
+test("results of several sources that are ready together make one inbox message, committed after it is saved", () => {
+	const log: string[] = [];
+	const messages: any[] = [];
+	const taken = takeBackground([readySource("agent#1", log), readySource("job#1", log), readySource("agent#2", log, false)], message => { log.push("saved"); messages.push(message); });
+	assert.equal(taken, true);
+	assert.equal(messages.length, 1);
+	assert.equal(messages[0].customType, "rqw-auto-wait-results");
+	assert.deepEqual(JSON.parse(messages[0].content).results.map((item: any) => item.id), ["agent#1", "job#1"]);
+	assert.deepEqual(log, ["saved", "commit agent#1", "commit job#1"]);
+	assert.equal(takeBackground([readySource("agent#3", log, false)], () => assert.fail("nothing is ready")), false);
+});
+
+test("a failed inbox write gives the claimed results back instead of committing them", () => {
+	const log: string[] = [];
+	assert.throws(() => takeBackground([readySource("agent#1", log)], () => { throw new Error("disk full"); }), /disk full/);
+	assert.deepEqual(log, ["release agent#1"]);
+});
+
+test("a result that became ready before the sleep subscribed ends the sleep at once", async () => {
+	const source = readySource("agent#1", []);
+	const log: string[] = [];
+	await untilBackgroundChange({ sources: [source], subscribe: () => () => { log.push("unsubscribed"); }, settled: () => false, signal: new AbortController().signal });
+	assert.deepEqual(log, ["unsubscribed"]);
+});
+
+test("a sleeping child loop ends on abort and leaves no subscription behind", async () => {
+	const controller = new AbortController();
+	let subscribers = 0;
+	const source: AutoSource = { ...readySource("agent#1", [], false), snapshot: () => ({ targets: ["agent#1"], ready: false }),
+		subscribe: () => { subscribers++; return () => { subscribers--; }; } };
+	const sleeping = untilBackgroundChange({ sources: [source], subscribe: () => () => {}, settled: () => false, signal: controller.signal });
+	assert.equal(subscribers, 1);
+	controller.abort(new Error("stop"));
+	await assert.rejects(sleeping, /stop/);
+	assert.equal(subscribers, 0);
+});
+
+test("a helper stopped without an answer does not leave the child waiting", async t => {
+	const { live } = await outerWithHelper(t, (context, results) => {
+		if (userTexts(context).includes("stop it") && results === 1) return fauxAssistantMessage([fauxToolCall("agent", { action: "stop", id: "agent#1" }, { id: "stop-nested" })], { stopReason: "toolUse" });
+		return userTexts(context).includes("stop it") ? "stopped it" : "started it, waiting";
+	});
+	await live.execute({ action: "send", id: "agent#1", task: "stop it" });
+	const waited = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(waited.details.results.map((item: any) => item.text.split("\n\n")[0]), ["stopped it"]);
+	assert.equal(live.runtime.runningCounts().agents, 0);
+});
+
+test("interrupting a waiting child stops its helper and yields no answer", async t => {
+	const { live, parent } = await outerWithHelper(t, waitingReply);
+	await live.execute({ action: "interrupt", id: "agent#1" });
+	await live.runtime.wait(new AbortController().signal);
+	await until(() => live.runtime.runningCounts().agents === 0);
+	const records = parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child").map((entry: any) => entry.data);
+	assert.equal(records.at(-1).state, "paused");
+	assert.equal(records.at(-1).result, undefined);
+});
+
+test("a helper error turn is not a final while the helper runs; the last turn's text is the answer", async t => {
+	const { live, gate } = await outerWithHelper(t, (context, results) => JSON.stringify(context.messages).includes("nested answer") ? "recovered"
+		: fauxAssistantMessage("", { stopReason: "error", errorMessage: `boom ${results}` }));
+	let waited: any;
+	void live.execute({ action: "wait", ids: ["agent#1"] }).then(result => { waited = result; });
+	await settle();
+	assert.equal(waited, undefined);
+	gate.resolve("nested answer");
+	await until(() => waited !== undefined);
+	assert.equal(waited.details.results[0].outcome, "completed");
+	assert.match(waited.details.results[0].text, /^recovered/);
 });
 
 const REMINDER = "<subagent>\nYou are an agent in a team of agents collaborating to complete a task.\nWhen you provide your final answer, that content is immediately delivered back to your parent agent.\nIn addition, your final answer may be read by a human, so ensure it is legible.\nAny earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.\n</subagent>";
