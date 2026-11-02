@@ -27,7 +27,7 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 	const spawned: any[] = [];
 	function browser(child?: any) {
 		let url = "about:blank";
-		const process = child ?? Object.assign(new EventEmitter(), { exitCode: null, signalCode: null, kills: 0, kill() { this.kills++; this.emit("exit"); return true; } });
+		const process = child ?? Object.assign(new EventEmitter(), { exitCode: null, signalCode: null, kills: 0, kill(this: EventEmitter & { kills: number }) { this.kills++; this.emit("exit"); return true; } });
 		const page = {
 			mainFrame: () => ({ client: { on() {} }, _lifecycleEvents: new Set(["load", "DOMContentLoaded"]), detached: false }),
 			browserContext: () => ({}),
@@ -53,7 +53,7 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 	}
 	createBrowserExtension({
 		spawnProcess: ((_path: string) => {
-			const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null, kills: 0, unrefs: 0, stderr: new PassThrough(), unref() { this.unrefs++; }, kill() { this.kills++; this.emit("exit"); return true; } });
+			const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null, kills: 0, unrefs: 0, stderr: new PassThrough(), unref() { this.unrefs++; }, kill(this: EventEmitter & { kills: number }) { this.kills++; this.emit("exit"); return true; } });
 			spawned.push(child);
 			queueMicrotask(() => { if (options.launchError) child.emit("error", options.launchError); else if (!options.spawnStall) child.stderr.write("DevTools listening on ws://localhost/devtools/browser/app\n"); });
 			return child;
@@ -88,7 +88,7 @@ it("does not import browser dependencies at extension load or registration", asy
 		return nextResolve(specifier, context);
 	} });
 	try {
-		const module = await import("../../../extensions/RQW-browser/index.ts?startup-check");
+		const module = await import(new URL("../../../extensions/RQW-browser/index.ts?startup-check", import.meta.url).href) as typeof import("../../../extensions/RQW-browser/index.ts");
 		module.default({ registerTool() {}, on() {} } as never);
 		assert.deepEqual(imports, []);
 	} finally { hooks.deregister(); }
