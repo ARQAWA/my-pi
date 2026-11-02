@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { run, test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { test } from "node:test";
+import { Worker } from "node:worker_threads";
 import { runCheck } from "../scripts/check.mjs";
-import report from "../scripts/test-reporter.mjs";
 
 test("check starts lint and full tests together and waits for both after failure", async () => {
   const jobs = new Map();
@@ -62,19 +61,29 @@ test("check reports a rejected job after its sibling finishes", async () => {
   }), 1);
 });
 
+function runReporter(fixture: string): Promise<{ output: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./fixtures/reporter-worker.mjs", import.meta.url), { workerData: fixture });
+    let result: { output: string; exitCode: number } | undefined;
+    worker.once("message", message => { result = message; });
+    worker.once("error", reject);
+    worker.once("exit", code => {
+      if (!result || code !== result.exitCode) reject(new Error(`worker exited with ${code}`));
+      else resolve(result);
+    });
+  });
+}
+
 test("a failing root after hook makes the test process fail", async () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.match(manifest.scripts.test, /(?:^|\s)--test-reporter=\.\/scripts\/test-reporter\.mjs(?:\s|$)/);
-  const previousExitCode = process.exitCode;
-  try {
-    process.exitCode = 0;
-    const files = [fileURLToPath(new URL("./fixtures/failing-after.mjs", import.meta.url))];
-    const tests = run({ files, isolation: "none" });
-    let output = "";
-    for await (const chunk of report(tests)) output += chunk;
-    assert.match(output, /cleanup failed/);
-    assert.equal(process.exitCode, 1);
-  } finally {
-    process.exitCode = previousExitCode;
-  }
+  const result = await runReporter("./failing-after.mjs");
+  assert.match(result.output, /cleanup failed/);
+  assert.equal(result.exitCode, 1);
+});
+
+test("a passing test leaves the test process successful", async () => {
+  const result = await runReporter("./passing.mjs");
+  assert.match(result.output, /passing test/);
+  assert.equal(result.exitCode, 0);
 });
