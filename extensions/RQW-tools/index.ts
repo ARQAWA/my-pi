@@ -157,7 +157,7 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		const catalogue = legacy
 			? { names: ["read", "bash", "edit", "write", "grep", "find"], aliases: {} }
 			: { names: ["rqw_readfile", "bash", "edit", "write", "rqw_rg", "rqw_glob"], aliases: { read: "rqw_readfile", grep: "rqw_rg", find: "rqw_glob" } };
-		(request as { offer?: (factory: typeof createTools, catalogue: typeof catalogue) => void })?.offer?.(legacy ? (cwd, settings, options) => createTools(cwd, settings, { ...options, legacy: true }) : createTools, catalogue);
+		(request as { offer?: (factory: typeof createTools, offeredCatalogue: typeof catalogue) => void })?.offer?.(legacy ? (cwd, settings, options) => createTools(cwd, settings, { ...options, legacy: true }) : createTools, catalogue);
 	});
 
 	pi.on("session_start", (event, ctx) => {

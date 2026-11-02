@@ -142,7 +142,7 @@ export function answerAfter(entries: readonly SessionEntry[], index: number): Hi
       const { details: _details, ...message } = entry.message as typeof entry.message & { details?: unknown };
       return displayItem({ ...entry, message: { ...message, content: edit.content } }, false, 2000);
     }
-    return displayItem(entry, false, 2000);
+    return displayItem({ ...entry }, false, 2000);
   }
   return undefined;
 }

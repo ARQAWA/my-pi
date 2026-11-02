@@ -49,7 +49,7 @@ export default function scroll(pi: ExtensionAPI) {
 				if (own) Object.defineProperty(manager, "getKeys", own);
 				else delete (manager as { getKeys?: typeof base }).getKeys;
 			};
-			const display: typeof base = function(id) {
+			const display: typeof base = function(this: typeof manager, id) {
 				if (!active) unlink();
 				const keys = base.call(this, id);
 				return active && id === "tui.altScreen.bottom" && shouldJump(tui) ? ["esc", ...keys.filter((k) => k !== "esc" && k !== "escape")] : keys;
