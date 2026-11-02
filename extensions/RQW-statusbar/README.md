@@ -68,10 +68,10 @@ After Main finishes, running background work remains visible, for example
 `Waiting for 2 agents, 1 background process`. Reviewer profiles are ordinary agents.
 
 RQW-agent supplies the agent tree and counts active agents and child processes. RQW-tools counts Main's
-background processes. Both use public `pi.events` v1 running-count sources, with optional process counts and agent lists.
-Every agent is listed below the activity text with its title and state. Nested agents are indented.
-Idle and AFK agents are dim and excluded from the active count. At full idle the dim list stays visible
-without an activity line. Agent rows are cached by width, list and theme.
+background processes. Both use public `pi.events` v1 running-count sources, with optional process and idle-agent counts.
+There is no per-agent list. When idle agents exist (finished, asleep, paused or interrupted), one dim line
+below the activity text says `12 idle agents` (`1 idle agent`); it stays visible at full idle without an activity line
+and is absent at zero. Idle agents are excluded from the active count. The line is cached by width, number and theme.
 
 RQW-send-now's Esc key hint (for example `esc esc to stop background`) is drawn dim italic two spaces right of the
 activity text, taken from its `rqw:activity-hint:offer` source on `pi.events`; nothing is imported. It is left out when

@@ -31,7 +31,7 @@ import { registerTerminalActivity } from "./terminal-progress.ts";
 import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
-import { type AgentLine, type AgentState, COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
+import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type AcceptRecord, type RuntimeHandle, deadlineTimer, targetIds, messageCount, statusDepth, jsonResult } from "./coordinator.ts";
 import { continueNote, repairRequest } from "./history-repair.ts";
@@ -501,31 +501,28 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		coordinator.publish(identity.id, identity.run, text, outcome, delivery, a.title);
 	}
 
-	/** working: Pi runs the child or a queued send is about to; waiting: its assignment stays open for jobs or children. */
-	const lineState = (state: SavedChild["state"], working: boolean, open: boolean): AgentState =>
-		working ? "working" : open ? "waiting" : state === "paused" || state === "interrupted" ? "afk" : "idle";
-
-	/** One line per agent of the tree, in id order with nested agents after their parent. Active ones count; completed results count zero. */
+	/**
+	 * Active agents (Pi runs the child or a queued send is about to, or its assignment stays open for jobs or children) count
+	 * as running, the rest of the tree as idle (finished, asleep, paused or interrupted); completed results count zero.
+	 */
 	function runningCounts(): RunningCounts {
 		let running = 0;
+		let idle = 0;
 		let processes = 0;
-		const list: AgentLine[] = [];
 		const ids = [...new Set([...agents.keys(), ...savedSlots.keys()])].sort((x, y) => x - y);
 		for (const id of ids) {
 			const a = agents.get(id);
-			const data = savedSlots.get(id);
-			const title = a ? a.title : data?.title;
-			const state = a ? lineState(a.state, a.activity.isRunning() || !!a.next?.length, !!a.run && !a.run.quiet) : lineState(data!.state, false, false);
-			list.push({ id: labelOf(id), ...(title ? { title } : {}), state, depth: 0 });
-			if (state === "working" || state === "waiting") running++;
+			const active = a ? a.activity.isRunning() || !!a.next?.length || (!!a.run && !a.run.quiet) : false;
+			if (active) running++;
+			else idle++;
 			processes += a?.jobs?.backgroundCount?.() ?? 0;
 			const nested = a?.children?.runningCounts();
 			if (!nested) continue;
 			running += nested.agents;
 			processes += nested.backgroundProcesses ?? 0;
-			for (const line of nested.agentList ?? []) list.push({ ...line, depth: line.depth + 1 });
+			idle += nested.idleAgents ?? 0;
 		}
-		return { agents: running, reviews: 0, ...(processes ? { backgroundProcesses: processes } : {}), ...(list.length ? { agentList: list } : {}) };
+		return { agents: running, reviews: 0, ...(processes ? { backgroundProcesses: processes } : {}), ...(idle ? { idleAgents: idle } : {}) };
 	}
 
 	function recoveryFailure(id: number, error: unknown, data?: SavedChild) {

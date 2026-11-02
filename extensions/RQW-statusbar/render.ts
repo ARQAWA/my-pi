@@ -10,7 +10,6 @@
 // Colors intentionally use stock Pi semantic roles, without tuning.
 import { stripVTControlCharacters } from "node:util";
 import { quotaText, type Quotas } from "./quota.ts";
-import type { AgentLine } from "./activity.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Nerd Font glyphs of omp's `nerd` symbol preset (`pi-tui/src/theme/symbols.ts`), the owner's `symbolPreset`. */
@@ -529,8 +528,7 @@ export interface ActivityChrome {
 const HINT_GAP = 2;
 
 /** The one dim line with the number of idle subagents (asleep or interrupted too); absent at zero. Prepared separately so the shimmer never repaints it. */
-export function agentRows(width: number, list: AgentLine[], paint: (role: "dim", text: string) => string): string[] {
-	const idle = list.filter((agent) => agent.state === "idle" || agent.state === "afk").length;
+export function idleRows(width: number, idle: number, paint: (role: "dim", text: string) => string): string[] {
 	if (idle === 0) return [];
 	return [paint("dim", fitPlain(` ${idle} idle ${idle === 1 ? "agent" : "agents"}`, width))];
 }

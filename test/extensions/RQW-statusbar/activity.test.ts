@@ -27,28 +27,30 @@ it("shows all background counts during work and while waiting", () => {
 		"Waiting for 1 background process");
 });
 
-it("combines source lists and notifies for every changed agent field", () => {
+it("sums the idle agents of every source and notifies when the number changes", () => {
 	const handlers = new Map<string, (data: any) => void>();
 	const events = {
 		on(channel: string, handler: (data: any) => void) { handlers.set(channel, handler); return () => handlers.delete(channel); },
 		emit(channel: string, data: unknown) { handlers.get(channel)?.(data); },
 	};
-	let first = { agents: 1, agentList: [{ id: "agent#1", title: "One", state: "working", depth: 0 }] };
+	let first: { agents: number; idleAgents?: number } = { agents: 1, idleAgents: 2 };
 	let notify: (value: unknown) => void = () => {};
 	const source = { version: 1, snapshot: () => first, subscribe(listener: typeof notify) { notify = listener; return () => {}; } };
-	const other = { version: 1, snapshot: () => ({ agents: 0, agentList: [{ id: "agent#2", state: "idle", depth: 1 }] }), subscribe() { return () => {}; } };
+	const other = { version: 1, snapshot: () => ({ agents: 0, idleAgents: 3 }), subscribe() { return () => {}; } };
 	let changes = 0;
 	const watch = new CountsWatch(events as never, () => changes++);
 	watch.start();
 	events.emit("rqw:running-counts:offer", { version: 1, source });
 	events.emit("rqw:running-counts:offer", { version: 1, source: other });
-	assert.deepEqual(watch.get().agentList, [...first.agentList, ...other.snapshot().agentList]);
-	for (const patch of [{ id: "agent#3" }, { title: "New" }, { state: "waiting" }, { depth: 2 }]) {
-		const before = changes;
-		first = { ...first, agentList: [{ ...first.agentList[0], ...patch }] };
-		notify(first);
-		assert.equal(changes, before + 1);
-	}
+	assert.equal(watch.get().idleAgents, 5);
+	const before = changes;
+	first = { agents: 1, idleAgents: 4 };
+	notify(first);
+	assert.equal(changes, before + 1);
+	assert.equal(watch.get().idleAgents, 7);
+	first = { agents: 1 };
+	notify(first);
+	assert.equal(watch.get().idleAgents, 3);
 	watch.stop();
 });
 

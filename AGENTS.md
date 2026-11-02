@@ -38,7 +38,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   them). Project `.codex` layers are gated by Codex trust (administrative Codex config is not supported); six Codex role overrides Pi cannot apply are named
   `not applied` in the catalogue. Profile discovery, precedence,
   supported fields, explicit overrides and saved provenance: [RQW-agent README](extensions/RQW-agent/README.md#codex-profiles).
-  The counts source also offers the children's background processes and one `agentList` line per agent with its state (`[D-STATUSBAR-WAITS]`).
+  The counts source also offers the children's background processes and the number of idle agents as `idleAgents` (`[D-STATUSBAR-WAITS]`).
   The optional `title` appears in status and results. Every child has recursive `agent` delegation without a depth
   limit. Children get codemode/tool_search as the caller has them, the caller's session settings and the same profile
   catalog. With RQW-tools, codemode uses the child's background-job registry.
@@ -77,7 +77,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
   the input editor's bottom border and the session ID at the right end of its top border. Shows the GPT Fast lightning after the model name (main chat, `openai-codex` model, shimmer while working). On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
   footer when off. Its upper input border shows the gold session title at the left and session ID at the right.
-  Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle; it carries send-now's dim italic Esc key hint at its right (`[D-KEYS-HINTS]`). It says `Waiting for 2 agents, 1 background process` when Main only waits and shows the processes while Main works too; under it the agent list, one dim-by-state row per agent of the tree with `working`, `waiting`, `afk` or `idle`, also when everything is idle (`[D-STATUSBAR-WAITS]`).
+  Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle; it carries send-now's dim italic Esc key hint at its right (`[D-KEYS-HINTS]`). It says `Waiting for 2 agents, 1 background process` when Main only waits and shows the processes while Main works too; under it one dim line `12 idle agents` (`1 idle agent`) when that number is above zero, also when everything is idle; there is no per-agent list (`[D-STATUSBAR-WAITS]`).
   Busy letters shimmer silver; compaction shimmers gold over the title.
   `early.ts` decorates Pi's stock editor and footer before the first paint and across session switches; no paint is held. Incompatible shapes fall back to stock (`[D-STATUSBAR-STARTUP]`).
   Tests: `test/extensions/RQW-statusbar/`.
@@ -147,7 +147,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   full originals through Ctrl+O; a one-line `agent_progress` notice card with its summary. Cards of older stored `agent`
   and `child_wait` messages stay; stored `review`, `job`, `code_writer` and `shell_runner` messages have no card. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
   live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its
-  collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.
+  collapsed wait cards. No activity-count producer or statusbar indicator here.
   Tests: `test/extensions/RQW-agent-ui/`; independent package filter and `/reload`.
 - `extensions/RQW-tool-ui/`: extension 18, between-answer tool summaries, current call header plus last four output
   rows and status, immediate folding on answer text, Ctrl+O originals. After a settled final answer, the turn's work

@@ -92,13 +92,7 @@ it("shows one dim idle-agents line instead of agent rows, cached until the list 
 	const s = await setup(t);
 	const colors: Record<string, string> = { muted: "35", dim: "90", text: "37" };
 	s.ctx.ui.theme.fg = (role: string, text: string) => `\x1b[${colors[role]}m${text}\x1b[39m`;
-	let counts = { agents: 2, agentList: [
-		{ id: "agent#1", title: "First", state: "working", depth: 0 },
-		{ id: "agent#2", title: "Nested", state: "waiting", depth: 1 },
-		{ id: "agent#3", state: "idle", depth: 0 },
-		{ id: "agent#4", title: "Away", state: "afk", depth: 0 },
-		{ id: "agent#5", title: "Fifth", state: "idle", depth: 0 },
-	] };
+	let counts = { agents: 2, idleAgents: 3 };
 	let notify: (value: unknown) => void = () => {};
 	s.events.emit("rqw:running-counts:offer", { version: 1, source: {
 		version: 1, snapshot: () => counts, subscribe: (listener: typeof notify) => { notify = listener; return () => {}; },
@@ -111,11 +105,11 @@ it("shows one dim idle-agents line instead of agent rows, cached until the list 
 	// A later shimmer frame reuses the already-painted idle line.
 	s.clock.now += 100;
 	assert.equal(rows.render(80)[1], active[1]);
-	counts = { agents: 0, agentList: [{ id: "agent#3", state: "idle", depth: 0 }] };
+	counts = { agents: 0, idleAgents: 1 };
 	notify(counts);
 	await s.handlers.get("agent_settled")!({}, s.ctx);
 	assert.deepEqual(rows.render(80).map(strip), [" 1 idle agent", ""]);
-	counts = { agents: 1, agentList: [{ id: "agent#3", state: "working", depth: 0 }] };
+	counts = { agents: 1 };
 	notify(counts);
 	assert.deepEqual(rows.render(80).map(strip), [" Waiting for 1 agent", ""]);
 });
