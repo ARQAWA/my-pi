@@ -236,12 +236,17 @@ management cancellation still apply. Wait timeout limits the caller's pause, nev
 
 Forks started with `fork_turns: "all"` never send automatic progress summaries to their parent. Ordinary children keep the behavior below.
 
-After 50 non-final assistant responses containing at least one `toolCall`, a child starts one background progress
-summary from its own cached context. Counting happens at `message_end`, before the tools finish: one response is
+After 50 non-final assistant responses containing at least one `toolCall`, or after 30 minutes since its last
+communication, whichever comes first, a child starts one background progress summary from its own cached context. Counting happens at `message_end`, before the tools finish: one response is
 one step, regardless of how many tools or nested codemode calls it contains. Text-only responses and terminal
 `stop`, `error`, `length` or `aborted` responses do not count. Only a successful parent `send` or delivered progress
 report resets the counter. `status` and `wait` do not. `progressSteps` lives in the existing `rqw-agent-child`
-metadata and survives Pi restart and explicit resume; there is no additional state file.
+metadata and survives Pi restart and explicit resume; there is no additional state file. The 30 minute limit is one
+`setTimeout` per running child in `progress.ts` (`PROGRESS_INTERVAL_MS`): no model call, polling or per-frame work. It
+starts with the first tool-call response of a run, restarts on a successful parent `send` or a delivered report, and
+is chained, so a failed summary is tried again after another 30 minutes. A final response, interrupt, stop, restart or
+shutdown cancels it; the next tool-call response starts it again. Compaction and model change keep it. It does not
+survive a Pi restart.
 
 The model supplies summary prose only. Counting, triggering, cancellation, stale-report rejection and delivery are
 code-owned. The child never waits for the summary and receives no report instruction, summary message or extra
@@ -251,6 +256,7 @@ text, not sent as unmatched tool-call messages. Session hooks are not replayed. 
 
 The direct parent receives a notification from the notification mechanism, not an answer from the child:
 `customType: "agent_progress"`, beginning `[notification] agent#N has worked 50 tool-call steps without communication.`
+(`details.steps` is 50) or, for the timer, `[notification] agent#N has worked 30 minutes without communication.` (no `details.steps`).
 It includes the summary and says the agent continues working. Fixed code text and the embedded skill both ask:
 "Check whether this child has drifted outside its task and still follows the plan in its brief. Decide whether to send
 a correction." The parent decides whether to send anything. This notice neither completes a wait nor claims or
@@ -284,11 +290,11 @@ A provider offers synchronously, capturing independent cloned cache state before
 it; inference runs asynchronously. The request's context is a cloned snapshot, not a live session object. The provider
 owns its inherited request timeout and cancellation. Without an offer there is no unsafe fresh-request fallback.
 Errors, provider timeouts or unavailable cache do not affect the child or trigger a per-turn retry loop: another
-attempt can start only at the next 50-step boundary. No new setting, timer, execution limit or retry is added.
+attempt can start only at the next 50-step boundary or 30 minutes later. No new setting, execution limit or retry loop is added.
 
 Parent send, final response, failure, interrupt, stop, restart or shutdown invalidates an in-flight or queued report;
 it can be delivered before a final answer, never after it. Compaction and model selection also invalidate the snapshot
-but preserve the counter. Later qualifying responses reach the next 50-step boundary normally. Ongoing ordinary
+but preserve the counter and the timer. Later qualifying responses reach the next 50-step boundary normally and restart the timer. Ongoing ordinary
 turns do not invalidate an in-flight report. Provider failures and stale results never change final-result ownership.
 
 ## Main-chat progress cards

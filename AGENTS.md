@@ -47,7 +47,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
   The tool supports `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
   diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
-  Every 50 non-final tool-call responses without parent communication trigger an isolated background context-fork
+  Every 50 non-final tool-call responses or 30 minutes without parent communication trigger an isolated background context-fork
   summary. The parent receives a notification and workflow skill reminder, never a subagent final answer; the child
   keeps working and its chat is unchanged. Contract: `DECISIONS.md` `[D-AGENT-PROGRESS]`.
   The main TUI also gets saved, context-free `Progress update` cards every 50 silent tool-call responses, summarizing

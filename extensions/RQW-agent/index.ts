@@ -1082,7 +1082,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				(sub: ExtensionAPI) => {
 					childApi = sub;
 					fastGpt(sub, () => fast.on);
-					sub.on("model_select", () => progress?.invalidate());
+					sub.on("model_select", () => progress?.discard());
 					sub.on("context_with_system", event => {
 						if (!core.on) return;
 						const tools = getCurrentTools(event.messages.filter(m => m.role === "system"));
@@ -1213,7 +1213,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			if (event.type === "compaction_start") {
-				a.progress.invalidate();
+				a.progress.discard();
 				// A late prompt preflight may enter compaction after cancellation; stop its summary too.
 				if (a.guard.signal?.aborted || a.controller.signal.aborted) void session.abort().catch(() => {});
 				accept();

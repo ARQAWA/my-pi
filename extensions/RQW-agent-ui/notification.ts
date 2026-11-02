@@ -1,5 +1,5 @@
 import { getMarkdownTheme, type MessageRenderer } from "@earendil-works/pi-coding-agent";
-import { Markdown } from "@earendil-works/pi-tui";
+import { Markdown, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { messageText } from "./card.ts";
 import { cached, clean, fit, padded, wrap } from "./fit.ts";
 
@@ -25,6 +25,9 @@ function progressSummary(text: string): string {
 	return clean(sentenceAt < 0 ? beforeSkill : beforeSkill.slice(0, sentenceAt)).trim();
 }
 
+/** Open progress cards, by message: a rebuilt card (theme change, Ctrl+O) keeps its state; a new card starts collapsed. */
+const opened = new WeakSet<object>();
+
 /** Display only: expanded notifications retain all original text, including embedded skills. */
 export const createNotificationCard: MessageRenderer = (message, options, theme) => {
 	if (!["agent_progress", "child_wait"].includes(message.customType)) return undefined;
@@ -35,8 +38,7 @@ export const createNotificationCard: MessageRenderer = (message, options, theme)
 	let summary: string;
 	if (message.customType === "agent_progress") {
 		const id = typeof details.id === "string" ? details.id : text.match(/agent#\d+/)?.[0];
-		const steps = typeof details.steps === "number" ? details.steps : text.match(/worked (\d+)/)?.[1];
-		summary = muted(`${id ?? "agent"} `) + paint("thinkingHigh", "progress") + muted(steps === undefined ? "" : `: ${steps} steps`);
+		summary = muted(`${id ?? "agent"} `) + paint("thinkingHigh", "progress");
 	} else {
 		const targets = ids(details);
 		const reason = typeof details.reason === "string" ? details.reason.replace(/_/g, " ") : "notification";
@@ -45,15 +47,27 @@ export const createNotificationCard: MessageRenderer = (message, options, theme)
 		summary = muted("wait ") + paint(failed ? "error" : "muted", status) + muted(targets ? `: ${targets}` : "");
 	}
 	const progress = message.customType === "agent_progress" ? progressSummary(text) : "";
+	const clickable = message.customType === "agent_progress" && !!progress;
 	const collapsed = (width: number): string[] => {
 		if (width <= 0) return [];
+		if (clickable && !opened.has(message)) return [fit(summary + muted(" [click to show]"), width)];
 		const rows = [fit(summary, width)];
 		if (!progress) return rows;
 		const indent = width >= 8 ? "  " : "";
 		const markdown = new Markdown(progress, 0, 0, getMarkdownTheme(), { color: (value) => theme.fg("muted", value) });
 		return rows.concat(markdown.render(width - indent.length).map((row) => (row ? indent + row : row)));
 	};
-	return cached(padded((width) => options.expanded
+	const card = cached(padded((width) => options.expanded
 		? wrap(clean(text), width).map((line) => theme.fg("muted", line))
 		: collapsed(width), options.outputPad));
+	if (!clickable || options.expanded) return card;
+	// A left click anywhere on the card shows the summary or hides it again; Ctrl+O keeps the full original.
+	return Object.assign(card, {
+		handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+			if (event.type !== "click" || event.button !== "left") return undefined;
+			if (!opened.delete(message)) opened.add(message);
+			card.invalidate?.();
+			return { handled: true, render: true };
+		},
+	});
 };

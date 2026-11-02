@@ -3,7 +3,7 @@ import { afterEach, it } from "node:test";
 import { AssistantMessageComponent, UserMessageComponent, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { buildTurns, formatWorked } from "../../../extensions/RQW-tool-ui/groups.ts";
-import { assistant, call, load, makeHost, makeScreen, result, Session, text, liveTheme, user } from "./fold-host.ts";
+import { assistant, call, load, makeHost, makeScreen, messageRenderers, result, Session, text, liveTheme, user } from "./fold-host.ts";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -583,6 +583,27 @@ it("a click anywhere on the header row opens and closes that fold only", () => {
 	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("update 1") >= 0 && m.row("card 1") < 0);
 	m.click(1, m.row("worked for 42s"));
 	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") >= 0 && m.row("card 0") < 0);
+});
+
+it("a click on a card inside an open fold reaches the card and leaves the fold open", () => {
+	let shown = false;
+	messageRenderers.note = () => ({
+		render: () => shown ? ["card header", "card text, click to hide"] : ["card [click to show]"],
+		invalidate() {},
+		handleMouse: (event: { type: string }) => {
+			if (event.type !== "click") return undefined;
+			shown = !shown;
+			return { handled: true, render: true };
+		},
+	});
+	const m = mounted((s) => s.turn(0, 0, 42));
+	m.click(70, m.row("worked for 42s ›"));
+	assert.ok(m.row("card [click to show]") > m.row("worked for 42s"));
+	m.click(5, m.row("card [click to show]"));
+	assert.ok(m.row("card text, click to hide") > m.row("card header") && m.row("card header") > m.row("worked for 42s") && m.row("worked for 42s ›") < 0);
+	// The click on the second row of the opened card closes it.
+	m.click(5, m.row("card text, click to hide"));
+	assert.ok(m.row("card [click to show]") > m.row("worked for 42s") && m.row("worked for 42s ›") < 0);
 });
 
 it("a drag over the header copies its text and toggles nothing; Enter and Ctrl+O toggle nothing", () => {

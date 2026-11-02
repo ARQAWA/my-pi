@@ -18,7 +18,7 @@ import { createCountsProducer, type CountsOffer, type RunningCounts } from "../.
 import { fastGpt, inheritedFastGpt } from "../../../extensions/RQW-agent/fast-gpt.ts";
 import { createChildManager, openChildManager, recordDelivery, repairInterrupted, retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
-import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
+import { CONTEXT_FORK, PROGRESS_INTERVAL_MS, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
 import { childRecord, collectExtensionFactories, mergeSaved, registerSessionRuntime } from "../../../extensions/RQW-agent/index.ts";
 
@@ -205,6 +205,126 @@ test("progress leaves unavailable request effort absent", () => {
 	const f = progressFixture(undefined);
 	assert.equal(f.requests[0].reasoning, undefined);
 	f.progress.invalidate();
+});
+
+/** A child's progress reports on controlled timers; each request is answered unless `offers` is false. */
+function timerFixture(t: TestContext, offers = true) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const events = createEventBus();
+	const requests: ContextForkRequest[] = [];
+	const notices: any[] = [];
+	events.on(CONTEXT_FORK, value => {
+		const request = value as ContextForkRequest;
+		requests.push(request);
+		if (offers) request.offer(async () => fauxAssistantMessage("summary"));
+	});
+	const progress = new ProgressReports(events, "agent#7", "child", (message, current, delivered) => {
+		notices.push(message);
+		if (current()) delivered();
+	});
+	const model = fauxProvider({ provider: "progress", models: [{ id: "model" }] }).getModel("model")!;
+	progress.capture(model, { messages: [{ role: "user", content: "task", timestamp: 1 }] } as never);
+	const response = fauxAssistantMessage([fauxToolCall("read", { path: "a" })], { stopReason: "toolUse" });
+	t.after(() => progress.invalidate());
+	return { progress, requests, notices, respond: (count = 1) => { for (let i = 0; i < count; i++) progress.response(response, "low"); },
+		tick: (ms: number) => t.mock.timers.tick(ms), settle: () => new Promise<void>(resolve => setImmediate(resolve)) };
+}
+
+test("progress reports after 30 minutes since the last communication, without claiming 50 steps", async t => {
+	const f = timerFixture(t);
+	f.respond(3);
+	f.tick(PROGRESS_INTERVAL_MS - 1);
+	assert.equal(f.requests.length, 0);
+	f.tick(1);
+	assert.equal(f.requests.length, 1);
+	assert.equal(f.requests[0].reasoning, "low");
+	const asked = f.requests[0].context.messages.at(-1)!.content as string;
+	assert.ok(!asked.includes("50") && asked.includes("Latest response"));
+	await f.settle();
+	assert.equal(f.notices.length, 1);
+	assert.deepEqual(f.notices[0].details, { id: "agent#7", continues: true });
+	assert.match(f.notices[0].content, /^\[notification\] agent#7 has worked 30 minutes without communication\.\nsummary\n/);
+	assert.ok(!f.notices[0].content.includes("50"));
+	// A delivered report resets both limits: the steps and a new 30 minutes.
+	assert.equal(f.progress.steps, 0);
+	f.tick(PROGRESS_INTERVAL_MS - 1);
+	assert.equal(f.requests.length, 1);
+	f.tick(1);
+	assert.equal(f.requests.length, 2);
+});
+
+test("the 50th step wins when it comes first, and the timer then restarts", async t => {
+	const f = timerFixture(t);
+	f.respond(50);
+	assert.equal(f.requests.length, 1);
+	await f.settle();
+	assert.deepEqual(f.notices.map(notice => notice.details.steps), [50]);
+	assert.equal(f.progress.steps, 0);
+	// The step report restarted the 30 minutes.
+	f.respond(1);
+	f.tick(PROGRESS_INTERVAL_MS - 1);
+	assert.equal(f.requests.length, 1);
+	f.tick(1);
+	assert.equal(f.requests.length, 2);
+});
+
+test("two limits met together make one report", async t => {
+	const f = timerFixture(t);
+	f.respond(49);
+	f.tick(PROGRESS_INTERVAL_MS);
+	f.respond(1);
+	assert.equal(f.requests.length, 1);
+	await f.settle();
+	assert.equal(f.notices.length, 1);
+});
+
+test("a communication reset moves the 30 minute limit", t => {
+	const f = timerFixture(t);
+	f.respond(1);
+	f.tick(20 * 60 * 1000);
+	f.progress.reset();
+	f.tick(PROGRESS_INTERVAL_MS - 1);
+	assert.equal(f.requests.length, 0);
+	f.tick(1);
+	assert.equal(f.requests.length, 1);
+});
+
+test("an idle child has no timer; end or invalidation stops a running one", t => {
+	const f = timerFixture(t);
+	f.progress.reset();
+	f.tick(PROGRESS_INTERVAL_MS * 2);
+	assert.equal(f.requests.length, 0);
+	f.respond(1);
+	f.progress.invalidate();
+	f.tick(PROGRESS_INTERVAL_MS * 2);
+	assert.equal(f.requests.length, 0);
+	// The next tool-call response of a resumed run starts a new 30 minutes.
+	f.respond(1);
+	f.tick(PROGRESS_INTERVAL_MS);
+	assert.equal(f.requests.length, 1);
+});
+
+test("compaction and a model change drop the snapshot but keep the 30 minute limit", t => {
+	const f = timerFixture(t);
+	f.respond(1);
+	f.tick(29 * 60 * 1000);
+	f.progress.discard();
+	f.progress.capture(fauxProvider({ provider: "progress", models: [{ id: "other" }] }).getModel("other")!, { messages: [] } as never);
+	f.tick(60 * 1000 - 1);
+	assert.equal(f.requests.length, 0);
+	f.tick(1);
+	assert.equal(f.requests.length, 1);
+});
+
+test("a failed summary is tried again only after another 30 minutes", t => {
+	const f = timerFixture(t, false);
+	f.respond(1);
+	f.tick(PROGRESS_INTERVAL_MS);
+	assert.equal(f.requests.length, 1);
+	f.tick(PROGRESS_INTERVAL_MS - 1);
+	assert.equal(f.requests.length, 1);
+	f.tick(1);
+	assert.equal(f.requests.length, 2);
 });
 
 const FOLLOW_UP = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
