@@ -37,12 +37,9 @@ A session file without an open owner is `closed`, with or without an earlier reg
 return `chatId`, `openHint` and "Chat is closed. Ask the user to open it." The hint is shown, never run: open a new
 tab and use `/resume`, or run `pi --session <id>` (with `--session-dir` for a custom folder).
 
-`not_found` needs a complete search that found no session file. An unreadable folder, or an owner that stays
-silent, gives `unknown`. A silent owner is never taken for a closed chat.
-
-Limit: the search covers Pi's session store of the profile, this tab's own session folder and the folders recorded by
-registered chats. A closed chat in a custom `--session-dir` that no tab ever registered cannot be found and returns
-`not_found`, although it exists.
+The search covers Pi's session store of the profile, this tab's own session folder and the folders recorded by
+registered chats. An absent result is `unknown` because another custom `--session-dir` may exist. An unreadable
+folder or a silent owner also gives `unknown`. A silent owner is never taken for a closed chat.
 
 ## Delivery
 

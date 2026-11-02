@@ -190,7 +190,7 @@ export const openHint = (chatId: string, sessionDir?: string) =>
 
 /**
  * Where a chat id leads: an open owner, a closed chat whose file exists (even without any registry record),
- * a confirmed absence, or unknown. A registry miss alone proves nothing.
+ * or unknown. A registry miss and a search of known roots cannot prove absence from custom folders.
  */
 export async function resolveChat(chatId: string, env: ResolveEnv): Promise<Resolution> {
 	const entry = readEntry(env.dir, chatId);
@@ -201,8 +201,7 @@ export async function resolveChat(chatId: string, env: ResolveEnv): Promise<Reso
 	}
 	const roots = [...new Set([env.defaultRoot, ...env.extraRoots, ...listEntries(env.dir).flatMap(known => known.sessionDir ? [known.sessionDir] : [])])];
 	const found = findSession(env.fs, roots, chatId);
-	if (found.kind === "incomplete") return { kind: "unknown" };
-	if (found.kind === "absent") return { kind: "not_found" };
+	if (found.kind !== "found") return { kind: "unknown" };
 	const folder = dirname(found.file);
 	const inDefault = !relative(env.defaultRoot, folder).startsWith("..");
 	return { kind: "closed", chatId, openHint: openHint(chatId, inDefault ? undefined : folder) };

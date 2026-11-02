@@ -127,7 +127,7 @@ Provenance:
   Owner: «Насчет инструментов, чтобы они были видны сразу. А разве нельзя в tool search вписать или в описании этого tool search, что там есть инструменты для работы с другими чатами и все на этом? И по этому описанию агент поймет, что ему нужно прочитать Tool Search.»
   Quoted in `my-pi-evidence/designs/tabs-link/DESIGN.md`, section «Решения владельца».
   Reason: Codex-like chat to chat work without a bridge, a service or a heavy always-visible toolset.
-  Limit: a closed chat in a custom `--session-dir` that no tab ever registered is reported as `not_found`.
+  Limit: a closed chat in an unregistered custom `--session-dir` cannot be found; absence from known roots is `unknown`.
   Carriers: `extensions/RQW-tabs-link/`, `package.json`, `test/extensions/RQW-tabs-link/`.
 
 ## Work policy

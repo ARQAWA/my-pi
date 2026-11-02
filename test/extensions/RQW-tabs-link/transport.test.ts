@@ -99,7 +99,7 @@ function sessions(t: TestContext) {
 	return { root, file };
 }
 
-it("an unregistered session file is closed with an open hint; only a complete empty search is not_found", async (t) => {
+it("an unregistered session file is closed with an open hint; unknown roots leave absence uncertain", async (t) => {
 	const { root, file } = sessions(t);
 	const dir = tempDir(t);
 	const live = { check: async () => "unknown" as const };
@@ -111,7 +111,8 @@ it("an unregistered session file is closed with an open hint; only a complete em
 	file(join(root, "custom"), "chat-y");
 	const custom = await resolveChat("chat-y", { ...env, extraRoots: [join(root, "custom")] });
 	assert.match((custom as { openHint: string }).openHint, /pi --session chat-y --session-dir/);
-	assert.deepEqual(await resolveChat("chat-none", env), { kind: "not_found" });
+	assert.deepEqual(await resolveChat("chat-y", env), { kind: "unknown" });
+	assert.deepEqual(await resolveChat("chat-none", env), { kind: "unknown" });
 	const broken: SessionFs = { ...nodeSessionFs, list: () => { throw Object.assign(new Error("denied"), { code: "EACCES" }); } };
 	assert.deepEqual(await resolveChat("chat-none", { ...env, fs: broken }), { kind: "unknown" });
 });
