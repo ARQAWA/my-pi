@@ -30,13 +30,13 @@ function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform, piArg
 
 // realpath of the deepest existing ancestor, then the missing segments. Missing roots keep their spelling.
 // Failed realpath may hide an existing dangling link: follow it only for metadata, never for stock arguments.
-function canonical(abs: string, P: path.PlatformPath): { key: string; existing?: string; dangling: boolean } {
+async function canonical(abs: string, P: path.PlatformPath): Promise<{ key: string; existing?: string; dangling: boolean }> {
   const rest: string[] = [];
   const links = new Set<string>();
   let dangling = false;
   for (let cur = abs; ; ) {
     try {
-      let existing = fs.realpathSync.native(cur);
+      let existing = await fs.promises.realpath(cur);
       // realpath may drop the extended prefix; retain literal-name semantics for subsequent stats.
       if (process.platform === "win32" && cur.startsWith("\\\\?\\")) existing = P.toNamespacedPath(existing);
       return { key: P.join(existing, ...rest), existing, dangling };
@@ -44,7 +44,7 @@ function canonical(abs: string, P: path.PlatformPath): { key: string; existing?:
       const code = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
       if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
       let link = false;
-      try { link = fs.lstatSync(cur).isSymbolicLink(); }
+      try { link = (await fs.promises.lstat(cur)).isSymbolicLink(); }
       catch (error) {
         if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
       }
@@ -52,7 +52,7 @@ function canonical(abs: string, P: path.PlatformPath): { key: string; existing?:
         if (links.has(cur)) throw Object.assign(new Error("Symlink cycle"), { code: "ELOOP" });
         links.add(cur);
         dangling = true;
-        const target = fs.readlinkSync(cur);
+        const target = await fs.promises.readlink(cur);
         // Link targets are native spellings; preserve '..' across other symlinks until realpath resolves them.
         cur = P.isAbsolute(target) ? target : P.dirname(cur) + P.sep + target;
         if (rest.length) cur += P.sep + rest.join(P.sep);
@@ -117,15 +117,15 @@ function spellingKey(value: string, platform: NodeJS.Platform): string {
   return platform === "darwin" ? value.normalize("NFC") : value;
 }
 
-type TargetKey = { key: string; leaf?: string };
+type TargetKey = { key: string; leaf?: string; canonical?: string };
 type Identity = TargetKey & { base?: string; existing?: string; missing?: string };
 
-function nativeIdentity(abs: string): Identity {
-  const { key, existing } = canonical(abs, path);
+async function nativeIdentity(abs: string): Promise<Identity> {
+  const { key, existing } = await canonical(abs, path);
   if (!existing) return { key };
   const components: string[] = [];
   for (let cur = existing; ; cur = path.dirname(cur)) {
-    const stat = fs.statSync(cur, { bigint: true });
+    const stat = await fs.promises.stat(cur, { bigint: true });
     if (stat.ino === 0n) throw new Error("Filesystem has no usable file identity");
     components.unshift(`${stat.dev}:${stat.ino}`);
     if (path.dirname(cur) === cur) break;
@@ -135,28 +135,39 @@ function nativeIdentity(abs: string): Identity {
   // Missing spellings are not Unicode case identities. Edit only groups existing aliases; batch write below
   // asks the native namespace when different missing spellings might alias.
   const suffix = process.platform === "win32" ? missing.replaceAll("\\", "/") : missing;
-  return { key: missing ? base + "/missing:" + suffix : base, base, existing, missing,
+  return { key: missing ? base + "/missing:" + suffix : base, base, existing, missing, canonical: key,
     leaf: missing ? undefined : "leaf:" + components[components.length - 1] };
 }
 
 // `abs` is already a filesystem spelling, including read fallbacks. Never apply user space/@/URL rules here.
-function resolvedKey(abs: string, platform: NodeJS.Platform, identity = false): string | undefined {
+async function resolvedKey(abs: string, platform: NodeJS.Platform): Promise<string | undefined> {
   try {
-    if (identity && platform === process.platform) return nativeIdentity(abs).key;
     const P = platform === "win32" ? path.win32 : path.posix;
-    const key = platform === process.platform ? canonical(abs, P).key : abs;
+    const key = platform === process.platform ? (await canonical(abs, P)).key : abs;
     return spellingKey(key, platform);
   } catch {
     return undefined;
   }
 }
 
+/** Canonical spelling without case folding, for grouping edits without merging distinct files. */
+export async function editCanonicalKey(p: string, cwd: string): Promise<string> {
+  const abs = resolvePath(p, cwd);
+  try { return (await canonical(abs, path)).key; } catch { return abs; }
+}
+
+/** Stable ordering key for aliases, including targets that have not been created yet. */
+export async function lockPathKey(p: string, cwd: string): Promise<string> {
+  const abs = resolvePath(p, cwd);
+  return await resolvedKey(abs, process.platform) ?? spellingKey(abs, process.platform);
+}
+
 /** Equality only: hardlinks in different parents share a leaf, not a path-shaped ancestor key. */
-export function editPathKey(p: string, cwd: string): string | undefined {
+export async function editPathKey(p: string, cwd: string): Promise<string | undefined> {
   try {
     const abs = resolvePath(p, cwd);
-    fs.statSync(abs);
-    const identity = nativeIdentity(abs);
+    await fs.promises.stat(abs);
+    const identity = await nativeIdentity(abs);
     return identity.leaf ?? identity.key;
   } catch { return undefined; }
 }
@@ -165,12 +176,23 @@ const inside = (a: string, b: string) => b.startsWith(a.endsWith("/") ? a : a + 
 const related = (a: string, b: string) => a === b || inside(a, b) || inside(b, a);
 
 /** Batch-local validation identities. Only ambiguous, colliding missing spellings need native namespace probes. */
-export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal): TargetKey[] {
+export async function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal): Promise<TargetKey[]> {
   const checkAbort = () => { if (signal?.aborted) throw new Error("Operation aborted"); };
-  const entries = paths.map((p): Identity => {
-    try { return nativeIdentity(resolvePath(p, cwd)); }
+  const entries = await Promise.all(paths.map(async (p): Promise<Identity> => {
+    try { return await nativeIdentity(resolvePath(p, cwd)); }
     catch { return { key: path.resolve(cwd, p) }; }
-  });
+  }));
+  // A missing target can appear while another identity is being read. Recheck ambiguous mixed snapshots.
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i], b = entries[j];
+      if (!a.canonical || !b.canonical || !related(spellingKey(a.canonical, process.platform), spellingKey(b.canonical, process.platform))) continue;
+      if (Boolean(a.missing) === Boolean(b.missing)) continue;
+      const missing = a.missing ? i : j;
+      checkAbort();
+      try { entries[missing] = await nativeIdentity(resolvePath(paths[missing], cwd)); } catch {}
+    }
+  }
   const keys = entries.map((e) => e.key);
   const edges: [number, number][] = [];
   const probe = new Set<number>();
@@ -181,9 +203,9 @@ export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal
       if (!a.base || !b.base) {
         // No native identity means no safe probe parent. Do not turn an ambiguous fallback into permission
         // to overwrite the same target twice; independent paths keep the wrappers usual per-file failures.
-        const order = (n: number) => resolvedKey(resolvePath(paths[n], cwd), process.platform)
+        const order = async (n: number) => await resolvedKey(resolvePath(paths[n], cwd), process.platform)
           ?? spellingKey(path.resolve(cwd, paths[n]), process.platform);
-        if (related(order(i), order(j)) && !related(a.key, b.key)) {
+        if (related(await order(i), await order(j)) && !related(a.key, b.key)) {
           throw new Error("Cannot validate ambiguous filesystem targets without a native parent identity");
         }
         continue;
@@ -213,7 +235,7 @@ export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal
     checkAbort();
     // A private child of the same deepest existing parent inherits its native namespace policy. User targets
     // are never created. Directory components let stat answer both equivalence and ancestor relationships.
-    const temp = fs.mkdtempSync(path.join(entries[group[0]].existing!, ".rqw-paths-"));
+    const temp = await fs.promises.mkdtemp(path.join(entries[group[0]].existing!, ".rqw-paths-"));
     try {
       for (const i of group) {
         let cur = temp;
@@ -221,16 +243,16 @@ export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal
         for (const part of entries[i].missing!.split(path.sep)) {
           checkAbort();
           cur = path.join(cur, part);
-          fs.mkdirSync(cur, { recursive: true });
-          const stat = fs.statSync(cur, { bigint: true });
+          await fs.promises.mkdir(cur, { recursive: true });
+          const stat = await fs.promises.stat(cur, { bigint: true });
           if (stat.ino === 0n) throw new Error("Filesystem has no usable file identity");
           components.push(`${stat.dev}:${stat.ino}`);
         }
         keys[i] = entries[i].base + "/probe:" + components.join("/");
       }
     } finally {
-      fs.rmSync(temp, { recursive: true, force: true });
+      await fs.promises.rm(temp, { recursive: true, force: true });
     }
   }
-  return keys.map((key, i) => ({ key, leaf: entries[i].leaf }));
+  return keys.map((key, i) => ({ key, leaf: entries[i].leaf, canonical: entries[i].canonical }));
 }
