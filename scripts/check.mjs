@@ -9,12 +9,8 @@ import { pathToFileURL } from "node:url";
  */
 export async function runCheck(args, run) {
   const paths = [];
-  let typecheck = false;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--typecheck") {
-      typecheck = true;
-      continue;
-    }
+    if (args[i] === "--typecheck") continue;
     if (args[i] !== "--test" || !args[i + 1] || args[i + 1].startsWith("--")) {
       throw new Error("Usage: npm run check -- [--typecheck] [--test <path> ...]");
     }
@@ -23,8 +19,8 @@ export async function runCheck(args, run) {
   }
   const jobs = [run("lint", ["run", "lint"]), paths.length
     ? run("test", ["exec", "--", "node", "--test", "--experimental-test-isolation=none", "--test-reporter=./scripts/test-reporter.mjs", ...paths])
-    : run("test", ["test"])];
-  if (typecheck) jobs.push(run("typecheck", ["run", "typecheck"]));
+    : run("test", ["test"]),
+  run("typecheck", ["run", "typecheck"])];
   const results = await Promise.allSettled(jobs);
   return results.every(result => result.status === "fulfilled" && result.value === 0) ? 0 : 1;
 }

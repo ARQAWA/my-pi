@@ -369,7 +369,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   temporary files go to OS temporary storage; no forks. Reason: the owner's work and credentials stay intact.
   Carrier: this entry. Since: `8f2ea64`.
 - **Process reminder** `[D-WORK-PROCESS-REMINDER]`. A repo-only hook reads `PROCESS.md` fresh and adds a reminder to main-session requests, not the product or child sessions. Owner: «может быть надо тебе хук какой»; approval: «да делаем». Carrier: `.pi/extensions/process-reminder/`.
-- **Development quality checks** `[D-WORK-QUALITY-CHECKS]`. Oxlint checks source; `scripts/check.mjs` runs lint and tests in parallel and offers `--typecheck` and `--knip`; the repo-only `post-edit-lint` checks edits. Owner (`16-27-59:16351`): «1а (елси это не те что выше)
+- **Development quality checks** `[D-WORK-QUALITY-CHECKS]`. Oxlint checks source; `scripts/check.mjs` runs lint, tests and typecheck in parallel; the repo-only `post-edit-lint` checks edits. Owner (`16-27-59:16351`): «1а (елси это не те что выше)
 2а
 3а
 4а

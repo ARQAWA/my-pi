@@ -4,16 +4,17 @@ import { test } from "node:test";
 import { Worker } from "node:worker_threads";
 import { runCheck } from "../scripts/check.mjs";
 
-test("check starts lint and full tests together and waits for both after failure", async () => {
+test("check starts all jobs together and waits for all after a typecheck failure", async () => {
   const jobs = new Map();
   const result = runCheck([], (name, args) => new Promise(resolve => jobs.set(name, { args, resolve })));
   assert.deepEqual([...jobs].map(([name, job]) => [name, job.args]), [
-    ["lint", ["run", "lint"]], ["test", ["test"]],
+    ["lint", ["run", "lint"]], ["test", ["test"]], ["typecheck", ["run", "typecheck"]],
   ]);
   let finished = false;
   result.then(() => { finished = true; });
-  jobs.get("lint").resolve(1);
-  await Promise.resolve();
+  jobs.get("typecheck").resolve(1);
+  jobs.get("lint").resolve(0);
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(finished, false);
   jobs.get("test").resolve(0);
   assert.equal(await result, 1);
@@ -28,10 +29,11 @@ test("check passes only requested test paths and accepts successful jobs", async
   assert.deepEqual(jobs, [
     ["lint", ["run", "lint"]],
     ["test", ["exec", "--", "node", "--test", "--experimental-test-isolation=none", "--test-reporter=./scripts/test-reporter.mjs", "test/a*.test.ts", "test/b.test.ts", "test/c.test.ts"]],
+    ["typecheck", ["run", "typecheck"]],
   ]);
 });
 
-test("check adds typecheck only when requested", async () => {
+test("check accepts the typecheck flag without running it twice", async () => {
   const jobs: [string, string[]][] = [];
   assert.equal(await runCheck(["--typecheck"], async (name, args) => {
     jobs.push([name, args]);
@@ -48,6 +50,10 @@ test("check rejects unsupported or incomplete options before starting jobs", asy
   for (const args of [["--unknown"], ["--test"], ["--test", "--knip"]]) {
     await assert.rejects(runCheck(args, () => assert.fail("must not launch")), /Usage:/);
   }
+});
+
+test("check fails when the lint job fails", async () => {
+  assert.equal(await runCheck([], async name => name === "lint" ? 1 : 0), 1);
 });
 
 test("check fails when the test job fails", async () => {
