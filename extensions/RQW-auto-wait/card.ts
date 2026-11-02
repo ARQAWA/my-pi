@@ -3,7 +3,7 @@ import type { EntryRenderer, ExtensionAPI, ExtensionContext } from "@earendil-wo
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const TYPE = "rqw-auto-wait-v1";
-type Entry = { version: 1; waitId: string; phase: "open" | "close"; targets?: string[]; titles?: Record<string, string>; reason?: string };
+type Entry = { version: 1; waitId: string; phase: "open" | "update" | "close"; targets?: string[]; titles?: Record<string, string>; reason?: string };
 
 function status(reason: string) {
 	switch (reason) {
@@ -17,6 +17,7 @@ function status(reason: string) {
 
 export function waitCard(pi: ExtensionAPI) {
 	const phases = new Map<string, string>();
+	const snapshots = new Map<string, { targets: string[]; titles: Record<string, string> }>();
 	let current: { waitId: string; targets: string[]; titles: Record<string, string> } | undefined;
 	let outputPad = 1;
 	/** After /reload a card drawn before it still holds the old `pi`, which throws: the last known padding stays. */
@@ -30,8 +31,9 @@ export function waitCard(pi: ExtensionAPI) {
 		let key = "", rows: string[] = [];
 		return { invalidate() { key = ""; }, render(width) {
 			const phase = phases.get(data.waitId) ?? "interrupted";
+			const snapshot = snapshots.get(data.waitId) ?? { targets: data.targets!, titles: data.titles ?? {} };
 			const pad = padding();
-			const next = JSON.stringify([width, phase, data.targets, data.titles, pad]);
+			const next = JSON.stringify([width, phase, snapshot.targets, snapshot.titles, pad]);
 			if (key === next) return rows;
 			key = next;
 			const outer = width > 2 * pad ? pad : 0;
@@ -39,8 +41,8 @@ export function waitCard(pi: ExtensionAPI) {
 			if (!boxWidth) return rows = [];
 			const inner = Math.max(0, boxWidth - 2);
 			const state = status(phase);
-			const agents = data.targets!.filter(id => id.startsWith("agent#")).length;
-			const jobs = data.targets!.length - agents;
+			const agents = snapshot.targets.filter(id => id.startsWith("agent#")).length;
+			const jobs = snapshot.targets.length - agents;
 			const label = (count: number, one: string, few: string, many: string) => {
 				const n = count % 100;
 				return `${count} ${n >= 11 && n <= 14 ? many : n % 10 === 1 ? one : n % 10 >= 2 && n % 10 <= 4 ? few : many}`;
@@ -48,8 +50,8 @@ export function waitCard(pi: ExtensionAPI) {
 			const count = [agents && label(agents, "агент", "агента", "агентов"), jobs && label(jobs, "задача", "задачи", "задач")].filter(Boolean).join(", ");
 			const header = theme.fg("toolTitle", "wait") + (phase === "open" ? theme.fg("muted", ` ${count}`) + theme.fg("dim", " · ") : " ") + theme.fg(state.color, state.text);
 			const targetLines: string[] = [];
-			for (const id of data.targets!) {
-				const raw = id.startsWith("agent#") ? data.titles?.[id] : undefined;
+			for (const id of snapshot.targets) {
+				const raw = id.startsWith("agent#") ? snapshot.titles[id] : undefined;
 				const title = typeof raw === "string" ? stripTerminalSequences(raw).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim() : "";
 				const target = title ? `${id} ${title}` : id;
 				const previous = targetLines.at(-1);
@@ -77,13 +79,15 @@ export function waitCard(pi: ExtensionAPI) {
 	}
 	return {
 		restore(ctx: ExtensionContext) {
-			current = undefined; phases.clear();
+			current = undefined; phases.clear(); snapshots.clear();
 			for (const entry of ctx.sessionManager.getBranch()) {
 				if (entry.type !== "custom" || entry.customType !== TYPE) continue;
 				const data = entry.data as Entry | undefined;
 				if (data?.version !== 1 || typeof data.waitId !== "string") continue;
 				if (data.phase === "open") phases.set(data.waitId, "interrupted");
 				else if (data.phase === "close") phases.set(data.waitId, data.reason ?? "interrupted");
+				if ((data.phase === "open" || data.phase === "update") && Array.isArray(data.targets))
+					snapshots.set(data.waitId, { targets: data.targets, titles: data.titles ?? {} });
 			}
 		},
 		close,
@@ -91,10 +95,16 @@ export function waitCard(pi: ExtensionAPI) {
 			const ordered = [...new Set(targets)].sort();
 			const selected = Object.fromEntries(ordered.filter(id => id.startsWith("agent#") && typeof titles[id] === "string").map(id => [id, titles[id]]));
 			if (current && current.targets.join("\0") === ordered.join("\0") && JSON.stringify(current.titles) === JSON.stringify(selected)) return;
-			close("targets_changed");
-			if (!ordered.length) return;
+			if (!ordered.length) { close("targets_changed"); return; }
+			if (current) {
+				current.targets = ordered; current.titles = selected;
+				snapshots.set(current.waitId, { targets: ordered, titles: selected });
+				pi.appendEntry(TYPE, { version: 1, waitId: current.waitId, phase: "update", targets: ordered, titles: selected });
+				return;
+			}
 			const waitId = randomUUID();
 			current = { waitId, targets: ordered, titles: selected }; phases.set(waitId, "open");
+			snapshots.set(waitId, { targets: ordered, titles: selected });
 			pi.appendEntry(TYPE, { version: 1, waitId, phase: "open", targets: ordered, titles: selected });
 		},
 	};

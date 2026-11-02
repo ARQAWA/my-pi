@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { retainedChildManager } from "../extensions/RQW-agent/persistence.ts";
 import { after, it } from "node:test";
-import { call, isTask, keys, reportTimings, text, world } from "./synthetic/world.ts";
+import { bashCommand, call, isTask, keys, reportTimings, text, world } from "./synthetic/world.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -30,6 +31,111 @@ it("while a child runs the chat shows one wait card with the child's id and titl
 	w.see("agent#1 Count");
 	w.see("Ждём готовый результат.");
 	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter((entry) => entry.data.phase === "open").length, 1);
+});
+
+it("the open card follows direct children started and stopped while it is visible", async (t) => {
+	const w = await world(t);
+	const first = w.model.hold(isTask("first child"));
+	const second = w.model.hold(isTask("second child"));
+	w.model.script(call("agent", { action: "start", task: "first child", title: "First" }, "c1"), text("started"));
+	await w.submit("go");
+	await w.until(() => first.arrived, "first child starts");
+	w.see("wait 1 агент");
+
+	const runner = w.session.extensionRunner;
+	const tool = runner.getToolDefinition("agent")!;
+	const invoke = (args: object) => tool.execute("external", args as never, new AbortController().signal, undefined, runner.createToolContext("external", undefined));
+	await invoke({ action: "start", task: "second child", title: "Second" });
+	await w.until(() => second.arrived, "second child starts");
+	w.see("wait 2 агента");
+	w.see("agent#2 Second");
+	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
+
+	await invoke({ action: "stop", id: "agent#2" });
+	await w.until(() => w.screen().join("\n").includes("wait 1 агент"), "card updates after stop");
+	w.notSee("agent#2 Second");
+	await invoke({ action: "stop", id: "agent#1" });
+	await w.until(() => !w.screen().join("\n").includes("wait 1 агент"), "card closes after last stop");
+	await w.until(() => [1, 2].every(id => !retainedChildManager(w.session.sessionManager, "agent", id)), "stopped children close");
+});
+
+it("a delivered child stays idle and is excluded from the active counts", async (t) => {
+	const w = await world(t);
+	const active = w.model.hold(isTask("active child"));
+	const finished = w.model.hold(isTask("finished child"));
+	w.model.script(call("agent", { action: "start", task: "active child", title: "Active" }, "c1"), text("started"), text("received"));
+	await w.submit("go");
+	await w.until(() => active.arrived, "active child starts");
+	const runner = w.session.extensionRunner;
+	const tool = runner.getToolDefinition("agent")!;
+	const invoke = (args: object) => tool.execute("external", args as never, new AbortController().signal, undefined, runner.createToolContext("external", undefined));
+	await invoke({ action: "start", task: "finished child", title: "Finished" });
+	await w.until(() => finished.arrived, "second child starts");
+	w.see("wait 2 агента");
+	finished.reply(text("done"));
+	await w.until(() => wakeRequests(w).length === 1, "finished child delivered");
+	await w.settle();
+	w.see("Waiting for 1 agent");
+	w.see("1 idle agent");
+	const rows = w.screen();
+	const card = rows.slice(rows.findIndex(line => line.includes("wait 1 агент")), rows.findIndex(line => line.includes("wait 1 агент")) + 4).join("\n");
+	assert.match(card, /agent#1 Active/);
+	assert.doesNotMatch(card, /agent#2|2 агента/);
+	await invoke({ action: "stop", id: "agent#1" });
+	await invoke({ action: "stop", id: "agent#2" });
+	await w.until(() => [1, 2].every(id => !retainedChildManager(w.session.sessionManager, "agent", id)), "children close");
+});
+
+it("the status counts the active tree, while the card counts only direct children", async (t) => {
+	const w = await world(t);
+	const parent = w.model.hold(isTask("parent task"));
+	const nested = w.model.hold(isTask("nested task"));
+	w.model.when(isTask("parent task"), text("parent waiting"));
+	w.model.script(call("agent", { action: "start", task: "parent task", title: "Parent" }, "c1"), text("started"));
+	await w.submit("go");
+	await w.until(() => parent.arrived, "parent starts");
+	w.see("wait 1 агент");
+	parent.reply(call("agent", { action: "start", task: "nested task", title: "Nested" }, "n1"));
+	await w.until(() => nested.arrived, "nested child starts");
+	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents"), "whole tree counted");
+	w.see("wait 1 агент");
+	w.notSee("agent#1.1 Nested");
+	const runner = w.session.extensionRunner;
+	await runner.getToolDefinition("agent")!.execute("stop-parent", { action: "stop", id: "agent#1" } as never,
+		new AbortController().signal, undefined, runner.createToolContext("stop-parent", undefined));
+	await w.until(() => !w.screen().join("\n").includes("Waiting for 2 agents"), "tree stops");
+	await w.until(() => !retainedChildManager(w.session.sessionManager, "agent", 1), "parent closes");
+});
+
+it("the open card follows a new background job and its delivered result", async (t) => {
+	const w = await world(t);
+	const child = w.model.hold(isTask("held child"));
+	const process = w.processes.hold(bashCommand("sleep 30"));
+	w.model.script(call("agent", { action: "start", task: "held child", title: "Held" }, "c1"), text("started"), text("job received"));
+	await w.submit("go");
+	await w.until(() => child.arrived, "child starts");
+	const runner = w.session.extensionRunner;
+	const bash = runner.getToolDefinition("bash")!;
+	const running = bash.execute("external-bash", { command: "sleep 30" } as never, new AbortController().signal,
+		undefined, runner.createToolContext("external-bash", undefined));
+	await w.until(() => process.arrived, "process starts");
+	await w.tick(12_000);
+	await running;
+	await w.until(() => w.screen().join("\n").includes("job#1"), "job appears on the card");
+	w.see("wait 1 агент, 1 задача");
+	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
+	process.finish({ stdout: "done\n" });
+	await w.until(() => wakeRequests(w).length === 1, "job result delivered");
+	await w.settle();
+	w.see("wait 1 агент");
+	const rows = w.screen();
+	const start = rows.findIndex(line => line.includes("wait 1 агент"));
+	assert.ok(start >= 0);
+	assert.doesNotMatch(rows.slice(start, start + 4).join("\n"), /job#1|задач/);
+	const agent = runner.getToolDefinition("agent")!;
+	await agent.execute("stop-child", { action: "stop", id: "agent#1" } as never, new AbortController().signal,
+		undefined, runner.createToolContext("stop-child", undefined));
+	await w.until(() => !retainedChildManager(w.session.sessionManager, "agent", 1), "child closes");
 });
 
 it("a result that is ready when the turn settles wakes the chat with one hidden message and one request", async (t) => {
