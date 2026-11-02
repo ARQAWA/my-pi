@@ -195,8 +195,8 @@ function accessDigest(access: string): string {
 }
 
 /** Order- and case-insensitive digest of the explicit request headers (they carry the bearer, so never kept raw). */
-function headersKey(headers: Record<string, string> | undefined): string {
-	const entries = Object.entries(headers ?? {}).map(([name, value]) => [name.toLowerCase(), value]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+function headersKey(headers: Record<string, string | null> | undefined): string {
+	const entries = Object.entries(headers ?? {}).map(([name, value]): [string, string | null] => [name.toLowerCase(), value]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 	return accessDigest(JSON.stringify(entries));
 }
 

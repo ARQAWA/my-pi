@@ -336,6 +336,23 @@ it("changed explicit request headers open a new socket; unchanged ones reuse it"
 	transport.dispose();
 });
 
+it("null request headers are omitted from WebSocket and SSE requests", async () => {
+	const sockets = fakeSockets([[textEvents("resp_ws", "ws")]]);
+	const websocket = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	const options = { headers: { "x-remove": null, "x-keep": "value" } };
+	assert.equal((await collect(websocket.stream(MODEL, USER, options))).at(-1)?.type, "done");
+	assert.equal(Object.hasOwn(sockets.heads[0], "x-remove"), false);
+	assert.equal(sockets.heads[0]["x-keep"], "value");
+	websocket.dispose();
+
+	const sse = sseScript([{ events: textEvents("resp_sse", "sse") }]);
+	const fallback = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	assert.equal((await collect(fallback.stream(MODEL, USER, options))).at(-1)?.type, "done");
+	assert.equal(Object.hasOwn(sse.calls[0].headers, "x-remove"), false);
+	assert.equal(sse.calls[0].headers["x-keep"], "value");
+	fallback.dispose();
+});
+
 it("a prewarmed socket is reused by the first turn whatever headers it brings", async () => {
 	const sockets = fakeSockets([[textEvents("resp_warm", "w")], [textEvents("resp_a", "a")]]);
 	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });

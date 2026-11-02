@@ -8,3 +8,7 @@ test("header overrides replace every casing variant without mutating the source"
 	assert.deepEqual(merged, { "x-Mixed-Value": "MiXeD", authorization: "Bearer new" });
 	assert.deepEqual(base, { Authorization: "Bearer old", "x-Mixed-Value": "MiXeD" });
 });
+
+test("null removes an earlier header regardless of casing", () => {
+	assert.deepEqual(mergeHeaders({ "X-Remove": "old", keep: "yes" }, { "x-remove": null }), { keep: "yes" });
+});

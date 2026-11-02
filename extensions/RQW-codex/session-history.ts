@@ -130,7 +130,7 @@ function pairedCallKeys(manager: SessionManagerLike): Set<string> {
 	return out;
 }
 
-type RawAssistantEntry = SessionEntry & { message: { content?: unknown } };
+type RawAssistantEntry = { entry: WireSessionEntry; content: unknown };
 
 /** One read of the current branch for source checks: the first raw assistant entry per response id, and Pi's projection (built once, on first use). */
 type ResponseSources = { raw: Map<string, RawAssistantEntry>; projected(): Map<string, unknown[]> };
@@ -138,9 +138,9 @@ type ResponseSources = { raw: Map<string, RawAssistantEntry>; projected(): Map<s
 function responseSources(manager: SessionManagerLike): ResponseSources {
 	const raw = new Map<string, RawAssistantEntry>();
 	for (const entry of manager.getBranch()) {
-		const message = (entry as { message?: { role?: unknown; responseId?: unknown } }).message;
+		const message = entry.message as { role?: unknown; responseId?: unknown; content?: unknown } | undefined;
 		if (entry.type === "message" && message?.role === "assistant" && typeof message.responseId === "string" && !raw.has(message.responseId)) {
-			raw.set(message.responseId, entry as RawAssistantEntry);
+			raw.set(message.responseId, { entry, content: message.content });
 		}
 	}
 	let projected: Map<string, unknown[]> | undefined;
@@ -154,10 +154,10 @@ function responseSources(manager: SessionManagerLike): ResponseSources {
 function sourceState(sources: ResponseSources, responseId: string): "absent" | "same" | "edited" | "deleted" {
 	const raw = sources.raw.get(responseId);
 	if (!raw) return "absent";
-	const projected = sources.projected().get(raw.id) ?? sessionEntryToContextMessages(raw);
+	const projected = sources.projected().get(raw.entry.id) ?? sessionEntryToContextMessages(raw.entry as unknown as SessionEntry);
 	if (projected.length === 0) return "deleted";
 	const current = projected.find((message) => (message as { role?: unknown; responseId?: unknown }).role === "assistant" && (message as { responseId?: unknown }).responseId === responseId) as { content?: unknown } | undefined;
-	return canonicalJson(current?.content) === canonicalJson(raw.message.content) ? "same" : "edited";
+	return canonicalJson(current?.content) === canonicalJson(raw.content) ? "same" : "edited";
 }
 
 function responseSourceState(manager: SessionManagerLike, responseId: string): "absent" | "same" | "edited" | "deleted" {
@@ -567,7 +567,7 @@ export class SessionWireState {
 				continue;
 			}
 			// The request carries this assistant message: its content must be the physical original, or the raw output is unproven.
-			if (state === "same" && canonicalJson(requested.get(responseId)) === canonicalJson(sources.raw.get(responseId)?.message.content)) accepted.add(responseId);
+			if (state === "same" && canonicalJson(requested.get(responseId)) === canonicalJson(sources.raw.get(responseId)?.content)) accepted.add(responseId);
 		}
 		return accepted;
 	}
