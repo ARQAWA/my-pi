@@ -7,6 +7,8 @@ description: "Create a report, plan, research summary or design document when th
 
 Создай один самостоятельный HTML-файл `~/Downloads/<short-name>.html` по [шаблону](template.html). Сохрани тёмные цвета, крупный шрифт и межстрочный интервал примеров. Не используй JavaScript и внешние ресурсы. Вложенные `<details><summary>` изначально свёрнуты.
 
+Удали неактуальные старые отчёты из `~/Downloads`.
+
 Пиши по-русски, обращайся на «ты». Правило дислексии: «at most 7 words per sentence», «at most 4 sentences per paragraph», «Bold the main ideas», «using clear words», «Try to use lowercase letters» и «Use as few typographic special characters as possible».
 
 В начале дай главный итог одним жирным предложением. Каждая строка `<summary>` это одно предложение по правилу дислексии, с SP и кратким статусом, где он нужен. Внутри каждого пункта дай один или два коротких абзаца. Доказательства, ссылки на файл и строку, числа помещай в раскрытые абзацы, не в строки `<summary>`.

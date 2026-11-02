@@ -7907,3 +7907,12 @@ Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner's
 Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, line 1646. Verbatim replaced text:
 
 >   agent list when everything is idle: «1» = показывать тусклым; list length: «1» = все агенты.
+
+## A-0485 · archived 2026-11-02 · Work policy · superseded reply and reviewer notes
+
+Status: SUPERSEDED by `[D-WORK-SHORT-REPLIES]`, `[D-DYSLEXIA-COMMUNICATION]` and `[D-REVIEW-PROFILES]`. Source: `c2ce4822:DECISIONS.md`, lines 373, 403-404 and 1996. Verbatim replaced text:
+
+>   Coordinator note: the three-paragraph, two-line reply limit in this quote was replaced by [D-WORK-SHORT-REPLIES] and [D-DYSLEXIA-COMMUNICATION].
+>   Coordinator note: the Sol 6.1 Low model in this quote was replaced by the reviewerProfiles table in [PROCESS.md](PROCESS.md#subagent-models).
+>   The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
+> - **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner source: [D-WORK-CODE-PROFILE]. Owner: «без перфекционизма, без удушья, без жёсткой ёбки». The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.

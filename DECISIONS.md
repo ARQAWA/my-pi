@@ -370,7 +370,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Branches, squash and history** `[D-WORK-BRANCHES]`. Branch bases, task squash destination, release promotion
   and cleanup follow [PROCESS.md, Delivery](PROCESS.md#delivery); history belongs in Git. Owner (`13-49-40:204`):
   «Насчет документации. Да, тут тоже все верно. И в документации не должно быть никаких исторических данных. История хранится в гиде. По общению агент отвечает владельцу кратко на русском языке всегда, не на моем языке, а именно на русском. Он отвечает не больше трех абзацев по максимум две строки в абзаце.»
-  Coordinator note: the three-paragraph, two-line reply limit in this quote was replaced by [D-WORK-SHORT-REPLIES] and [D-DYSLEXIA-COMMUNICATION].
+  Current reply rules: [D-WORK-SHORT-REPLIES] and [D-DYSLEXIA-COMMUNICATION].
   Reason: current documents carry current facts; Git keeps the history ([D-WORK-ARCHIVE] is the one exception for
   decisions). Carriers: [PROCESS.md, Delivery](PROCESS.md#delivery). Since: `8f2ea64`.
 - **Workspace hygiene** `[D-WORK-HYGIENE]`. Preserve the user's changes and secrets; do not fix unrelated failures;
@@ -400,8 +400,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
 - **Bounded code-review profile** `[D-WORK-CODE-PROFILE]`. Owner, current code-review prompt task:
   «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко»
-  Coordinator note: the Sol 6.1 Low model in this quote was replaced by the reviewerProfiles table in [PROCESS.md](PROCESS.md#subagent-models).
-  The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
+  Current reviewer models: [PROCESS.md](PROCESS.md#subagent-models), reviewerProfiles.
   The project-native `code-reviewer` profile replaces the Markdown role. Its instructions carry the read-only,
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
@@ -1993,7 +1992,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the shared watcher is started on demand. `scripts/qa-status.mjs` (`npm run qa-status`, for subagents) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`.
   The status shows the latest push runs of `tests.yml` on `release` and `pcli.yml` on `pcli`, plus the current branch's tests. The bounded cache is awareness, not merge proof.
   Since: `3bdac4f`.
-- **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner source: [D-WORK-CODE-PROFILE]. Owner: «без перфекционизма, без удушья, без жёсткой ёбки». The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
+- **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner source: [D-WORK-CODE-PROFILE]. Owner: «без перфекционизма, без удушья, без жёсткой ёбки».
   Source: the owner's test/code-review prompt request in this repository session, 2026-10-24.
   Decision: use the project Codex TOML profile `test-reviewer` for read-only, bounded test review, inspecting every
   scoped line and reporting real detection gaps or regressions by severity, without invented requirements or nits.
