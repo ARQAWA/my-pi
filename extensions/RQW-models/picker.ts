@@ -1,8 +1,8 @@
-import type { Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 
-export type ChatModel = Model<string>;
+export type ChatModel = Model<Api>;
 export type Step = "up" | "down" | "right" | "left";
 /** Draft = the transactional choice shown in the chooser; live Pi state is untouched until Enter. */
 export type Draft = { model: ChatModel | undefined; effort: string | undefined };
