@@ -15,7 +15,7 @@
  *   w.press(keys.escape);  w.type("x"); // terminal input
  *   await w.settle();  await w.until(() => cond);  await w.tick(500); // explicit waits; time only moves by tick
  *   w.screen();  w.raw();  w.jsonl();    // frame lines, frame with colour codes, session file entries
- *   w.processes.reply(bashCommand("echo hi"), { stdout: "hi\n", code: 0 });   // fake shell and rg processes: every spawn a rule
+ *   w.processes.reply(bashCommand("echo hi"), { stdout: "hi\n", code: 0 });   // fake spawn and spawnSync; all other calls are blocked
  *   const p = w.processes.hold(ripgrep);  p.finish({ stdout: "..." });          //   takes; the rest is blocked. calls: w.processes.calls
  *   const w2 = await w.restart();       // quit Pi, start a new one over the same folders and session file
  *   w.childFiles(1)                     // session files of subagent agent-1; read them with w.jsonl(file)
@@ -90,11 +90,11 @@ export interface WorldOptions {
 	/** `provider/id` of the starting model; default is Pi's own choice for the fake credentials. */
 	model?: string;
 	thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-	/** Extra keys of the global settings.json; the world already selects the RQW-theme. */
+	/** Scenario settings, applied after the real first-start profile. */
 	settings?: Record<string, unknown>;
 }
 
-type NamedFactory = { name: string; factory: (pi: ExtensionAPI) => void };
+type NamedFactory = { name: string; path?: string; factory: (pi: ExtensionAPI) => void };
 
 /** The extensions of the manifest, imported once per process; the list is read, never hard-coded. */
 let manifestExtensions: Promise<{ extensions: NamedFactory[]; theme: string }> | undefined;
@@ -105,7 +105,7 @@ function loadManifest() {
 		const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { pi: { extensions: string[]; themes: string[] } };
 		const extensions = await Promise.all(manifest.pi.extensions.map(async (entry) => {
 			const module = await import(pathToFileURL(fileURLToPath(new URL(entry, root))).href);
-			return { name: basename(dirname(entry)), factory: module.default as NamedFactory["factory"] };
+			return { name: basename(dirname(entry)), path: fileURLToPath(new URL(entry, root)), factory: module.default as NamedFactory["factory"] };
 		}));
 		importsMs = elapsedMs(started);
 		return { extensions, theme: fileURLToPath(new URL(manifest.pi.themes[0], root)) };
@@ -233,8 +233,9 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	trapExit(t, exitCodes);
 	syncBuiltinESMExports();
 
-	// The setup profile of RQW-settings applies only to extensions loaded from their own paths, not to factories: the theme is chosen here.
-	writeFileSync(join(dirs.agent, "settings.json"), JSON.stringify({ theme: "RQW-theme", ...options.settings }));
+	const settingsPath = join(dirs.agent, "settings.json");
+	let applyScenarioSettings = !existsSync(settingsPath);
+	if (applyScenarioSettings) writeFileSync(settingsPath, JSON.stringify(options.settings ?? {}));
 
 	const model = createModel();
 	const modelRuntimeClass = ModelRuntime.prototype as unknown as { streamSimple: unknown };
@@ -268,8 +269,22 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 				eventBus: bus, noExtensions: true, noPromptTemplates: true, noContextFiles: true,
 				additionalThemePaths: [theme],
 				extensionFactories: [...extensions.map(({ name, factory }) => ({ name, factory })), probe] as never,
+				extensionsOverride: (result: any) => {
+					for (const extension of result.extensions) {
+						const entry = extensions.find(({ name }) => extension.path === `<inline:${name}>`);
+						if (entry?.path) extension.path = extension.resolvedPath = entry.path;
+					}
+					return result;
+				},
 			},
 		});
+		if (applyScenarioSettings && options.settings) {
+			const settings = SettingsManager.inMemory(JSON.parse(readFileSync(settingsPath, "utf8")));
+			settings.applyOverrides(SettingsManager.inMemory(options.settings).getGlobalSettings());
+			writeFileSync(settingsPath, JSON.stringify(settings.getSettings()));
+			await settingsManager.reload();
+		}
+		applyScenarioSettings = false;
 		const picked = options.model ? modelRuntime.getModel(...(options.model.split("/", 2) as [string, string])) : undefined;
 		const created = await createAgentSessionFromServices({
 			services, sessionManager: manager, sessionStartEvent: sessionStartEvent as never,
