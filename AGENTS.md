@@ -43,6 +43,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   catalog. With RQW-tools, codemode uses the child's background-job registry.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers caller-chosen mechanical wait and diagnostic status;
   final results arrive through explicit waits or the optional main-chat auto-wait, not waiting receipts or `child_wait` wakeups. Native idle input starts immediately even while background work remains; no follow-up hold remains. The `rqw:stop-background:v1` notice cancels waits and interrupts children. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
+  A response cut at the output limit is continued automatically, three cuts in a row, in the main chat too (`[D-AGENT-LENGTH-CONTINUE]`). Every child request and resume repairs broken tool-call pairs and adds a request-only continue line instead of restarting from zero (`[D-AGENT-HISTORY-REPAIR]`).
   A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` explicitly retries an interrupted or failed provider request with no new message, also after a Pi restart; no automatic retry loop is added. `/resume-agents` remains children-only and does not retry failed requests. A direct `wait` stays open as a native tool call; see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
   The tool supports `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
@@ -86,7 +87,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   scope and limitation: [RQW-models README](extensions/RQW-models/README.md). `/rqw-models` and stock picker restrictions stay.
   Only listed models can be selected or requested; Pi's stock model lists are empty (`DECISIONS.md` Models, owner quotes/carriers).
   Disable separately in `pi config`. Tests: `npm test`.
-- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, quota, context fork and retry warning (no
+- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, quota, context fork and retry warning, plus a main-chat cache warm after 50 minutes of silence (`max_tokens: 1`, not saved, `[D-ANTHROPIC-WARM]`) (no
   provider hiding: that is extension 14). Toggle, migration and limits:
   `extensions/RQW-anthropic/README.md`. Tests: `test/extensions/RQW-anthropic/`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest
