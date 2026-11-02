@@ -120,7 +120,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   runs once a minute and writes `<git common dir>/ci-watch/status.json` atomically; agents read that file instead of
   polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes. It is awareness,
   not merge evidence.
-- `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the latest `main` runs and the current
+- `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the latest `release` tests, `pcli` runs and the current
   branch's CI; subagents and hosts without the extension use it. Failed runs stay red.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cacheDirectory, isFresh, run } from "./ci-watch.mjs";
-import { levelOf, mainRuns, workflowRuns } from "./qa-runs.mjs";
+import { DELIVERY_WORKFLOWS, deliveryRuns, levelOf, workflowRuns } from "./qa-runs.mjs";
 export { run } from "./ci-watch.mjs";
 
 const runItem = (r, name) => ({ id: `run:${r.id}:${r.run_attempt ?? 1}`, level: levelOf(r),
@@ -29,8 +29,8 @@ export async function snapshot({ cwd = process.cwd(), repo = /** @type {string |
 		if (!isFresh(cached, now())) throw new Error("watcher cache stale or missing successful fetch; restart with npm run ci-watch -- --restart");
 		if (cached.error) throw new Error(`watcher fetch failed: ${cached.error}; restart with npm run ci-watch -- --restart`);
 		const items = [];
-		for (const [name, workflow] of [["main tests", "tests.yml"], ["main pcli", "pcli.yml"]]) {
-			const list = mainRuns(cached.runs, workflow);
+		for (const [name, workflow, deliveryBranch] of DELIVERY_WORKFLOWS) {
+			const list = deliveryRuns(cached.runs, workflow, deliveryBranch);
 			items.push(...list.map((r) => runItem(r, name)));
 			if (!list.length) items.push({ id: `workflow:${name}:missing`, level: "info", text: `${name}: no runs in bounded cache`, url: "" });
 		}
