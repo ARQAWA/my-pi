@@ -78,9 +78,15 @@ function fakeBackend(t: TestContext, scripted: unknown[][]): { backend: Backend;
 	return {
 		backend,
 		install() {
-			const upgrade = t.mock.method(https, "request", refuseUpgrade as never);
-			const fetched = t.mock.method(globalThis, "fetch", route as never);
-			restores.push(() => upgrade.mock.restore(), () => fetched.mock.restore());
+			const previousRequest = https.request;
+			const previousFetch = globalThis.fetch;
+			https.request = refuseUpgrade as never;
+			globalThis.fetch = route as typeof fetch;
+			restores.push(() => {
+				https.request = previousRequest;
+				globalThis.fetch = previousFetch;
+				syncBuiltinESMExports();
+			});
 			syncBuiltinESMExports();
 		},
 	};
