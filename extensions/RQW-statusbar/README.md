@@ -17,7 +17,8 @@ Providers without stored login credentials are hidden. Unknown values show `???`
 The active footer checks the shared cache immediately and once a minute, independently of model responses.
 Files in the system temporary directory under `rqw-quota/` are separate per provider and account.
 Codex credentials supply `accountId`; Pi's Anthropic credentials have no account ID, so the refresh token
-is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token.
+is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token. The Codex file is `CX-credits-<hash>.json`:
+older releases still running in other tabs write `CX-<hash>.json` without credits and would otherwise erase CXC.
 Files contain only `percent`, `credits` (raw digits or `Unlimited`), `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
 an exclusive `.lock` file prevents parallel requests. Locks older than 30 seconds are replaced.
 Writes use a temporary file and rename; file errors retain the last displayed value.
