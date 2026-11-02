@@ -11,12 +11,21 @@ const normalize = (path: string) => {
 };
 const ownPath = normalize(fileURLToPath(new URL("./index.ts", import.meta.url)));
 
-type Binding = { shutdown: (event: any, ctx: any) => void };
+type InstallStyles = (theme: () => Theme, supported: { compaction: boolean; branch: boolean; bash: boolean; thinking: boolean }) => () => void;
+type Binding = { shutdown: (event: any, ctx: any) => void; restyle?: (next: InstallStyles) => void };
 
-/** One host hook survives extension reloads. A factory alone never changes the visible host. */
-export function installEarly(installStyles: (theme: () => Theme, supported: { compaction: boolean; branch: boolean; bash: boolean; thinking: boolean }) => () => void): Binding {
+/**
+ * One host hook survives extension reloads: a factory alone never changes the visible host, and a gap would draw stock
+ * blocks. A reloaded module hands its block styles to the running binding, which swaps them in one step, so /reload
+ * applies the new styles. The history and start hooks stay the first module's until Pi restarts; so does a binding of
+ * an earlier release, which has no `restyle`.
+ */
+export function installEarly(installStyles: InstallStyles): Binding {
 	const existing = (globalThis as any)[ACTIVE] as Binding | undefined;
-	if (existing) return existing;
+	if (existing) {
+		existing.restyle?.(installStyles);
+		return existing;
+	}
 	const proto = InteractiveMode.prototype as any;
 	const names = ["init", "stop", "rebindCurrentSession", "renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];
 	const mutable = (target: any, name: string) => {
@@ -94,6 +103,12 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 	proto.stop = stopWrapper;
 	proto.rebindCurrentSession = rebindWrapper;
 	const binding: Binding = {
+		restyle(next) {
+			installStyles = next;
+			if (!releaseStyles) return;
+			releaseStyles();
+			try { releaseStyles = installStyles(() => ui!.theme, supported); } catch { releaseStyles = undefined; }
+		},
 		shutdown(event, ctx) {
 			if (event?.reason !== "quit" && host && ctx?.sessionManager === session?.sessionManager) history.reset?.(host);
 		},

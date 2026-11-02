@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 import { CompactionSummaryMessageComponent, initTheme, InteractiveMode, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, type Terminal } from "@earendil-works/pi-tui";
+import { installEarly } from "../../../extensions/RQW-blocks/early.ts";
 import { buildSession, makeFullscreen } from "./history-host.ts";
 
 const root = new URL("../../../", import.meta.url);
@@ -87,6 +88,18 @@ it("styles a history frame during real init before session_start", async t => {
 		proceed();
 		try { await init; } finally { host.stop("none"); }
 	}
+});
+
+it("a reloaded module's block styles replace the running ones in one step", async () => {
+	const s = await setup();
+	try {
+		assert.match(s.draw(), /compaction · 1\.2k tokens/);
+		const events: string[] = [];
+		// The extension above runs in the loader's module instance; this call is the factory of an updated one.
+		installEarly(() => { events.push("installed"); return () => { events.push("released"); }; });
+		assert.deepEqual(events, ["installed"]);
+		assert.doesNotMatch(s.draw(), /compaction · 1\.2k tokens/);
+	} finally { s.close(); }
 });
 
 it("styles the first history and keeps it during a session change", async () => {

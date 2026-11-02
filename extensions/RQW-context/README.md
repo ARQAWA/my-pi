@@ -57,8 +57,10 @@ Background compaction (`background.ts`):
 - Subagents use it through the shared prototypes, without the status event or the shutdown abort.
 
 Hooks are process-wide while any extension owner remains. `session_shutdown` releases one owner;
-SDK `dispose()` alone does not. Unsupported private Pi boundaries fail at load. Restart Pi after updating
-hook implementations; `/reload` alone is insufficient. The extension can be disabled independently.
+SDK `dispose()` alone does not. Unsupported private Pi boundaries fail at load. Each patched property holds one
+forwarding slot (`hooks.ts`); a reloaded module only replaces what the slot runs, so `/reload` puts the new code
+in effect. A process that started on an older release keeps that release's hooks until Pi is restarted once.
+The extension can be disabled independently.
 
 Tests: `test/extensions/RQW-context/`.
 See [decisions](../../DECISIONS.md#context).

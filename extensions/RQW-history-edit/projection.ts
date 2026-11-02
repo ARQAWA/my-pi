@@ -19,6 +19,9 @@ type Method = (this: Manager, ...args: any[]) => unknown;
 /** Process-wide offer for code that calls Pi's free `buildSessionProjection(entries, leafId)` directly. */
 export const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
 const INSTALLED = Symbol.for("rqw-history-edit/safe-projection");
+// The wrappers this extension put on the prototype; releases before the hand-over on /reload did not record them.
+const OURS = Symbol.for("rqw-history-edit/safe-projection-ours");
+const WRAPPED = ["buildContextEntries", "buildSessionProjection", "getBranch"] as const;
 
 function sessionPath(entries: Entry[], leafId: string | null | undefined, byId?: Index): Entry[] {
 	if (leafId === null) return [];
@@ -85,7 +88,11 @@ export function safeSessionProjection(entries: Entry[], leafId?: string | null, 
 	return { entries: projected, messages, thinkingLevel, model };
 }
 
-/** For tests only: puts Pi's own methods back and removes the offer. Production keeps the patch for the process. */
+/** True when a wrapper of another extension sits on top of ours; it must not be removed with them. */
+const layered = (proto: Record<string | symbol, any>, ours: Record<string, Method>) =>
+	WRAPPED.some((name) => ours[name] && proto[name] !== ours[name]);
+
+/** Puts Pi's own methods back and removes the offer. Production only calls it to hand the patch over on /reload. */
 export function uninstallSafeProjection(proto: Record<string | symbol, any>): void {
 	const stock = proto[INSTALLED] as Record<string, Method> | undefined;
 	if (!stock) return;
@@ -93,6 +100,7 @@ export function uninstallSafeProjection(proto: Record<string | symbol, any>): vo
 	proto.buildSessionProjection = stock.buildSessionProjection;
 	if (stock.getBranch) proto.getBranch = stock.getBranch;
 	delete proto[INSTALLED];
+	delete proto[OURS];
 	delete (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
 }
 
@@ -192,11 +200,17 @@ function incremental(original: Method, safe: (manager: Manager) => Entry[] | Pro
 /**
  * Wraps `buildContextEntries` and `buildSessionProjection` of the SessionManager prototype. The probe compares Pi's two
  * methods with the safe copy on a tiny branch; any other shape leaves the stock methods. A manager that overflowed once
- * skips the stock call afterwards. The wrappers stay for the process (they are transparent) and a reload keeps them.
+ * skips the stock call afterwards. The wrappers stay for the process (they are transparent); a reloaded instance takes
+ * them over: it puts Pi's methods back and installs its own, so the newest code is the one in effect. Wrappers that
+ * another extension covered, or that an older release left unrecorded, stay until a restart.
  * Returns whether the patch is installed.
  */
 export function installSafeProjection(proto: Record<string | symbol, any>): boolean {
-	if (proto[INSTALLED]) return true;
+	if (proto[INSTALLED]) {
+		const ours = proto[OURS] as Record<string, Method> | undefined;
+		if (!ours || layered(proto, ours)) return true;
+		uninstallSafeProjection(proto);
+	}
 	const stock: Record<string, Method> = {};
 	for (const name of ["buildContextEntries", "buildSessionProjection"]) {
 		const descriptor = Object.getOwnPropertyDescriptor(proto, name);
@@ -219,16 +233,18 @@ export function installSafeProjection(proto: Record<string | symbol, any>): bool
 		} catch { /* An unsupported traversal keeps the native method. */ }
 	}
 	const overflowed = new WeakSet<object>();
+	const ours: Record<string, Method> = {};
 	if (stock.getBranch) {
 		const original = stock.getBranch;
 		const cached = incremental(original, (manager) => original.call(manager) as Entry[], false, overflowed);
-		proto.getBranch = function (this: Manager, fromId?: string | null) {
+		proto.getBranch = ours.getBranch = function (this: Manager, fromId?: string | null) {
 			return fromId === undefined ? cached.call(this) : original.call(this, fromId);
 		};
 	}
-	proto.buildContextEntries = incremental(stock.buildContextEntries!, (manager) => safeContextEntries(manager.getEntries(), manager.leafId, manager.byId), false, overflowed);
-	proto.buildSessionProjection = incremental(stock.buildSessionProjection!, (manager) => safeSessionProjection(manager.getEntries(), manager.leafId, manager.byId), true, overflowed);
+	proto.buildContextEntries = ours.buildContextEntries = incremental(stock.buildContextEntries!, (manager) => safeContextEntries(manager.getEntries(), manager.leafId, manager.byId), false, overflowed);
+	proto.buildSessionProjection = ours.buildSessionProjection = incremental(stock.buildSessionProjection!, (manager) => safeSessionProjection(manager.getEntries(), manager.leafId, manager.byId), true, overflowed);
 	proto[INSTALLED] = stock;
+	proto[OURS] = ours;
 	(globalThis as Record<symbol, unknown>)[SAFE_PROJECTION] = guardedProjection;
 	return true;
 }

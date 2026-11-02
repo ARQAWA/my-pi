@@ -7,7 +7,7 @@ const KEY = Symbol.for("rqw-skill-dollar.host");
 const THEME = Symbol.for("@earendil-works/pi-coding-agent:theme");
 const ownPath = resolve(fileURLToPath(new URL("./index.ts", import.meta.url)));
 
-type State = { remove?: ReturnType<typeof installSkillCard>; seen: boolean; dispose: () => void };
+type State = { remove?: ReturnType<typeof installSkillCard>; seen: boolean; disposed?: boolean; dispose: () => void };
 
 function currentTheme(): Theme {
 	const theme = (globalThis as any)[THEME];
@@ -16,9 +16,12 @@ function currentTheme(): Theme {
 }
 
 // The host, not the latest factory (which may belong to a child), owns the visible cards.
+// A reloaded module replaces the earlier module's hooks and cards with its own at once, so /reload applies new code
+// without a frame of stock cards.
 export function installHost(): State | undefined {
 	const existing = (globalThis as any)[KEY] as State | undefined;
-	if (existing) return existing;
+	const hadCards = !!existing?.remove;
+	existing?.dispose();
 	const proto = InteractiveMode.prototype as any;
 	const renderDescriptor = Object.getOwnPropertyDescriptor(proto, "renderSessionEntries");
 	const stopDescriptor = Object.getOwnPropertyDescriptor(proto, "stop");
@@ -27,6 +30,8 @@ export function installHost(): State | undefined {
 	const render = renderDescriptor.value;
 	const stop = stopDescriptor.value;
 	const state: State = { seen: false, dispose() {
+		// A wrapper that another extension covered cannot be removed; it only passes calls through from now on.
+		state.disposed = true;
 		state.remove?.();
 		state.remove = undefined;
 		if (proto.renderSessionEntries === wrappedRender) proto.renderSessionEntries = render;
@@ -36,6 +41,7 @@ export function installHost(): State | undefined {
 	let session: unknown;
 	let generation: unknown;
 	const wrappedRender = function (this: any, ...args: any[]) {
+		if (state.disposed) return render.apply(this, args);
 		const current = this.session;
 		const loader = current?.resourceLoader;
 		const loaded = typeof loader?.getExtensions === "function" ? loader.getExtensions() : undefined;
@@ -56,5 +62,8 @@ export function installHost(): State | undefined {
 	proto.renderSessionEntries = wrappedRender;
 	proto.stop = wrappedStop;
 	(globalThis as any)[KEY] = state;
+	if (hadCards) {
+		try { state.remove = installSkillCard(currentTheme); } catch { /* The next render installs it, or reports no theme. */ }
+	}
 	return state;
 }

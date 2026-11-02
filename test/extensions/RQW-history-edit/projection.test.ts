@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, it } from "node:test";
 import * as Pi from "@earendil-works/pi-coding-agent";
 import {
@@ -161,6 +164,57 @@ it("an error that is not a stack overflow is thrown unchanged", () => {
 		installSafeProjection(proto);
 		const broken = { getEntries: () => { throw new TypeError("broken"); }, leafId: "a", byId: new Map() };
 		assert.throws(() => proto.buildSessionProjection.call(broken), TypeError);
+	} finally { restoreOffer(previous); }
+});
+
+it("a reloaded module takes the patch over: its code is in effect, and reloading back restores the first", async () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const source = join(here, "../../../extensions/RQW-history-edit/projection.ts");
+	const stockOverflow = "const isOverflow = (error: unknown) => error instanceof RangeError;";
+	const code = readFileSync(source, "utf8");
+	assert.ok(code.includes(stockOverflow));
+	const dir = mkdtempSync(join(here, ".reload-copy-"));
+	const proto = fakePrototype();
+	const stock = { context: proto.buildContextEntries, projection: proto.buildSessionProjection };
+	const previous = (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
+	try {
+		assert.equal(installSafeProjection(proto), true);
+		assert.equal((proto.buildContextEntries.call(managerOf(bigSession())) as Entry[]).length, BIG_TAIL + 2);
+		// The updated module never treats a stack overflow as recoverable: Pi's own error shows which module is in effect.
+		const file = join(dir, "projection.ts");
+		writeFileSync(file, code.replace(stockOverflow, "const isOverflow = (_error: unknown) => false;"));
+		const updated = await import(pathToFileURL(file).href);
+		assert.equal(updated.installSafeProjection(proto), true);
+		assert.throws(() => proto.buildContextEntries.call(managerOf(bigSession())), RangeError);
+		assert.throws(() => (globalThis as Record<symbol, any>)[SAFE_PROJECTION](bigSession()), RangeError);
+		assert.equal(installSafeProjection(proto), true);
+		assert.equal((proto.buildContextEntries.call(managerOf(bigSession())) as Entry[]).length, BIG_TAIL + 2);
+		assert.equal((globalThis as Record<symbol, any>)[SAFE_PROJECTION](bigSession()).messages.length, BIG_TAIL + 2);
+		uninstallSafeProjection(proto);
+		assert.equal(proto.buildContextEntries, stock.context);
+		assert.equal(proto.buildSessionProjection, stock.projection);
+	} finally {
+		restoreOffer(previous);
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+it("a reload leaves wrappers that another extension covered, or an older release left unrecorded, in place", () => {
+	const previous = (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
+	try {
+		const covered = fakePrototype();
+		installSafeProjection(covered);
+		const outer = function (this: unknown, ...args: unknown[]) { return (inner as Function).apply(this, args); };
+		const inner = covered.buildContextEntries;
+		covered.buildContextEntries = outer;
+		assert.equal(installSafeProjection(covered), true);
+		assert.equal(covered.buildContextEntries, outer);
+
+		const legacy = fakePrototype();
+		legacy[INSTALLED] = {};
+		const wrapper = legacy.buildContextEntries;
+		assert.equal(installSafeProjection(legacy), true);
+		assert.equal(legacy.buildContextEntries, wrapper);
 	} finally { restoreOffer(previous); }
 });
 

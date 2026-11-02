@@ -196,6 +196,43 @@ it("keeps the old cards during shutdown and restores stock before disabled histo
 	assert.match(plain(host.chatContainer.render(60)).join("\n"), /\[skill\] keep/);
 });
 
+it("a reloaded module takes the card hooks over at once, and one stop gives stock back", t => {
+	initTheme();
+	const message = `${block("b")}\n\nText`;
+	const stock = plain(chat("keep", message).container.render(60));
+	const key = Symbol.for("rqw-skill-dollar.host");
+	const first = load();
+	const oldHost = (globalThis as any)[key];
+	assert.ok(oldHost.remove);
+	// Pi's /reload runs the factory of the new module while the old hooks are in place.
+	const second = load();
+	t.after(() => { first.shutdown(); second.stop(); });
+	const newHost = (globalThis as any)[key];
+	assert.notEqual(newHost, oldHost);
+	assert.equal(oldHost.remove, undefined);
+	assert.ok(newHost.remove);
+	assert.equal(plain(chat("keep", message).container.render(60)).some(line => line.includes("[skill]")), false);
+	second.stop();
+	assert.deepEqual(plain(chat("keep", message).container.render(60)), stock);
+});
+
+it("a host hook that another extension covered stays passive after a reload", t => {
+	initTheme();
+	const proto = InteractiveMode.prototype as any;
+	const stockRender = proto.renderSessionEntries;
+	const stockStop = proto.stop;
+	t.after(() => { proto.renderSessionEntries = stockRender; proto.stop = stockStop; });
+	const first = load();
+	const oldHost = (globalThis as any)[Symbol.for("rqw-skill-dollar.host")];
+	const inner = proto.renderSessionEntries;
+	proto.renderSessionEntries = function (this: any, ...args: unknown[]) { return inner.apply(this, args); };
+	// The reloaded module's host call passes through the first module's wrapper, which cannot be removed.
+	const second = load();
+	t.after(() => { first.shutdown(); second.stop(); });
+	assert.equal(oldHost.remove, undefined);
+	assert.ok((globalThis as any)[Symbol.for("rqw-skill-dollar.host")].remove);
+});
+
 it("pads attached skills below while leaving plain cards unchanged", t => {
 	initTheme();
 	const plainCard = new UserMessageComponent("Hello");

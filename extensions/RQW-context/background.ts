@@ -3,6 +3,7 @@
 // path, which takes the ready result instead of asking the model. Everything else stays Pi's foreground compaction.
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as Pi from "@earendil-works/pi-coding-agent";
+import { installHook, isHooked } from "./hooks.ts";
 
 export const BACKGROUND_PERCENT = 0.65;
 /** Status channel on the session's `pi.events`: `{ sessionId, active }`. */
@@ -296,8 +297,6 @@ export function maybeStart(session: BackgroundSession, physical: unknown): void 
 }
 
 type Generator = BackgroundSession["_runDefaultCompaction"];
-const WRAPPED_GENERATOR = Symbol.for("rqw-context/_runDefaultCompaction");
-const WRAPPED_DISPOSE = Symbol.for("rqw-context/dispose");
 
 /**
  * Installs the summary generator seam when Pi has it. Without it background compaction stays off and W/R works as
@@ -307,15 +306,15 @@ export function installBackground(proto: Record<string | symbol, any>, owned: ()
 	const descriptor = Object.getOwnPropertyDescriptor(proto, "_runDefaultCompaction");
 	const disposal = Object.getOwnPropertyDescriptor(proto, "dispose");
 	const exports = [Pi.buildSessionProjection, Pi.getLatestCompactionEntry, Pi.estimateTokens, Pi.sessionEntryToContextMessages, Pi.shouldCompact];
-	if (proto[WRAPPED_GENERATOR]) { state.on = true; return; }
-	if (typeof descriptor?.value !== "function" || !descriptor.configurable || !descriptor.writable ||
+	// Hooked by an earlier instance of this extension: only what the slots run is replaced below.
+	if (!isHooked(proto, "_runDefaultCompaction") && (
+		typeof descriptor?.value !== "function" || !descriptor.configurable || !descriptor.writable ||
 		typeof disposal?.value !== "function" || !disposal.configurable || !disposal.writable ||
-		typeof proto.getContextUsage !== "function" || exports.some((value) => typeof value !== "function")) {
+		typeof proto.getContextUsage !== "function" || exports.some((value) => typeof value !== "function"))) {
 		state.on = false;
 		return;
 	}
-	const original = descriptor.value as Generator;
-	proto._runDefaultCompaction = async function (this: BackgroundSession, ...args: any[]) {
+	installHook(proto, "_runDefaultCompaction", "value", (original: Generator) => async function (this: BackgroundSession, ...args: any[]) {
 		if (!owned() || state.own.getStore()) return original.apply(this, args);
 		const [preparation, , , signal, reason] = args as [{ tokensBefore: number }, unknown, unknown, AbortSignal, string];
 		const candidate = state.candidates.get(this.sessionManager);
@@ -347,15 +346,12 @@ export function installBackground(proto: Record<string | symbol, any>, owned: ()
 			args[0] = current.preparation;
 		}
 		return original.apply(this, args);
-	};
-	proto[WRAPPED_GENERATOR] = original;
+	});
 	// A disposed session, such as a stopped subagent, emits no shutdown event but must stop spending.
-	const dispose = disposal.value as (this: BackgroundSession, ...args: any[]) => unknown;
-	proto.dispose = function (this: BackgroundSession, ...args: any[]) {
+	installHook(proto, "dispose", "value", (dispose: (this: BackgroundSession, ...args: any[]) => unknown) => function (this: BackgroundSession, ...args: any[]) {
 		cancel(state.candidates.get(this.sessionManager));
 		return dispose.apply(this, args);
-	};
-	proto[WRAPPED_DISPOSE] = dispose;
+	});
 	state.on = true;
 }
 
