@@ -877,6 +877,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: preserve the accepted prompt update and its limits for future changes; the `<critical>` stop rule must match the real wait tools.
   Carriers: `extensions/RQW-prompt/SYSTEM.md`, `extensions/RQW-prompt/index.ts`.
 
+- **Wait answer batching** `[D-PROMPT-WAIT-ANSWER-BATCH]`. The `<general>` section of `SYSTEM.md` ends its batching rule with: «Call `wait_answer` only in a batch with other waits, never mixed with work or nested in codemode.» Wish 21 of the owner's wish list. Main showed the owner this diff of that line; the owner approved it and asked to queue the removal of `wait_answer` as future work (`BACKLOG.md` WAIT-ANSWER-AUTOWAKE).
+  Owner (2026-11-02, verbatim): «Так, ну давай принимаем обе, оставляем. Пусть будет потом в этот самый в клод закиньте удачу на будущее, на удаление Wait Ansfera и перевод его на общий этот самый автовейкап, который у нас есть. уже сейчас там наверное это не тривиальная задача».
+  Reason: a `wait_answer` call mixed with other work or nested in codemode blocks that work.
+  Carrier: `extensions/RQW-prompt/SYSTEM.md`.
+
 ### Prompt/tools isolation
 
 - **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies `getting_work_done` when `rqw_rg` and `rqw_glob` are visible, or the search-method section when stock read, grep and find are visible; the independent-execution/background-job section is supplied only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
