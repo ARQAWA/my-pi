@@ -104,7 +104,6 @@ function createUpdater(context, request = globalThis.fetch, sockets = require('n
       const dependencies = { ...manifest.dependencies };
       const previousManifest = JSON.parse(fs.readFileSync(path.join(previous, 'package.json'), 'utf8'));
       const previousDependencies = { ...previousManifest.dependencies };
-      delete previousDependencies.typebox;
       if (!isDeepStrictEqual(dependencies, previousDependencies)
         || !isDeepStrictEqual(manifest.peerDependencies?.['@earendil-works/pi-coding-agent'],
           previousManifest.peerDependencies?.['@earendil-works/pi-coding-agent'])) {

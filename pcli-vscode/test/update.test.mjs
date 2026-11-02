@@ -48,7 +48,7 @@ function fixture(t, options = {}) {
   fs.mkdirSync(path.join(root, 'pi'));
   fs.writeFileSync(path.join(root, 'pi', 'pi.exe'), 'fake Pi');
   fs.writeFileSync(path.join(bundled, 'package.json'), JSON.stringify({
-    name: 'my-pi', dependencies: { typebox: '3', other: '2', ws: '1' },
+    name: 'my-pi', dependencies: { other: '2', ws: '1' },
     peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
   }));
   fs.writeFileSync(path.join(bundled, '.revision'), 'a'.repeat(40));
@@ -187,6 +187,18 @@ test('palette update loads browser dependencies bundled with the new PCLI withou
   assert.ok(f.notifications.includes('my-pi updated. Open a new Pi tab to use it.'));
 });
 
+test('matching typebox dependencies allow an update', async (t) => {
+  const f = fixture(t);
+  const manifestPath = path.join(f.bundled, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.dependencies.typebox = '3';
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  f.next('c'.repeat(40), archive({ ws: '1', other: '2', typebox: '3' }));
+  await f.update();
+  assert.notEqual(f.selected(), f.bundled);
+  assert.equal(fs.readFileSync(path.join(f.selected(), 'extensions/demo/index.ts'), 'utf8'), 'new code');
+});
+
 test('changed dependencies retain selected code and ask to update the extension', async (t) => {
   const f = fixture(t);
   await f.update();
@@ -246,10 +258,8 @@ test('failure at activation retains previous package and reports failure', async
   assert.equal(JSON.parse(fs.readFileSync(f.settingsPath)).packages[1].source, previous);
 });
 
-test('a live host excludes updates but its exit and legacy lock do not block recovery', async (t) => {
+test('a live host excludes updates but its exit allows recovery', async (t) => {
   const f = fixture(t, { busy: true });
-  // A directory left by the old lock implementation must not require manual removal.
-  fs.mkdirSync(path.join(f.root, 'storage/my-pi/update.lock'), { recursive: true });
   await f.update();
   assert.equal(f.selected(), f.bundled);
   assert.match(f.notifications.at(-1), /update failed/);

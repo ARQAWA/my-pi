@@ -1260,8 +1260,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Simplicity boundary: «Надо что бы решение было максимально простое топорное и ограниченное только тем что я сказал из требований.»
 - **Palette harness update** `[D-PCLI-UPDATE]`. `Pi CLI: Update` (`pcli.update`) fetches the latest public
   `ARQAWA/my-pi` `main` SHA and its HTTPS archive without Git, npm or a Pi update. It compares the effective
-  production dependencies structurally, including bundled `typebox`, ignoring key order. Matching dependencies
-  reuse `node_modules` from the currently selected copy. Changed dependencies preserve that copy and notify
+  production dependencies and the Pi peer requirement structurally, ignoring key order. When both match, the update
+  reuses `node_modules` from the currently selected copy. Changes preserve that copy and notify
   the user to update the VS Code extension instead. Owner chose option 1: «по либам ответ 1».
   New product resources and reused libraries are prepared under VS Code `globalStorageUri/my-pi/<PCLI version>/<SHA>`.
   Atomic replacement of `current.json` activates the complete copy only after preparation succeeds. Older snapshots
