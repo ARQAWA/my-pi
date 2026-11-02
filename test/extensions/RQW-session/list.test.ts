@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { appendFile, mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import sessionCommands from "../../../extensions/RQW-session/index.ts";
 import { installFastList } from "../../../extensions/RQW-session/list.ts";
@@ -12,11 +12,13 @@ let dir: string;
 const cwd = join(tmpdir(), "rqw-list-project");
 
 const handlers = new Map<string, () => void>();
+describe("fast session list", () => {
 beforeEach(async () => {
 	dir = await mkdtemp(join(tmpdir(), "rqw-list-"));
 	sessionCommands({ on: (name: string, handler: () => void) => handlers.set(name, handler), registerCommand: () => undefined } as unknown as ExtensionAPI);
 });
 afterEach(async () => {
+	handlers.get("session_shutdown")?.();
 	Object.assign(SessionManager, stock);
 	await rm(dir, { recursive: true, force: true });
 });
@@ -153,4 +155,5 @@ it("keeps the stock functions when their shape differs", async () => {
 	const before = [fake.list, fake.listAll];
 	installFastList(fake);
 	assert.deepEqual([fake.list, fake.listAll], before);
+});
 });

@@ -37,7 +37,7 @@ Provenance:
 
 ## Command cleanup
 
-- **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. The four model and thinking cycle actions and the thinking display toggle are disabled, including custom bindings; four settings items and hidden providers in the logout menu are hidden without changing settings or credentials. The checked runtime patch falls back to stock on incompatible Pi internals.
+- **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug`, `/fork` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. The four model and thinking cycle actions, thinking display toggle and fork action are disabled, including custom bindings; the double-Escape fork selector is disabled too; four settings items and hidden providers in the logout menu are hidden without changing settings or credentials. The checked runtime patch falls back to stock on incompatible Pi internals.
   Owner: «надо команды лишние коттрые конфликтуют с нашим харнесом выпилить нахуй через рантайм патч что бы они нам рабоатть не мешали составь аналитику и проект работы и открой мне его, спланируй на минимум сторей (в идеале на 1)».
   Owner: «убираем трии, финкинг убираем модел убираем».
   Owner: «да делай + к этому надо вырубить эти хоткеи шифт таб, ктрл л и ктрл п и шифт ктрл п».
@@ -1732,6 +1732,17 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Proof** `[D-SCROLL-TESTS]`. Tests: `test/extensions/RQW-scroll/scroll.test.ts`. Since: `72873eb`.
 
 ## Session commands
+
+- **Clone a selected session branch** `[D-SESSION-RESUME-CLONE]`. In `/resume`, Ctrl+Shift+D copies the selected session's current branch to a new session and opens it in the same tab. The source stays unchanged. Ctrl+D keeps deletion. The previous Ctrl+Shift+D debug-log binding is removed. `/fork` and its interactive entrances are disabled by RQW-commands. Checked runtime patches fall back to stock on incompatible Pi internals.
+  Owner: « 1. в /resume добавить ctrl+shift+d.
+ 2. клонировать текущую ветку выбранной сессии.
+ 3. открыть копию в этой же вкладке.
+ 4. исходную сессию оставить без изменений.
+ 5. выяснить нынешнее назначение ctrl+shift+d.
+ 6. убрать прежнее назначение этой комбинации.
+ 7. ctrl+d оставить для удаления сессии.
+ 8. /fork отключить вообще как будто его небыло».
+  Carriers: `extensions/RQW-session/`, `extensions/RQW-commands/`, `test/extensions/RQW-session/`, `test/extensions/RQW-commands/`.
 
 - **`/copy-session` and `/remove`** `[D-SESSION-COMMANDS]`. `/copy-session` copies the session ID with Pi's exported
   clipboard implementation; the name avoids Pi's built-in `/copy` (coordinator-specified spelling). `/remove` uses one

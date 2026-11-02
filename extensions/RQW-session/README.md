@@ -1,6 +1,6 @@
 # RQW-session
 
-Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast `/resume` list for Pi 1.4.0. No tool, UI replacement or other-extension import. The only Pi patch is the list below.
+Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast `/resume` list for Pi 1.4.0. No tool, UI replacement or other-extension import. The selector and list use checked runtime patches with stock fallback.
 
 - `/copy-session`: copy the current ID and notify `Session ID copied: <id>`. Stock `/copy` still copies the last
   assistant message. Clipboard failures produce an error notification, not success.
@@ -30,6 +30,8 @@ Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast
   `pi.sendUserMessage("/session-deleted", { expandPromptTemplates: true })`, because only a command context has
   `newSession`; the command opens the session and sets the editor text in `withSession`. Because a deleted session is
   dead by design, `/cleanup` has no liveness logic.
+
+- `/resume`: Ctrl+Shift+D copies the selected session's current branch into a new session and opens it in this tab. The source file is not changed. Ctrl+D still asks to delete. The old global Ctrl+Shift+D debug-log shortcut is removed while this extension is active; `/debug` remains available. Empty branches report an error. Cancelling the switch removes the new copy. The command-line `pi --resume` selector appears before extensions load and stays stock.
 
 - Fast `/resume` list (`list.ts`): a runtime patch (`[D-SCOPE-RUNTIME-PATCH]`) of `SessionManager.list` and `listAll`.
   No cache and no background work. Per file and per call: one `stat`, the header line, then 64 KB windows read from the end
