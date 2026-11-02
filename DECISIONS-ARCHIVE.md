@@ -7916,3 +7916,10 @@ Status: SUPERSEDED by `[D-WORK-SHORT-REPLIES]`, `[D-DYSLEXIA-COMMUNICATION]` and
 >   Coordinator note: the Sol 6.1 Low model in this quote was replaced by the reviewerProfiles table in [PROCESS.md](PROCESS.md#subagent-models).
 >   The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
 > - **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner source: [D-WORK-CODE-PROFILE]. Owner: «без перфекционизма, без удушья, без жёсткой ёбки». The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
+
+## A-0486 · archived 2026-11-02 · Models · Terra off
+
+Status: SUPERSEDED by `[D-MODELS-EFFORT]`: the owner chose to remove Terra off.
+Introduced: `80732f36`. Source: `ed10109e:DECISIONS.md`, line 2005. Verbatim replaced text:
+
+> RQW-models permanent `off` for Terra (`[D-WEB-MAPPING]` passes `off` as native `none`; the audit itself asks for an owner decision)

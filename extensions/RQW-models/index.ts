@@ -13,7 +13,7 @@ const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
 	"claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
 	"claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
 	"gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
-	"gpt-6.1-terra": ["off", "low", "medium", "high", "xhigh", "max"],
+	"gpt-6.1-terra": ["low", "medium", "high", "xhigh", "max"],
 	"gpt-6-sol": ["low", "medium", "high", "xhigh", "max"],
 	"claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
 	"gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],

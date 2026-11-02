@@ -21,6 +21,23 @@ it("Shift+Down opens a stepped draft and Enter commits the model", async (t) => 
 	assert.deepEqual(w.networkAttempts, []);
 });
 
+it("Terra offers low through max without off and clamps shortcuts at low", async (t) => {
+	const w = await world(t);
+	w.press(keys.shiftDown);
+	await w.until(() => w.screen().some((line) => line.includes("› Sonnet 5.5")));
+	w.press(keys.down);
+	w.press(keys.down);
+	const row = w.screen().find((line) => line.includes("› GPT-6.1 Terra"));
+	assert.ok(row);
+	assert.match(row, /low medium high xhigh max/);
+	assert.doesNotMatch(row, /\boff\b/);
+	w.press(keys.left);
+	w.press(keys.left);
+	w.press(keys.enter);
+	await w.until(() => w.session.model?.id === "gpt-6.1-terra");
+	assert.equal(w.session.thinkingLevel, "low");
+});
+
 it("Escape discards a changed model and effort without requests", async (t) => {
 	const w = await world(t);
 	const original = w.session.model;
