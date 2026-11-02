@@ -23,7 +23,8 @@ import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { steeringWait } from "./steering-wait.ts";
-import { type AutoSource, backgroundLive, takeBackground, untilBackgroundChange } from "./background.ts";
+import { AUTO_RESULTS, type AutoSource, backgroundIds, backgroundLive, backgroundReady, takeBackground, untilBackgroundChange } from "./background.ts";
+import { INBOX_ENTRY, LOST_TEXT, lostIds, markedIds, WAITING_ENTRY } from "./waiting.ts";
 import { continueOnLength, isContinuedCut } from "./length-continue.ts";
 import { installCutLine } from "./cut-line.ts";
 import { registerHerdrActivity } from "./herdr-state.ts";
@@ -136,7 +137,6 @@ export function mergeSaved<T extends { config?: unknown; task?: string }>(previo
 }
 type CallerHost = { busy(): boolean; send: ExtensionAPI["sendMessage"] };
 type InboxMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
-const INBOX_ENTRY = "rqw-agent-inbox";
 
 /** Durable notifications are acknowledged by their persisted custom message, never by a clearable core queue. */
 class NotificationBridge {
@@ -833,7 +833,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			for (const result of record.results) if (typeof result?.run === "string") confirmed.add(result.run);
 		for (const entry of ctx.sessionManager.getEntries()) {
 			if (entry.type !== "custom" || entry.customType !== INBOX_ENTRY) continue;
-			const details = (entry.data as { message?: { details?: { run?: unknown; results?: { run?: unknown }[] } } })?.message?.details;
+			const message = (entry.data as { message?: { customType?: string; details?: { run?: unknown; results?: { run?: unknown }[] } } })?.message;
+			const details = message?.details;
+			// An automatic result is delivered from the inbox of its own branch (counted below), never from here.
+			if (message?.customType === AUTO_RESULTS) continue;
 			if (typeof details?.run === "string" && !confirmed.has(details.run)) delivered.delete(details.run);
 			if (Array.isArray(details?.results)) for (const result of details.results)
 				if (typeof result?.run === "string" && !confirmed.has(result.run)) delivered.delete(result.run);
@@ -841,6 +844,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		// Waits that ran inside a codemode script count once the script's own result is saved; see AcceptRecord.
 		const accepts: { id: string; record: AcceptRecord }[] = [];
 		for (const entry of ctx.sessionManager.getBranch()) {
+			// The selected branch's inbox delivers an automatic result again, so hydration must not publish it a second time.
+			if (entry.type === "custom" && entry.customType === INBOX_ENTRY) {
+				const message = (entry.data as { message?: { customType?: string; details?: { results?: { run?: unknown }[] } } })?.message;
+				if (message?.customType === AUTO_RESULTS && Array.isArray(message.details?.results))
+					for (const result of message.details.results) if (typeof result?.run === "string") delivered.add(result.run);
+			}
 			if (entry.type === "custom" && entry.customType === ACCEPT_ENTRY) {
 				const record = entry.data as AcceptRecord | undefined;
 				if (record?.version === 1 && record.ok === true && typeof record.root === "string" && Array.isArray(record.results)) accepts.push({ id: entry.id, record });
@@ -1003,7 +1012,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const unsentBatches = unsent(a);
 			const canContinue = repairInterrupted(a.session);
 			const resumedChildren = await a.children?.resume?.(signal, recoveredOnly) ?? 0;
-			const completed = !canContinue && !resumedChildren && !a.session.agent.hasQueuedMessages() && !a.bridge.pending() && !unsentBatches.length;
+			deliverLost(a);
+			const ready = backgroundReady(backgroundSources(a));
+			const completed = !canContinue && !resumedChildren && !ready && !a.session.agent.hasQueuedMessages() && !a.bridge.pending() && !unsentBatches.length;
 			const last = a.session.messages.at(-1);
 			if (completed && (!last || !isAssistant(last))) throw new Error(`${name}#${a.id}: no saved request to resume`);
 			if (!completed) {
@@ -1213,6 +1224,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		}
 	}
 
+	/**
+	 * Work the child waited for that did not survive the restart (its job, an agent that could not be restored) becomes a
+	 * `lost` result in its inbox, so the child decides what to restart instead of reporting "waiting" as its final answer.
+	 */
+	function deliverLost(a: Agent) {
+		const live = new Set(backgroundIds(backgroundSources(a)));
+		const lost = lostIds(a.session.sessionManager.getBranch(), id => live.has(id) || !!a.children?.finished?.(id));
+		if (!lost.length) return;
+		a.bridge.deliver({ customType: AUTO_RESULTS, display: false,
+			content: JSON.stringify({ results: lost.map(id => ({ id, outcome: "lost", text: LOST_TEXT })) }),
+			details: { batch: randomUUID(), results: lost.map(id => ({ id })) } });
+	}
+
 	/** The result sources (its agents and jobs) whose live work keeps a child's logical run open. */
 	const backgroundSources = (a: Agent): AutoSource[] => [a.children?.autoSource?.(), a.jobsAuto?.source].filter((source): source is AutoSource => !!source);
 
@@ -1245,6 +1269,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		// This logical run's record: fresh here, updated by every assistant message_end below, retries and wakeups included.
 		const meta: RunMeta = {};
 		let lastPushed = 0;
+		// The live ids this child last said it waits for; a restart reads them back (see waiting.ts).
+		let marked = JSON.stringify(markedIds(session.sessionManager.getBranch()));
+		const mark = (sources: AutoSource[]) => {
+			const ids = backgroundIds(sources);
+			if (JSON.stringify(ids) === marked) return;
+			session.sessionManager.appendCustomEntry(WAITING_ENTRY, { version: 1, ids });
+			marked = JSON.stringify(ids);
+		};
 		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false, controller: new AbortController() };
 		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -1319,6 +1351,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						// What the child said before this is "started, waiting", not its final answer.
 						outputs.length = 0; lastPushed = 0;
 					}
+					// The marker follows the inbox entry, so a restart never loses an id before its result is durable.
+					mark(background);
 					const notifications = a.bridge.messages();
 					if (notifications.length) {
 						if (a.core.on) {
@@ -1847,6 +1881,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	pi.on("agent_settled", queueAll);
 	return {
 		pending: () => runs().length > 0,
+		finished: id => {
+			const number = localNumber(id);
+			return number !== undefined && (savedSlots.has(number) || (agents.get(number)?.state === "completed" && !!agents.get(number)?.result));
+		},
 		autoSource() {
 			if (!auto && main) auto = coordinator.autoSource(main);
 			return auto?.source;
