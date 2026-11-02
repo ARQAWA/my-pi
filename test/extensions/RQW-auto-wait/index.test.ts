@@ -139,6 +139,18 @@ test("settled ready sources send one hidden turn and commit only after saving", 
 	assert.equal(f.delivered(), true);
 });
 
+test("a ready result wakes the idle chat when the session leaf changes before the check", async t => {
+	const f = setup(t);
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	f.branch.push({ id: "child-result", type: "custom" });
+	f.finish();
+	f.branch.push({ id: "child-finally", type: "custom" });
+	f.setTargets(["agent#1"]);
+	await Promise.resolve(); await Promise.resolve();
+	assert.equal(f.sent.length, 1);
+	assert.equal(JSON.parse(f.sent[0].message.content).results[0].text, "answer");
+});
+
 test("input before claim wins and input during wake becomes follow-up", async t => {
 	const f = setup(t);
 	f.emit("agent_settled", { aborted: false }); f.finish(); f.emit("input");

@@ -53,8 +53,8 @@ export default function autoWait(pi: ExtensionAPI) {
 		const version = generation, current = ctx, leaf = manager?.getLeafId();
 		queueMicrotask(() => {
 			scheduled = false;
-			if (generation !== version) { requestCheck(); return; }
-			if (ctx !== current || manager?.getLeafId() !== leaf || !armed || aborted || compacting || flight
+			if (generation !== version || manager?.getLeafId() !== leaf) { requestCheck(); return; }
+			if (ctx !== current || !armed || aborted || compacting || flight
 				|| current.signal?.aborted || !current.isIdle() || current.hasPendingMessages()) return;
 			const claims: Claim[] = [];
 			for (const source of sources.keys()) {
