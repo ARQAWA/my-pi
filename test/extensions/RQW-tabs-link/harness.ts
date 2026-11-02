@@ -151,6 +151,7 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 			getSessionId: () => session.id, getSessionName: () => session.name, getCwd: () => "/work",
 			getSessionFile: () => session.file, getSessionDir: () => "/sessions",
 			getEntries: () => world.entries, getBranch: () => { world.branchReads?.(); return world.entries; },
+			getLeafEntry: () => world.entries.at(-1), getEntry: (id: string) => world.entries.find(entry => entry.id === id),
 		},
 		ui: { notify: (message: string) => notices.push(message) },
 	}) as unknown as ExtensionContext;

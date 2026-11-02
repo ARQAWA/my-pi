@@ -21,7 +21,10 @@ const errorOf = (promise: Promise<unknown>) => promise.then(() => undefined, (er
 it("returns an answer that is already saved after the entry read last", async t => {
 	const { recv, send } = await pairOfTabs(t);
 	recv.world.entries.push(message("u", "user"), message("a", "assistant", "stop"));
-	const result = parse(await send.run("wait_answer", { chatId: "recv", afterEntryId: "u", timeout_ms: 500 }));
+	send.world.entries.push({ id: "batch", parentId: null, type: "message", message: {
+		role: "assistant", content: [{ type: "toolCall", id: "wait", name: "wait_answer", arguments: {} }],
+	} });
+	const result = parse(await send.run("wait_answer", { chatId: "recv", afterEntryId: "u", timeout_ms: 500 }, "wait"));
 	assert.equal(result.chatId, "recv");
 	assert.equal(result.reason, "answer");
 	assert.equal(result.entry.id, "a");
@@ -33,6 +36,19 @@ it("returns the first answer of a branch that had no entries, saved before the c
 	const result = parse(await send.run("wait_answer", { chatId: "recv", afterEntryId: null, timeout_ms: 500 }));
 	assert.equal(result.reason, "answer");
 	assert.equal(result.entry.id, "first");
+});
+
+it("rejects mixed batches and nested waits before contacting the target", async t => {
+	const { send, net } = await pairOfTabs(t);
+	const params = { chatId: "recv", afterEntryId: null };
+	const batch = (content: object[]) => ({ id: "batch", parentId: null, type: "message", message: { role: "assistant", content } });
+	const tool = (id: string, name: string, args = {}) => ({ type: "toolCall", id, name, arguments: args });
+	const connections = net.connections;
+	send.world.entries.push(batch([tool("wait", "wait_answer"), tool("work", "read_chat")]));
+	assert.deepEqual(parse(await send.run("wait_answer", params, "wait")), { chatId: "recv", reason: "work_pending" });
+	send.world.entries.push(batch([tool("script", "codemode")]));
+	assert.deepEqual(parse(await send.run("wait_answer", params, "script/wait")), { chatId: "recv", reason: "direct_wait_required" });
+	assert.equal(net.connections, connections);
 });
 
 it("holds the call until the answer is saved", async t => {

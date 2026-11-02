@@ -26,7 +26,8 @@ Equal input and equal state give an equal result. Errors have a fixed code and t
    `target_changed` or `aborted`; `timeout_ms` defaults to 300000, at most 3600000. A closed chat, also one that
    closes during the wait, is the error `closed`. It is the next answer, not the reply to a particular message. A
    streaming part never counts. A timeout or an abort does not stop the chat. Input from the user interrupting the
-   wait is not part of this tool.
+   wait is not part of this tool. A mixed batch returns `work_pending` immediately; a call inside codemode returns
+   `direct_wait_required`. Call it directly in a wait-only batch.
 
 The model sees one fixed prompt line naming all four tools and the search key `rqwchat`.
 The first three tools mirror Codex `list_threads`, `read_thread` and `send_message_to_thread`; `chatId` is the Pi session id.
