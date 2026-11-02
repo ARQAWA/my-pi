@@ -87,7 +87,7 @@ export const keys = {
 } as const;
 
 const root = new URL("../../", import.meta.url);
-const CHECK_LIMIT = 20000;
+const CHECK_LIMIT = 200000;
 const START_TIME = Date.UTC(2026, 10, 2);
 const FAR_FUTURE = 4_102_444_800_000;
 
