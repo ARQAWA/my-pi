@@ -876,8 +876,8 @@ test("old result inbox records stay historical when a child resumes", async t =>
 	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
 	await restored.execute({ action: "send", id: "agent#1", task: "continue" });
 	await restored.runtime.wait(new AbortController().signal);
-	assert.doesNotMatch(JSON.stringify(restored.requests), /old (agent|child_wait)/);
-	assert.match(JSON.stringify(restored.requests), /old job/);
+	assert.ok(restored.requests.some((request: any) => userTexts(request).includes("continue")));
+	assert.doesNotMatch(JSON.stringify(restored.requests), /old (agent|child_wait|job)/);
 	restored.runtime.close();
 });
 
