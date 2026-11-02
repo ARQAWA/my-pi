@@ -43,6 +43,7 @@
       "./extensions/RQW-tool-ui/index.ts",
       "./extensions/RQW-blocks/index.ts",
       "./extensions/RQW-skill-dollar/index.ts",
+      "./extensions/RQW-todo/index.ts",
       "./extensions/RQW-history-edit/index.ts",
       "./extensions/RQW-dyslexia/index.ts",
       "./extensions/RQW-live-tail/index.ts",
