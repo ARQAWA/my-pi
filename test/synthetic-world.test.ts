@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import dgram from "node:dgram";
 import { readFileSync } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import { after, it } from "node:test";
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { guardProcess, patchedMembers } from "./synthetic/guard.ts";
-import { reportTimings, text, world } from "./synthetic/world.ts";
+import { networkRoutes, reportTimings, text, world } from "./synthetic/world.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -59,6 +62,28 @@ it("scenario settings override the setup profile without replacing later choices
 	const restarted = await w.restart();
 	assert.equal(restarted.settings.getTheme(), "RQW-theme");
 	assert.equal(restarted.settings.getHideThinkingBlock(), false);
+});
+
+it("routes fetch, https and ws without opening the network, including after restart", async (t) => {
+	const routes = networkRoutes();
+	routes.fetch((url) => url === "https://example.test/data", () => Promise.resolve(new Response("served")));
+	routes.https((options) => options.hostname === "example.test", () => "https answer");
+	routes.ws((options) => options.hostname === "example.test", () => "ws answer");
+	const w = await world(t, { routes });
+	assert.equal(await (await fetch("https://example.test/data")).text(), "served");
+	assert.equal(https.request({ hostname: "example.test" }) as unknown, "https answer");
+	assert.equal(https.request({ hostname: "example.test", headers: { Upgrade: "websocket" } }) as unknown, "ws answer");
+	assert.equal(http.request({ hostname: "example.test", headers: { Upgrade: "websocket" } }) as unknown, "ws answer");
+	assert.throws(() => http.request({ hostname: "example.test" }), /network blocked: http.request/);
+	assert.throws(() => dgram.createSocket("udp4"), /network blocked: dgram.createSocket/);
+	assert.throws(() => fetch("https://unrouted.test"), /network blocked: fetch/);
+	assert.throws(() => https.request({ hostname: "unrouted.test", headers: { Upgrade: "websocket" } }), /network blocked: https.request/);
+	assert.deepEqual(w.networkAttempts, ["http.request", "dgram.createSocket", "fetch", "https.request"]);
+
+	const restarted = await w.restart();
+	assert.equal(await (await fetch("https://example.test/data")).text(), "served");
+	assert.equal(https.request({ hostname: "example.test", headers: { Upgrade: "websocket" } }) as unknown, "ws answer");
+	assert.deepEqual(restarted.networkAttempts, []);
 });
 
 it("a second world patches Pi the same way, and the first one gave everything back", async (t) => {

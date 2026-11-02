@@ -1,5 +1,6 @@
 // Everything the synthetic world fences off and gives back: Pi prototypes, process environment, network, processes, exit.
 import childProcess from "node:child_process";
+import dgram from "node:dgram";
 import { EventEmitter } from "node:events";
 import http from "node:http";
 import https from "node:https";
@@ -118,20 +119,49 @@ export function guardProcess() {
 /** A process the scenario asked for was never faked, or a network call was never routed. */
 export class BlockedCall extends Error {}
 
-/** Records every attempt in `attempts` and throws, so a stray call fails the scenario instead of leaving the machine. The world's dispose gives the real functions back. */
-export function blockNetwork(t: TestContext, attempts: string[]): void {
+type NetworkHandler = (...args: any[]) => any;
+type NetworkMatch = (...args: any[]) => boolean;
+type NetworkRule = { match: NetworkMatch; answer: NetworkHandler };
+
+/** Routes can be prepared before world(), and are retained across restart. */
+export function networkRoutes() {
+	const rules: Record<"fetch" | "https" | "ws", NetworkRule[]> = { fetch: [], https: [], ws: [] };
+	return {
+		fetch(match: NetworkMatch, answer: NetworkHandler) { rules.fetch.push({ match, answer }); },
+		https(match: NetworkMatch, answer: NetworkHandler) { rules.https.push({ match, answer }); },
+		/** ws uses http.request or https.request for its WebSocket upgrade. */
+		ws(match: NetworkMatch, answer: NetworkHandler) { rules.ws.push({ match, answer }); },
+		find(kind: keyof typeof rules, args: any[]) { return rules[kind].find((rule) => rule.match(...args)); },
+	};
+}
+
+/** Unrouted calls are recorded and blocked. No route can reach the real network. */
+export function blockNetwork(t: TestContext, attempts: string[], routes: ReturnType<typeof networkRoutes>): void {
 	const block = (name: string) => () => {
 		attempts.push(name);
 		throw new BlockedCall(`synthetic world: network blocked: ${name}`);
 	};
-	t.mock.method(globalThis, "fetch", block("fetch"));
+	const fetchBlocked = block("fetch");
+	const request = (name: "http.request" | "https.request") => (...args: any[]) => {
+		const options = args.find((arg) => arg && typeof arg === "object" && arg.headers);
+		const headers = options?.headers ?? {};
+		const isUpgrade = Object.entries(headers).some(([key, value]) => key.toLowerCase() === "upgrade" && String(value).toLowerCase() === "websocket");
+		const rule = isUpgrade ? routes.find("ws", args) : name === "https.request" ? routes.find("https", args) : undefined;
+		return rule ? rule.answer(...args) : block(name)();
+	};
+	t.mock.method(globalThis, "fetch", ((...args: any[]) => {
+		const rule = routes.find("fetch", args);
+		return rule ? rule.answer(...args) : fetchBlocked();
+	}) as typeof fetch);
 	t.mock.method(globalThis, "WebSocket" as "fetch", block("WebSocket") as never);
-	t.mock.method(http, "request", block("http.request"));
+	t.mock.method(http, "request", request("http.request") as never);
 	t.mock.method(http, "get", block("http.get"));
-	t.mock.method(https, "request", block("https.request"));
+	t.mock.method(https, "request", request("https.request") as never);
 	t.mock.method(https, "get", block("https.get"));
 	t.mock.method(net.Socket.prototype, "connect", block("net.Socket.connect"));
 	t.mock.method(tls, "connect", block("tls.connect"));
+	t.mock.method(dgram, "createSocket", block("dgram.createSocket") as never);
+	for (const method of ["bind", "connect", "send"] as const) t.mock.method(dgram.Socket.prototype, method, block(`dgram.Socket.${method}`) as never);
 	syncBuiltinESMExports();
 }
 
