@@ -7751,3 +7751,10 @@ Introduced: `8413081c` (records exception), `a79812e4` (Spotty and Bossy selecti
 
 > - **Independent review** `[D-WORK-FINAL-CHECK]`. Every task except records gets one independent review, short for small tasks.
 >   Use `spotty` by default and `bossy` for an owner-requested high review.
+
+## A-0465 · archived 2026-11-02 · Compact tool display · old final condition source
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the settled-answer rule replaced the real-final condition.
+Introduced: `0fcab111`. Source: `733143f1:DECISIONS.md`, line 544. Verbatim replaced text:
+
+>   when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).

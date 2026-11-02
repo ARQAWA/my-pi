@@ -541,7 +541,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
   Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles; background work cannot hold the fold open. Old `rqw-tool-ui-final` marks remain readable, but no new marks are written.
   Owner: «они должны сворочиваться все в одну строку»
-  when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).
+  Source: `c27f7c49^:DECISIONS.md`, `[D-UI-WORKED-FOR]`.
   Coordinator note: the earlier real-final condition in this quote was replaced by the settled-answer rule above.
   Earlier real final answers, including questions, stay outside later folds; later tools and notifications never remove them.
   User messages no longer split spans. The closed fold lifts every owner user message, in order, above one dim
