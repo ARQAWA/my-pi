@@ -418,7 +418,7 @@ describe("RQW-suggestions context", () => {
 		assert.equal(last(h.forks[0].context).role, "user");
 	});
 
-	it("without a recorded request the saved branch is sent: the summary, the image and the tool result stay, an unanswered tool call is cut", async () => {
+	it("without a recorded request the saved branch is sent: the summary, the image and the tool result stay, an unanswered tool call goes as text", async () => {
 		const IMAGE = { type: "image", data: "aGk=", mimeType: "image/png" } as const;
 		const picture = { role: "user", content: [{ type: "text", text: "Look at this" }, IMAGE], timestamp: 2 } as Message;
 		const call = assistant([{ type: "toolCall", id: "c1", name: "read", arguments: { path: "a.ts" } }], "toolUse");
@@ -435,7 +435,7 @@ describe("RQW-suggestions context", () => {
 		assert.match(JSON.stringify(messages[1].content), /SUMMARY BODY/);
 		assert.deepEqual(messages.slice(2, -1), [picture, call, result, text("Done.")]);
 		assert.equal(last(h.provider[0].context).role, "user");
-		assert.equal(JSON.stringify(messages).includes("c2"), false);
+		assert.match(String(last(h.provider[0].context).content), /c2/);
 	});
 });
 

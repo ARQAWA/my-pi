@@ -89,6 +89,20 @@ it("Ctrl+E shows a gray suggestion from the served prompt, Tab turns it into tex
 	assert.deepEqual(w.errors, []);
 });
 
+it("a rejected Codex token shows a bright red error for five seconds while the hint remains", async (t) => {
+	const { w } = await chatWithAnswer(t);
+	(globalThis.fetch as unknown as { mock: { mockImplementation(impl: () => Promise<Response>): void } }).mock.mockImplementation(async () => new Response("", { status: 401 }));
+	w.press(keys.ctrlE);
+	await w.until(() => w.screen().join("\n").includes("Codex token expired"), "token error");
+	assert.ok(w.raw().some(line => line.includes("\x1b[1;91mCtrl+E failed")));
+	w.see("ctrl+e to suggest");
+	await w.tick(4999);
+	w.see("Codex token expired");
+	await w.tick(1);
+	w.notSee("Codex token expired");
+	w.see("ctrl+e to suggest");
+});
+
 it("Ctrl+E while the request runs cancels it: aborted status, no suggestion, the aborted state ends after 2000 ms", async (t) => {
 	const { w } = await chatWithAnswer(t);
 	const held = w.model.hold(isSuggestion);

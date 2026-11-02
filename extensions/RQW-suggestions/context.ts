@@ -1,7 +1,7 @@
 // What the suggestion request sends: the main chat's full context as the model last saw it, plus one instruction.
 // The mark is taken like /btw does: the last main request and what followed it, forked through the shared contract.
 import { normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type ModelsSimpleStreamOptions, type SystemMessage, type ThinkingLevel } from "@earendil-works/pi-ai";
-import { AgentSession, convertToLlm, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
+import { AgentSession, convertToLlm, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
 /** RQW-prompt's startup projection channel (literal, no import across folders). */
@@ -70,12 +70,12 @@ function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 
 const sameModel = (a: Model<Api>, b: Model<Api>) => a.provider === b.provider && a.id === b.id && a.api === b.api;
 
-/** No request may carry a tool call without its result: the messages end before the first unanswered call. */
-function settle(messages: Message[]): Message[] {
+/** Keep the valid prefix on the wire and describe any unfinished tail as text. */
+function settle(messages: Message[]): { kept: Message[]; tail: Message[] } {
 	const answered = new Set(messages.flatMap(message => message.role === "toolResult" ? [message.toolCallId] : []));
 	const index = messages.findIndex(message => message.role === "assistant" &&
 		message.content.some(part => part.type === "toolCall" && !answered.has(part.id)));
-	return index < 0 ? messages : messages.slice(0, index);
+	return index < 0 ? { kept: messages, tail: [] } : { kept: messages.slice(0, index), tail: messages.slice(index) };
 }
 
 /** The text blocks of one answer as the model's suggestion; undefined when it has none to show. */
@@ -139,7 +139,7 @@ export function installContext(pi: ExtensionAPI): SuggestionContext {
 		return { role: "system", content: prompt, toolsAdded: tools, timestamp: Date.now() };
 	}
 
-	function messagesOf(ctx: ExtensionContext, capture: Capture): Message[] {
+	function messagesOf(ctx: ExtensionContext, capture: Capture): { kept: Message[]; tail: Message[] } {
 		const { shot } = capture;
 		if (shot) return settle([...shot.messages, ...convertToLlm(shot.after)]);
 		const history = convertToLlm(ctx.sessionManager.buildSessionProjection().messages).filter(message => message.role !== "system");
@@ -202,8 +202,19 @@ export function installContext(pi: ExtensionAPI): SuggestionContext {
 			return { model, reasoning, shot };
 		},
 		async infer(ctx, capture, prompt, signal) {
-			const instruction: Message = { role: "user", content: `${prompt}\n${SCHEMA_RULE}\n${SILENCE_RULE}`, timestamp: Date.now() };
-			const messages = [...messagesOf(ctx, capture), instruction];
+			const { kept, tail } = messagesOf(ctx, capture);
+			const suffix = `\n${SCHEMA_RULE}\n${SILENCE_RULE}`;
+			const header = "\nLatest messages after the conversation above; tools may still be running:\n";
+			const budget = capture.model.contextWindow - DEFAULT_COMPACTION_SETTINGS.reserveTokens;
+			const tokens = (messages: Message[]) => messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+			const base: Message = { role: "user", content: `${prompt}${header}${suffix}`, timestamp: Date.now() };
+			const note = tail.length ? header : "";
+			const serialized = tail.length ? JSON.stringify(tail.map(item => ({ role: item.role, content: item.content }))) : "";
+			const room = Math.max(0, (budget - tokens(kept) - estimateTokens(base)) * 4);
+			const marker = "[earlier part cut] ";
+			const shown = serialized.length <= room ? serialized : room <= marker.length ? marker.slice(0, room) : marker + serialized.slice(-(room - marker.length));
+			const instruction: Message = { ...base, content: `${prompt}${note}${shown}${suffix}` };
+			const messages = [...kept, instruction];
 			const run = fork(capture, messages, signal);
 			if (run) return run();
 			const { model, reasoning } = capture;
