@@ -74,5 +74,9 @@
     "puppeteer-core": "25.16.0",
     "smol-toml": "1.9.1",
     "ws": "8.22.0"
+  },
+  "overrides": {
+    "undici": "8.12.3",
+    "minimatch": "11.0.4"
   }
 }
