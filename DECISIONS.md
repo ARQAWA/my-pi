@@ -1416,6 +1416,15 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   terminal PCLI created. Other terminals keep their own Ctrl+Enter. Owner: «По клавишам: да, все 4 части по порядку»
   (part 4: «В VS Code Ctrl+Enter сам до pi не доходит. Поэтому PCLI добавит эту клавишу сам.»).
   Carrier: `pcli-vscode/package.json` `contributes.keybindings`, `pcli-vscode/extension.js`; tests `pcli-vscode/test/keybinding.test.mjs`, `pcli-vscode/test/bundle.test.mjs`.
+- **Shell tab** `[D-PCLI-SHELL-TAB]`. `Pi CLI: New Shell Tab` (`pcli.shellTab`) opens an ordinary VS Code terminal running login
+  Git Bash, not a Pi-only pty, so `pi`, `pi config` and any arguments work when typed by hand. The same checks and
+  bundled my-pi registration as New Tab run first (`hasFile`, `selectPackage`). The terminal starts
+  `bash --login -i -c "exec bash --rcfile <globalStorage>/shell-rc.sh -i"`; the rcfile reads `~/.bashrc`, then unsets the
+  lowercase proxy names, exports New Tab's proxy variables and `PI_SKIP_VERSION_CHECK=1`, and puts the bundled `pi` folder on `PATH` through
+  `cygpath -u`. Proxy values (possible credentials) travel in the terminal `env` as `PCLI_<NAME>`, never in the file; `PI_CODING_AGENT_DIR`
+  is pinned to the folder the settings were written to. The tab joins the Ctrl+Enter context. Verified only by synthetic tests and a macOS bash
+  run with a stub `cygpath`; Git Bash on Windows and the VDI are not run here. Owner: «Мне надо на один сторипоинт сделать какое-то решение, которое пофиксит это раз навсегда, то есть чтобы мы могли, допустим, пиконфиг запускать, и чтобы мы могли запустить лучше, лучше идеально будет, если мы сможем запустить new tab не самого. пишки, а терминала, в котором мы запускаем пишку. Это будет даже лучше, чтобы я просто открыл таб и в нем сам запустил пишку руками своими.» (2026-11-03)
+  Carrier: `pcli-vscode/{package.json,extension.js}`; tests `pcli-vscode/test/shell-tab.test.mjs`. Since: PCLI 0.0.9.
 
 ## Anthropic subscription adapter
 
