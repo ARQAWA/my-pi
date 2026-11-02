@@ -18,7 +18,7 @@ const screenText = (w: World) => w.screen().join("\n");
 
 it("Esc Esc opens the list of messages; editing one cuts the history there and sends the new text", async (t) => {
 	const w = await world(t);
-	w.model.script(text("a1"), text("a2"), text("a3"));
+	w.model.script(text("reply one"), text("reply two"), text("reply three"));
 	await w.submit("first");
 	await w.submit("second");
 
@@ -29,20 +29,20 @@ it("Esc Esc opens the list of messages; editing one cuts the history there and s
 	await w.until(() => screenText(w).includes("Enter truncates history"), "the message is in the editor");
 	w.type(" edited");
 	w.press(keys.enter);
-	await w.until(() => conversation(w).some(([, content]) => content === "a3"), "the edited message got its answer");
+	await w.until(() => conversation(w).some(([, content]) => content === "reply three"), "the edited message got its answer");
 	await w.settle();
 
-	assert.deepEqual(conversation(w), [["user", "first"], ["assistant", "a1"], ["user", "second edited"], ["assistant", "a3"]]);
+	assert.deepEqual(conversation(w), [["user", "first"], ["assistant", "reply one"], ["user", "second edited"], ["assistant", "reply three"]]);
 	w.see("second edited");
-	w.see("a3");
-	w.notSee("a2");
+	w.see("reply three");
+	w.notSee("reply two");
 	const last = w.requests.filter((request) => request.background === undefined).at(-1)!;
-	assert.doesNotMatch(JSON.stringify(last.context.messages.filter((message) => message.role !== "system")), /a2/);
+	assert.doesNotMatch(JSON.stringify(last.context.messages.filter((message) => message.role !== "system")), /reply two/);
 });
 
 it("Esc cancels the edit and leaves the history as it was", async (t) => {
 	const w = await world(t);
-	w.model.script(text("a1"));
+	w.model.script(text("reply one"));
 	await w.submit("first");
 	const before = conversation(w);
 
