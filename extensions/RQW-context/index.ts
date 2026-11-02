@@ -6,10 +6,10 @@
 // Explicit selection settings and native compaction policy still win. No owners means stock Pi again.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AgentSession, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { AgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { type BackgroundSession, bindBackground, installBackground, maybeStart, ready, supersede } from "./background.ts";
 import { installHook, isHooked } from "./hooks.ts";
-import { compactSafeTail } from "./large-tail.ts";
+import { compactSafeTail, installManagerProjection } from "./large-tail.ts";
 
 export const MAX_WINDOW = 500_000;
 const VIRTUAL_MODEL_API = "pi-virtual";
@@ -127,13 +127,10 @@ function wrapPrepareRequest(agent: NativeAgent): void {
 	agent.prepareRequest = wrapped;
 }
 
-// Agent classes this module instance has already hooked; a reloaded instance hooks each class again with its own code.
-const hookedAgents = new WeakSet<object>();
-
 /** Use the session's actual Agent class: the CLI bundle has a different class from the library SDK. */
 function wrapAgentState(agent: NativeAgent): void {
 	const proto = Object.getPrototypeOf(agent) as NativeAgent;
-	if (hookedAgents.has(proto) || Object.hasOwn(proto, LEGACY_AGENT_HOOKS)) {
+	if (Object.hasOwn(proto, LEGACY_AGENT_HOOKS)) {
 		wrapPrepareRequest(agent);
 		return;
 	}
@@ -158,7 +155,6 @@ function wrapAgentState(agent: NativeAgent): void {
 		if (owned()) { live.capStateModel(this._state); live.wrapPrepareRequest(this); }
 		return original.apply(this, args);
 	});
-	hookedAgents.add(proto);
 	wrapPrepareRequest(agent);
 }
 
@@ -323,8 +319,10 @@ export default function context(pi: ExtensionAPI) {
 		installBackground(session, owned);
 	}
 	bindBackground((event, handler) => pi.on(event as "session_start", handler), pi.events);
+	pi.on("session_start", (_event, ctx) => installManagerProjection(ctx.sessionManager, owned));
 	const token = {};
 	(owners[OWNER] ??= new Set()).add(token);
+	installManagerProjection(SessionManager.inMemory(), owned);
 	// Removing only this factory's token preserves concurrent sessions and renewed runtimes.
 	pi.on("session_shutdown", () => {
 		owners[OWNER]?.delete(token);

@@ -1,32 +1,33 @@
 import assert from "node:assert/strict";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { createFauxCore } from "@earendil-works/pi-ai";
 import * as Pi from "@earendil-works/pi-coding-agent";
 import { harness } from "./harness.ts";
+import { saveContextHooks } from "./hooks-cleanup.ts";
+import { compactSafeTail, installManagerProjection } from "../../../extensions/RQW-context/large-tail.ts";
+import context from "../../../extensions/RQW-context/index.ts";
 
 const KEY = Symbol.for("rqw:safe-projection:v1");
 const shared = globalThis as Record<symbol, any>;
-const originalOffer = shared[KEY];
+let originalOffer: unknown;
 const cleanups: Array<() => Promise<void>> = [];
+const hookKey = Symbol.for("rqw-context/live-hooks");
+const names = ["buildSessionProjection", "buildContextEntries"] as const;
+let restoreHooks: () => void;
+beforeEach(() => {
+	originalOffer = shared[KEY];
+	restoreHooks = saveContextHooks();
+});
 afterEach(async () => {
-	for (const cleanup of cleanups.splice(0)) await cleanup();
-	if (originalOffer === undefined) delete shared[KEY]; else shared[KEY] = originalOffer;
+	try {
+		for (const cleanup of cleanups.splice(0)) await cleanup();
+	} finally {
+		restoreHooks();
+		if (originalOffer === undefined) delete shared[KEY]; else shared[KEY] = originalOffer;
+	}
 });
 
-// The other extension's offer is external to RQW-context. Pi's entry conversion stays real.
-function project(branch: any[]): any {
-	const at = branch.findLastIndex(entry => entry.type === "compaction");
-	const previous = branch[at];
-	const kept = branch.findIndex(entry => entry.id === previous.firstKeptEntryId);
-	const active = [previous, ...branch.slice(kept, at)];
-	for (let i = at + 1; i < branch.length; i++) active.push(branch[i]);
-	const entries = active.map(sourceEntry => ({ sourceEntry, messages: Pi.sessionEntryToContextMessages(sourceEntry) }));
-	return { entries, messages: entries.flatMap(entry => entry.messages), thinkingLevel: "off", model: null };
-}
-
-async function huge(extension?: (pi: any) => void) {
-	const h = await harness({}, extension);
-	cleanups.push(async () => { await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never); h.session.dispose(); });
-	const manager = h.manager as any;
+function addHugeTail(manager: any) {
 	const first = manager.appendMessage({ role: "user", content: "old ".repeat(300), timestamp: 1 });
 	manager.appendCompaction("old summary", first, 100);
 	for (let i = 0; i < 130_000; i++) {
@@ -38,12 +39,122 @@ async function huge(extension?: (pi: any) => void) {
 	manager.appendMessage({ role: "user", content: "middle ".repeat(300), timestamp: 2 });
 	manager.appendMessage({ role: "user", content: "new ".repeat(300), timestamp: 3 });
 	assert.throws(() => Pi.buildSessionProjection(manager.getBranch()), RangeError);
-	shared[KEY] = project;
-	manager.buildSessionProjection = () => project(manager.getBranch());
+}
+
+async function huge(extension?: (pi: any) => void) {
+	const h = await harness({}, extension);
+	cleanups.push(async () => { await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never); h.session.dispose(); });
+	addHugeTail(h.manager);
+	delete shared[KEY];
 	return h;
 }
 
 describe("RQW-context huge-tail compaction bypass", () => {
+	it("keeps stock compaction for an unsupported manager shape", () => {
+		let branchReads = 0;
+		class UnsupportedManager {
+			getEntries() { return []; }
+			getLeafId() { return null; }
+			getBranch() { branchReads++; return []; }
+			getEntry() {}
+			appendCompaction() {}
+			buildContextEntries() { return []; }
+			buildSessionProjection() { return { unexpected: true }; }
+		}
+		const manager = new UnsupportedManager();
+		const original = UnsupportedManager.prototype.buildSessionProjection;
+		installManagerProjection(manager, () => true);
+		assert.equal(UnsupportedManager.prototype.buildSessionProjection, original);
+		const session = { sessionManager: manager, agent: { hasQueuedMessages() { return false; } },
+			abort() {}, getContextUsage() {}, refreshContext() {}, _emit() {}, _emitSessionCompactFailed() {},
+			_resolveIdleWaitIfIdle() {}, _runDefaultCompaction() {} };
+		assert.equal(compactSafeTail(session, () => "stock", "manual", false), "stock");
+		assert.equal(branchReads, 0);
+	});
+
+	it("leaves both methods stock when the context-entry shape is unsupported", () => {
+		class UnsupportedEntries {
+			getEntries() { return []; }
+			getLeafId() { return null; }
+			buildSessionProjection() { return Pi.SessionManager.prototype.buildSessionProjection.call(this as never); }
+			buildContextEntries() { return []; }
+		}
+		const projection = UnsupportedEntries.prototype.buildSessionProjection;
+		const entries = UnsupportedEntries.prototype.buildContextEntries;
+		installManagerProjection(new UnsupportedEntries(), () => true);
+		assert.equal(UnsupportedEntries.prototype.buildSessionProjection, projection);
+		assert.equal(UnsupportedEntries.prototype.buildContextEntries, entries);
+	});
+
+	it("returns to stock projection when context is disabled", () => {
+		const manager = Pi.SessionManager.inMemory(process.cwd());
+		addHugeTail(manager);
+		let enabled = true;
+		installManagerProjection(manager, () => enabled);
+		assert.equal(manager.buildContextEntries().at(-1)?.id, manager.getLeafId());
+		assert.ok(manager.buildSessionProjection().messages.length > 0);
+		enabled = false;
+		assert.throws(() => manager.buildContextEntries(), RangeError);
+		assert.throws(() => manager.buildSessionProjection(), RangeError);
+	});
+
+	it("guards the bundled manager's projection and reload entries", async () => {
+		const bundled = await import(new URL("bundle/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+		const manager = bundled.SessionManager.inMemory(process.cwd());
+		const proto = Object.getPrototypeOf(manager);
+		const slots = (shared[hookKey] as WeakMap<object, Map<string, any>> | undefined)?.get(proto);
+		const original = names.map(name => ({ name, descriptor: Object.getOwnPropertyDescriptor(proto, name)!, slot: slots?.get(name), run: slots?.get(name)?.run }));
+		try {
+			addHugeTail(manager);
+			installManagerProjection(manager, () => true);
+			assert.equal(manager.buildContextEntries().at(-1)?.id, manager.getLeafId());
+			assert.ok(manager.buildSessionContext().messages.some((message: any) => message.role === "user" && String(message.content).includes("new")));
+		} finally {
+			const current = (shared[hookKey] as WeakMap<object, Map<string, any>> | undefined)?.get(proto);
+			for (const { name, descriptor, slot, run } of original) {
+				Object.defineProperty(proto, name, descriptor);
+				if (slot) { slot.run = run; current?.set(name, slot); }
+				else current?.delete(name);
+			}
+			if (!slots) (shared[hookKey] as WeakMap<object, Map<string, any>> | undefined)?.delete(proto);
+		}
+	});
+
+	it("resumes a large branch through the SDK before session_start", async () => {
+		const manager = Pi.SessionManager.inMemory(process.cwd());
+		addHugeTail(manager);
+		delete shared[KEY];
+		const core = createFauxCore({ provider: "faux", models: [{ id: "m", contextWindow: 4000, maxTokens: 1000 }] });
+		const model = core.getModel("m")!;
+		const settingsManager = Pi.SettingsManager.inMemory();
+		const resourceLoader = new Pi.DefaultResourceLoader({ cwd: process.cwd(), agentDir: process.cwd(), settingsManager,
+			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+			extensionFactories: [context] } as never);
+		await resourceLoader.reload();
+		const modelRuntime: any = { getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true,
+			getAuth: async () => ({ apiKey: "k" }), checkAuth: async () => ({}), isUsingOAuth: () => false,
+			getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [], streamSimple: core.streamSimple, getProviderHeaders: () => undefined };
+		const { session } = await Pi.createAgentSession({ cwd: process.cwd(), resourceLoader, settingsManager, modelRuntime,
+			sessionManager: manager, model: model as never, tools: [] });
+		cleanups.push(async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never); session.dispose(); });
+		assert.ok(session.state.messages.some((message: any) => message.role === "user" && String(message.content).includes("new")));
+	});
+
+	it("reload restores a large branch before session_start and still compacts it", async () => {
+		const h = await huge();
+		await h.session.bindExtensions({ onError: () => {} });
+		let restored = false;
+		await h.session.reload({ beforeSessionStart: () => {
+			const entries = h.manager.buildContextEntries();
+			assert.equal(entries.at(-1)?.id, h.manager.getLeafId());
+			restored = true;
+		} });
+		assert.ok(restored);
+		const result = await h.session.compact();
+		assert.match(result.summary, /SUMMARY/);
+		assert.equal(h.compactions().length, 2);
+	});
+
 	it("manual compaction saves a native entry and refreshes context through the normal session entry", async () => {
 		const h = await huge();
 		const result = await h.session.compact("keep the result");
@@ -108,19 +219,16 @@ describe("RQW-context huge-tail compaction bypass", () => {
 		});
 	}
 
-	for (const missing of ["offer", "session method"]) {
-		it(`falls back to native compaction without the ${missing}`, async () => {
-			const h = await huge();
-			const manager = h.manager as any;
-			if (missing === "offer") delete shared[KEY];
-			else manager.getEntry = undefined;
-			try {
-				await assert.rejects(h.session.compact(), RangeError);
-				assert.equal(h.summaries.length, 0);
-				assert.equal(h.compactions().length, 1);
-			} finally { if (missing === "session method") delete manager.getEntry; }
-		});
-	}
+	it("falls back to native compaction without a required session method", async () => {
+		const h = await huge();
+		const manager = h.manager as any;
+		manager.getEntry = undefined;
+		try {
+			await assert.rejects(h.session.compact(), RangeError);
+			assert.equal(h.summaries.length, 0);
+			assert.equal(h.compactions().length, 1);
+		} finally { delete manager.getEntry; }
+	});
 
 	it("manual cancellation aborts the generator without saving a compaction", async () => {
 		const h = await huge();

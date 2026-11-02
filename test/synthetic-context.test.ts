@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
 import { fail, reportTimings, text, world } from "./synthetic/world.ts";
+import { saveContextHooks } from "./extensions/RQW-context/hooks-cleanup.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -37,7 +38,10 @@ async function fillToBackground(w: World): Promise<void> {
 const backgroundStatus = (w: World) => w.events.filter((event) => event.channel === "rqw-context:background-compaction").map((event) => (event.data as { active: boolean }).active);
 
 it("from 65% of the window a summary runs in the background and at the threshold it is stored without a second request", async (t) => {
-	const w = await world(t);
+	const restore = saveContextHooks();
+	let w: World | undefined;
+	t.after(async () => { await w?.dispose(); restore(); });
+	w = await world(t);
 	w.model.when(isSummary, text("BACKGROUND SUMMARY"));
 	await fillToBackground(w);
 
@@ -56,7 +60,10 @@ it("from 65% of the window a summary runs in the background and at the threshold
 });
 
 it("a failed background summary is followed by an ordinary compaction at the threshold", async (t) => {
-	const w = await world(t);
+	const restore = saveContextHooks();
+	let w: World | undefined;
+	t.after(async () => { await w?.dispose(); restore(); });
+	w = await world(t);
 	w.model.when(isSummary, fail("summary failed"), text("FOREGROUND SUMMARY"));
 	await fillToBackground(w);
 

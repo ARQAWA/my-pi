@@ -2,12 +2,30 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import * as PiRoot from "@earendil-works/pi-coding-agent";
 import { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { installBackground, maybeStart, prepareSnapshot } from "../../../extensions/RQW-context/background.ts";
-import { harness, WINDOW } from "./harness.ts";
+import { harness as createHarness, WINDOW } from "./harness.ts";
+import { saveContextHooks } from "./hooks-cleanup.ts";
+
+let restoreHooks: () => void;
+beforeEach(() => { restoreHooks = saveContextHooks(); });
+const sessions: Array<Awaited<ReturnType<typeof createHarness>>> = [];
+async function harness(...args: Parameters<typeof createHarness>) {
+	const h = await createHarness(...args);
+	sessions.push(h);
+	return h;
+}
+afterEach(async () => {
+	try {
+		for (const h of sessions.splice(0)) {
+			await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never);
+			h.session.dispose();
+		}
+	} finally { restoreHooks(); }
+});
 
 // Test-only oracle: Pi's own pure preparation, which neither package build exports at its root.
 const { prepareCompaction } = await import(new URL("core/compaction/compaction.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href) as {

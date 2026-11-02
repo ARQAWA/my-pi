@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { after, describe, it } from "node:test";
+import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import context from "../../../extensions/RQW-context/index.ts";
 import { harness } from "./harness.ts";
+import { saveContextHooks } from "./hooks-cleanup.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = join(here, "../../../extensions/RQW-context");
 const copies: string[] = [];
 const shutdowns: Array<() => void> = [];
+let restoreHooks: () => void;
+beforeEach(() => { restoreHooks = saveContextHooks(); });
+afterEach(() => { restoreHooks(); });
 after(() => {
 	for (const stop of shutdowns) stop();
 	for (const dir of copies) rmSync(dir, { recursive: true, force: true });
@@ -49,9 +53,15 @@ const bigModel = { provider: "faux", id: "big", api: "test", contextWindow: 1_00
 
 describe("RQW-context /reload", () => {
 	it("applies the reloaded module's patches to a running session, and a later reload replaces them again", async t => {
-		// Whatever happens, the original module is the newest again at the end: later tests see the hooks they expect.
-		t.after(() => { startInstance(context); delete counter[REQUESTS]; });
 		const h = await harness();
+		// Restore the original hooks and close every owner before another test file runs.
+		t.after(async () => {
+			startInstance(context);
+			delete counter[REQUESTS];
+			await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never);
+			h.session.dispose();
+			for (const stop of shutdowns.splice(0)) stop();
+		});
 		const reserve = () => h.session.settingsManager.getCompactionSettings(bigModel as never).reserveTokens;
 		// The running session's own agent state was capped by the first module; it reads the newest module's cap.
 		const state = h.session.agent.state as { model: { contextWindow: number } };

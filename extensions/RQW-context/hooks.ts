@@ -2,7 +2,7 @@
 // Pi keeps the patched classes across /reload, but loads the extension module again. The first instance installs a
 // permanent forwarding slot; every later instance only replaces what the slot runs, built over the same Pi original.
 // Without an owner the wrappers pass through to Pi's own code.
-type Slot = { original: Function; run: Function };
+type Slot = { original: Function; run: Function; forward?: Function };
 const LIVE = Symbol.for("rqw-context/live-hooks");
 const registry = globalThis as { [LIVE]?: WeakMap<object, Map<string, Slot>> };
 
@@ -25,12 +25,17 @@ export function installHook(target: object, name: string, kind: "value" | "get",
 	const known = slots.get(name);
 	if (known) {
 		known.run = make(known.original);
+		const descriptor = Object.getOwnPropertyDescriptor(target, name);
+		if (descriptor?.[kind] === known.original && known.forward) {
+			Object.defineProperty(target, name, { ...descriptor, [kind]: known.forward });
+		}
 		return;
 	}
 	const descriptor = Object.getOwnPropertyDescriptor(target, name)!;
 	const original = descriptor[kind] as Function;
 	const slot: Slot = { original, run: make(original) };
 	const forward = function (this: unknown, ...args: unknown[]) { return slot.run.apply(this, args); };
+	slot.forward = forward;
 	Object.defineProperty(forward, "length", { value: original.length });
 	slots.set(name, slot);
 	Object.defineProperty(target, name, { ...descriptor, [kind]: forward });
