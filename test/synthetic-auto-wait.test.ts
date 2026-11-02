@@ -86,27 +86,55 @@ it("a child that finishes while the chat is idle wakes it once", async (t) => {
 	assert.equal(wakeRequests(w).length, 1);
 });
 
-it("a result that is ready exactly when Pi reloads starts no wake request after the reload", async (t) => {
+/** `other` is an earlier saved session of the same chat folder, the switch's destination. */
+const SHUTDOWNS: [string, (w: World, other: string) => Promise<unknown>][] = [
+	["reloads", (w) => w.session.reload()],
+	["starts a new session", (w) => w.runtime.newSession()],
+	["switches to another session", (w, other) => w.runtime.switchSession(other)],
+];
+
+for (const [name, shutdown] of SHUTDOWNS) it(`a result that is ready exactly when Pi ${name} starts no wake request afterwards`, async (t) => {
 	const w = await world(t);
+	w.model.script(text("first chat"));
+	await w.submit("first");
+	const other = w.sessionFile!;
+	await w.runtime.newSession();
 	w.model.when(isTask("count files"), text("3"));
 	const afterStart = w.model.hold((request) => request.background === undefined && !isTask("count files")(request) && request.context.messages.some((message) => message.role === "toolResult"));
 	w.model.script(call("agent", { action: "start", task: "count files", title: "Count" }, "c1"), text("child said 3"));
-	// The reload begins in the same tick in which the wake message is handed to the session.
-	let reloaded: Promise<void> | undefined;
+	// The shutdown begins in the same tick in which the wake message is handed to the session.
+	let shutDown: Promise<unknown> | undefined;
 	const send = w.session.sendCustomMessage.bind(w.session);
 	t.mock.method(w.session, "sendCustomMessage", (message: { customType?: string }, options?: object) => {
 		const started = send(message as never, options as never);
-		if (message.customType === RESULTS) reloaded ??= w.session.reload();
+		if (message.customType === RESULTS) shutDown ??= shutdown(w, other);
 		return started;
 	});
 	w.type("go");
 	w.press(keys.enter);
 	await w.until(() => afterStart.arrived && resultStored(w), "the child's result is stored");
 	afterStart.reply(text("started"));
-	await w.until(() => reloaded !== undefined, "the wake message is sent");
-	await reloaded;
+	await w.until(() => shutDown !== undefined, "the wake message is sent");
+	const outcome = (await shutDown) as { cancelled?: boolean } | undefined;
 	await w.settle();
 
+	assert.notEqual(outcome?.cancelled, true, "the shutdown ran");
+	if (name.startsWith("switches")) assert.equal(w.sessionFile, other, "the destination session is open");
 	assert.equal(wakeRequests(w).length, 0);
 	assert.deepEqual(w.model.unscripted, []);
+});
+
+it("after a reload the open wait card still draws", async (t) => {
+	const w = await world(t);
+	const child = w.model.hold(isTask("count files"));
+	w.model.script(call("agent", { action: "start", task: "count files", title: "Count" }, "c1"), text("started"));
+	await w.submit("go");
+	await w.until(() => child.arrived, "the child's request");
+	w.see("wait 1 агент");
+
+	await w.session.reload();
+	await w.until(() => true, "the reload settles");
+
+	assert.deepEqual(w.errors, []);
+	w.see("agent#1 Count");
 });

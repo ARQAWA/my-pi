@@ -18,13 +18,19 @@ function status(reason: string) {
 export function waitCard(pi: ExtensionAPI) {
 	const phases = new Map<string, string>();
 	let current: { waitId: string; targets: string[]; titles: Record<string, string> } | undefined;
+	let outputPad = 1;
+	/** After /reload a card drawn before it still holds the old `pi`, which throws: the last known padding stays. */
+	function padding() {
+		try { outputPad = pi.getSettings().outputPad ?? 1; } catch { /* stale pi */ }
+		return outputPad;
+	}
 	const render: EntryRenderer<Entry> = (entry, _options, theme) => {
 		const data = entry.data;
 		if (data?.version !== 1 || data.phase !== "open" || !Array.isArray(data.targets) || typeof data.waitId !== "string") return undefined;
 		let key = "", rows: string[] = [];
 		return { invalidate() { key = ""; }, render(width) {
 			const phase = phases.get(data.waitId) ?? "interrupted";
-			const pad = pi.getSettings().outputPad ?? 1;
+			const pad = padding();
 			const next = JSON.stringify([width, phase, data.targets, data.titles, pad]);
 			if (key === next) return rows;
 			key = next;
