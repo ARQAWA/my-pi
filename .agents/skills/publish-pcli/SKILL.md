@@ -46,18 +46,17 @@ PCLI доставляй только через Visual Studio Marketplace. Не 
    расширения ещё нет, ответ пустой: это первая публикация.
 3. Подними `version` в `pcli-vscode/package.json` выше опубликованной
    (патч-версия, если не заказано другое): Marketplace не принимает повтор.
-4. Проверь, что workflow `pcli` зелёный на ветке, из которой публикуешь:
-   `gh run list --workflow pcli.yml --branch <ветка> --limit 1`. Если запуска
-   нет или он красный, запусти `gh workflow run pcli.yml --ref <ветка>`, дождись
-   результата и не публикуй при красном. Если менялся `extension.js`, выполни
-   ещё `node --check extension.js` из `pcli-vscode/`.
-5. `npx --yes @vscode/vsce@latest publish --target win32-x64 --skip-license --pat "$T"`
-   из `pcli-vscode/`. Перед упаковкой `vscode:prepublish` сам скачивает Pi 1.4.0
-   (`fetch-pi.mjs`) и проверяет его SHA256; VSIX получается около 44 МБ.
+4. Закоммить изменение версии и отправь коммит в ветку `pcli`. Дождись
+   зелёного результата workflow `pcli` для этого коммита. При красном результате
+   не публикуй. Если менялся `extension.js`, выполни ещё `node --check extension.js`
+   из `pcli-vscode/`.
+5. Скачай артефакт этого запуска: `gh run download <id> -n pcli-vsix -D <dir>`.
+   Найди в нём `pcli.vsix`: путь к файлу вложенный. Опубликуй именно этот файл,
+   без локальной сборки: `npx --yes @vscode/vsce@latest publish --packagePath <found path> --skip-license --pat "$T"`.
 6. Повтори запрос из шага 2: новая версия появилась. Marketplace проверяет пакет
    несколько минут, до этого версия может не отображаться.
 
 Версию Pi эта процедура не меняет: она закреплена в `fetch-pi.mjs`. Для другой
 версии правятся `VERSION`, `URL` и `SHA256` там и выпускается новый VSIX.
 
-Commit и push результата выполняй только по отдельной просьбе.
+Помимо отправки коммита версии в `pcli`, commit и push результата выполняй только по отдельной просьбе.
