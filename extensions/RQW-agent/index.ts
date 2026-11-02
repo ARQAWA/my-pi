@@ -23,7 +23,8 @@ import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { steeringWait } from "./steering-wait.ts";
-import { continueOnLength, continuedCuts } from "./length-continue.ts";
+import { continueOnLength, isContinuedCut } from "./length-continue.ts";
+import { installCutLine } from "./cut-line.ts";
 import { registerHerdrActivity } from "./herdr-state.ts";
 import { registerRunningCounts } from "./running-counts.ts";
 import { registerTerminalActivity } from "./terminal-progress.ts";
@@ -411,6 +412,8 @@ export default function agent(pi: ExtensionAPI) {
 function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
 	const coordinator = new Coordinator(pi, host?.send, (type, data) => pi.appendEntry(type, data));
 	continueOnLength(pi);
+	// The main screen only; a child has none.
+	if (top) pi.on("session_shutdown", installCutLine(isContinuedCut));
 	// Display details of delivered results, by run, until shutdown (see publishRun).
 	const displays = new Map<string, Display>();
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
@@ -1241,12 +1244,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				outputs.push({ text: `error: ${event.errorMessage}`, error: true });
 				lastPushed = 0;
 			}
-			// The turn end comes after the harness decided to continue a cut; only a cut it did not continue is an error.
-			if (event.type === "turn_end" && isAssistant(event.message) && event.message.stopReason === "length" && !continuedCuts.has(event.message)) {
-				a.activity.reportError("Response was truncated: the model reached its output token limit.");
-				outputs.push({ text: "error: Response was truncated: the model reached its output token limit.", error: true });
-				lastPushed++;
-			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
 			if (m.stopReason !== "toolUse") a.progress.invalidate();
@@ -1259,6 +1256,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			} else if (m.stopReason === "stop" || m.stopReason === "length") {
 				const text = textOf(m);
 				if (text) { outputs.push({ text }); lastPushed++; }
+				// Only a cut the harness did not continue is an error.
+				if (m.stopReason === "length" && !isContinuedCut(m)) {
+					a.activity.reportError("Response was truncated: the model reached its output token limit.");
+					outputs.push({ text: "error: Response was truncated: the model reached its output token limit.", error: true });
+					lastPushed++;
+				}
 			}
 		});
 		run.done = (async () => {

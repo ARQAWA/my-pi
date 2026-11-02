@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { AssistantMessage, AssistantMessageEvent, Usage } from "@earendil-works/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { deadlineTimer } from "./coordinator.ts";
+import { isContinuedCut } from "./length-continue.ts";
 
 export type AlertKind = "error" | "repetition" | "long_turn" | "schema_rejection_repeated";
 export type ActivityAlert = { kind: AlertKind; at: string; detail: string };
@@ -417,7 +418,7 @@ export class Activity {
 						const detail = event.message.errorMessage ?? "Unknown provider error";
 						this.lastError = fingerprint("error", detail);
 						this.alert("error", detail);
-					} else if (event.message.stopReason === "length") {
+					} else if (event.message.stopReason === "length" && !isContinuedCut(event.message)) {
 						this.reportError("Response was truncated: the model reached its output token limit.");
 					}
 					this.liveMessage = null;

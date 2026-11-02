@@ -4,13 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { createAgentSession, createEventBus, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, createAgentSession, createEventBus, DefaultResourceLoader, initTheme, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import agentExtension, { registerSessionRuntime } from "../../../extensions/RQW-agent/index.ts";
+import { installCutLine } from "../../../extensions/RQW-agent/cut-line.ts";
 import { LENGTH_CONTINUE_LIMIT, LENGTH_CONTINUE_TYPE } from "../../../extensions/RQW-agent/length-continue.ts";
 
 type Reply = ReturnType<typeof fauxAssistantMessage>;
 const cut = (text = "part"): Reply => fauxAssistantMessage(text, { stopReason: "length", timestamp: 1 });
 const done = (text = "done"): Reply => fauxAssistantMessage(text, { timestamp: 1 });
+const SIGNED = { type: "thinking" as const, thinking: "hmm", thinkingSignature: "sig" };
+const cutInThought = (): Reply => fauxAssistantMessage([{ type: "text", text: "part" }, SIGNED], { stopReason: "length", timestamp: 1 });
+const cutWithCall = (): Reply => fauxAssistantMessage([{ type: "text", text: "part" }, SIGNED, fauxToolCall("nope", {}, { id: "call-cut" })], { stopReason: "length", timestamp: 1 });
 const lookup = (): Reply => fauxAssistantMessage([fauxToolCall("nope", {}, { id: "call-1" })], { stopReason: "toolUse", timestamp: 1 });
 
 /** A faux provider that plays `replies` in order and records every request it gets. */
@@ -66,6 +70,7 @@ async function childRun(t: TestContext, replies: Reply[]) {
 			await execute({ action: "start", task });
 			return (await execute({ action: "wait", ids: ["agent#1"] })).details.results[0];
 		},
+		async alerts() { return (await execute({ action: "status", ids: ["agent#1"] })).details.statuses[0].alerts as { kind: string }[]; },
 		send: async (id: string, task: string) => { await execute({ action: "send", id, task }); return (await execute({ action: "wait", ids: [id] })).details.results[0]; },
 	};
 }
@@ -79,6 +84,7 @@ test("a child cut by the output limit continues once and finishes", async t => {
 	assert.match(result.text, /part/);
 	assert.match(result.text, /done/);
 	assert.doesNotMatch(result.text, /truncated/);
+	assert.deepEqual((await child.alerts()).filter(alert => alert.kind === "error"), [], "a continued cut leaves no error record");
 });
 
 test("a child stops with the error after three cuts in a row", async t => {
@@ -88,6 +94,30 @@ test("a child stops with the error after three cuts in a row", async t => {
 	assert.equal(result.outcome, "error");
 	assert.match(result.text, /Response was truncated/);
 	assert.doesNotMatch(result.text, /never/);
+	assert.equal((await child.alerts()).filter(alert => alert.kind === "error").length, 1, "only the last cut is an error record");
+});
+
+test("a child whose third cut holds a tool call stops there instead of asking again", async t => {
+	const child = await childRun(t, [cut(), cut(), cutWithCall(), done("never")]);
+	const result = await child.run("write");
+	assert.equal(child.requests.length, LENGTH_CONTINUE_LIMIT);
+	assert.equal(result.outcome, "error");
+	assert.match(result.text, /Response was truncated/);
+	assert.doesNotMatch(result.text, /never/);
+});
+
+test("a cut that ends in a reasoning block is replayed without it", async t => {
+	const child = await childRun(t, [cutInThought(), done()]);
+	assert.equal((await child.run("write")).outcome, "completed");
+	const replayed = child.requests[1].messages.find((message: any) => message.role === "assistant");
+	assert.deepEqual(replayed.content.map((part: any) => part.type), ["text"]);
+});
+
+test("a cut whose reasoning is followed only by a blank text block is replayed without it", async t => {
+	const child = await childRun(t, [fauxAssistantMessage([{ type: "text", text: "part" }, SIGNED, { type: "text", text: " " }], { stopReason: "length", timestamp: 1 }), done()]);
+	assert.equal((await child.run("write")).outcome, "completed");
+	const replayed = child.requests[1].messages.find((message: any) => message.role === "assistant");
+	assert.deepEqual(replayed.content.map((part: any) => part.type), ["text"]);
 });
 
 test("a normal turn resets the count of cuts", async t => {
@@ -122,7 +152,17 @@ async function mainSession(t: TestContext, replies: Reply[]) {
 		await (session as any)._extensionRunner.emit({ type: "session_shutdown", reason: "shutdown" });
 		session.dispose();
 	});
-	return { session, requests: faux.requests };
+	return { session, requests: faux.requests, root };
+}
+
+/** Every assistant message drawn with Pi's own component at the moment the screen gets it, like the chat does. */
+function screen(session: any) {
+	initTheme();
+	const drawn: string[] = [];
+	session.subscribe((event: any) => {
+		if (event.type === "message_end" && event.message.role === "assistant") drawn.push(new AssistantMessageComponent(event.message).render(80).join("\n"));
+	});
+	return drawn;
 }
 
 test("the main chat continues after a cut with a hidden note and finishes", async t => {
@@ -145,4 +185,66 @@ test("the main chat stops after three cuts in a row and a new prompt starts the 
 	await main.session.prompt("again");
 	assert.equal(main.requests.length, 5);
 	assert.equal((main.session.messages.at(-1) as any).stopReason, "stop");
+});
+
+test("the main chat whose third cut holds a tool call stops there", async t => {
+	const main = await mainSession(t, [cut(), cut(), cutWithCall(), done("never")]);
+	await main.session.prompt("write");
+	assert.equal(main.requests.length, LENGTH_CONTINUE_LIMIT);
+	const last = main.session.messages.at(-1) as any;
+	assert.equal(last.stopReason, "length");
+	assert.deepEqual(last.content.map((part: any) => part.type), ["text"], "the dropped call leaves no orphaned reasoning");
+});
+
+test("a reopened chat draws a continued cut without the line and the last cut with it", async t => {
+	const main = await mainSession(t, [cut("one"), cut("two"), cut("three")]);
+	await main.session.prompt("write");
+	initTheme();
+	// What a reopened session reads back from its file.
+	const saved = (main.session.sessionManager.getBranch() as any[]).filter(entry => entry.type === "message" && entry.message.role === "assistant")
+		.map(entry => new AssistantMessageComponent(JSON.parse(JSON.stringify(entry.message))).render(80).join("\n"));
+	assert.equal(saved.length, 3);
+	assert.doesNotMatch(saved[0] + saved[1], /truncated/);
+	assert.match(saved[2], /Response was truncated before completion/);
+});
+
+test("the main screen hides the truncated line of a continued cut and keeps it on the last cut", async t => {
+	const proto = AssistantMessageComponent.prototype as any;
+	const stock = proto.updateContent;
+	const main = await mainSession(t, [cut("one"), cut("two"), cut("three")]);
+	const drawn = screen(main.session);
+	await main.session.prompt("write");
+	assert.equal(drawn.length, 3);
+	for (const text of drawn.slice(0, 2)) assert.doesNotMatch(text, /truncated/);
+	assert.match(drawn[0], /one/);
+	assert.match(drawn[2], /three/);
+	assert.match(drawn[2], /Response was truncated before completion/);
+	assert.notEqual(proto.updateContent, stock, "the patch is on while the extension lives");
+	await (main.session as any)._extensionRunner.emit({ type: "session_shutdown", reason: "shutdown" });
+	assert.equal(proto.updateContent, stock, "the patch is removed at shutdown");
+});
+
+test("the cut-line patch keeps the session's message for redraws and leaves other shapes alone", () => {
+	initTheme();
+	const proto = AssistantMessageComponent.prototype as any;
+	const stock = proto.updateContent;
+	const marked = new WeakSet<object>();
+	const undo = installCutLine(message => marked.has(message));
+	const message: any = { role: "assistant", content: [{ type: "text", text: "half" }], stopReason: "length", timestamp: 1 };
+	marked.add(message);
+	const component: any = new AssistantMessageComponent(message);
+	assert.equal(component.lastMessage, message);
+	assert.doesNotMatch(component.render(80).join("\n"), /truncated/);
+	component.invalidate();
+	assert.doesNotMatch(component.render(80).join("\n"), /truncated/);
+	assert.match(new AssistantMessageComponent({ ...message }).render(80).join("\n"), /truncated/, "an unmarked cut keeps the line");
+	undo();
+	assert.equal(proto.updateContent, stock);
+	const other = { updateContent() {} };
+	const original = other.updateContent;
+	installCutLine(() => true, other, "2.0.0")();
+	assert.equal(other.updateContent, original);
+	const missing = {};
+	installCutLine(() => true, missing)();
+	assert.deepEqual(missing, {});
 });
