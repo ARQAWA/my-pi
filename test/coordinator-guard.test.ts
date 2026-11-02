@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { createCoordinatorGuard } from "../.pi/extensions/coordinator-guard/index.ts";
+import { createCoordinatorGuard, promptSection } from "../.pi/extensions/coordinator-guard/index.ts";
 import { loadRules, parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
 import { Slots } from "../.pi/extensions/coordinator-guard/slots.ts";
 import { registerSessionRuntime } from "../extensions/RQW-agent/index.ts";
@@ -289,4 +289,11 @@ test("a bad slots entry is a rules error", () => {
 	const block = (slots: string) => '```json coordinator-rules\n{"agentModels":{"a":[["p/m","low"]]},"slots":' + slots + "}\n```";
 	assert.deepEqual(parseRules(block('{"p/m":2}')).slots, { "p/m": 2 });
 	for (const bad of ['{"p/m":0}', '{"p/m":1.5}', '{"m":1}', "[]"]) assert.throws(() => parseRules(block(bad)), /slots/);
+});
+
+test("the prompt says Main performs no action itself and works only with tasks, BACKLOG.md, context and subagents", () => {
+	const section = promptSection(loadRules(`${root}PROCESS.md`), "PROCESS.md");
+	assert.ok(section.includes("Main performs no action itself."));
+	assert.ok(section.includes("running commands, opening files for the owner and every other action go to a subagent"));
+	assert.ok(section.includes("Main works only with tasks, BACKLOG.md, its context and subagents."));
 });
