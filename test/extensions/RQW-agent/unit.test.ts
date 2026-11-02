@@ -17,7 +17,7 @@ import { type AutoSource, takeBackground, untilBackgroundChange } from "../../..
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
 import { createCountsProducer, type CountsOffer, type RunningCounts } from "../../../extensions/RQW-agent/counts.ts";
 import { fastGpt, inheritedFastGpt } from "../../../extensions/RQW-agent/fast-gpt.ts";
-import { createChildManager, openChildManager, recordDelivery, repairInterrupted, retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
+import { createChildManager, openChildManager, recordDelivery, repairInterrupted, retainedChildManager, savedHistoryMatches } from "../../../extensions/RQW-agent/persistence.ts";
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, PROGRESS_INTERVAL_MS, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
@@ -1956,6 +1956,64 @@ test("a running child's queued progress notice does not hold a finished sibling 
 	response.resolve(fauxAssistantMessage("done"));
 	await Promise.all(sessions.map(session => session.waitForIdle()));
 	live.runtime.close();
+});
+
+test("stop and idle release check child history without reopening any session file", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "sleeper", tools: [] });
+	await live.execute({ action: "start", task: "stopped", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
+	// A synchronous reopen of a long main session froze the UI for seconds.
+	const open = t.mock.method(SessionManager, "open");
+	await live.execute({ action: "stop", id: "agent#2" });
+	await until(() => !retainedChildManager(parent, "agent", 2));
+	now = 300000;
+	t.mock.timers.tick(300000);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(retainedChildManager(parent, "agent", 1), undefined);
+	assert.equal(open.mock.callCount(), 0);
+	live.runtime.close();
+});
+
+test("an idle child stays awake when the parent file no longer holds its record", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
+	await rm(parent.getSessionFile()!);
+	now = 300000;
+	t.mock.timers.tick(300000);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.ok(retainedChildManager(parent, "agent", 1));
+	live.runtime.close();
+});
+
+test("a child file matches only the exact saved history of its own session", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const child = createChildManager(parent, root, "agent", 1);
+	child.appendMessage({ role: "user", content: "task", timestamp: 1 });
+	child.appendMessage(fauxAssistantMessage("answer", { timestamp: 1 }));
+	const file = child.getSessionFile()!;
+	assert.equal(await savedHistoryMatches(parent, file, "agent", 1, child), true);
+	const other = createChildManager(parent, root, "agent", 2);
+	assert.equal(await savedHistoryMatches(parent, file, "agent", 1, other), false, "another session's history");
+	await writeFile(file, `${await readFile(file, "utf8")}${JSON.stringify({ type: "custom", id: "foreign", parentId: null, timestamp: "x", customType: "x" })}\n`);
+	assert.equal(await savedHistoryMatches(parent, file, "agent", 1, child), false, "a line the history lacks");
 });
 
 test("stop releases only recoverable durable child history and preserves older branches", async t => {

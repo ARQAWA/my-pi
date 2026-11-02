@@ -1,6 +1,5 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { createHash, randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
@@ -37,7 +36,7 @@ import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProduce
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type AcceptRecord, type RuntimeHandle, deadlineTimer, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
 import { continueNote, repairRequest } from "./history-repair.ts";
-import { ACCEPT_ENTRY, BASE_ENTRY, CHILD_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, releaseChildManager, repairInterrupted } from "./persistence.ts";
+import { ACCEPT_ENTRY, BASE_ENTRY, CHILD_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, releaseChildManager, parentHoldsEntry, repairInterrupted, savedHistoryMatches } from "./persistence.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 /** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
@@ -722,13 +721,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				...(data.config.profile ? { profile: data.config.profile } : {}) }) });
 	}
 
-	function sleep(a: Agent) {
+	/** A finished, delivered child idle for five minutes whose live session may be released. */
+	function canSleep(a: Agent): boolean {
 		if (agents.get(a.id) !== a || a.idleSince === undefined || performance.now() - a.idleSince < 300000
 			|| a.state !== "completed" || !a.result || a.run || a.next?.length || a.activity.isRunning()
 			|| a.session.agent.state.isStreaming || a.session.agent.hasQueuedMessages()
 			|| a.session.getSteeringMessages().length || a.session.getFollowUpMessages().length
 			|| a.bridge.pending() || a.children?.pending() || a.children?.runningCounts().agents || a.jobs?.hasJobs?.()
-			|| coordinator.undelivered(`${name}#${a.id}`)) return;
+			|| coordinator.undelivered(`${name}#${a.id}`)) return false;
 		// A queued Pi message is not durable delivery yet. Wait for its actual branch entry.
 		const delivered = main?.sessionManager.getBranch().some(entry => {
 			const details = (entry.type === "custom_message" ? entry.details
@@ -736,19 +736,27 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				{ run?: string; results?: { run?: string }[] } | undefined;
 			return details?.run === a.result!.run || (Array.isArray(details?.results) && details.results.some(result => result?.run === a.result!.run));
 		});
-		if (!delivered && !coordinator.committed(`${name}#${a.id}`, a.result.run)) return;
+		return delivered || coordinator.committed(`${name}#${a.id}`, a.result.run);
+	}
+
+	async function sleep(a: Agent) {
+		if (!canSleep(a)) return;
 		const parentFile = main?.sessionManager.getSessionFile();
 		const childFile = a.session.sessionManager.getSessionFile();
 		if (!parentFile || !childFile || !main) return;
+		// Both files are checked without blocking: a synchronous reopen of a long main session froze the UI for seconds.
 		const data = persist(a);
-		try {
-			const durable = SessionManager.open(parentFile).getBranch().findLast(entry => entry.type === "custom" && entry.customType === CHILD_ENTRY
-				&& (entry.data as SavedChild)?.id === a.id) as { data?: SavedChild } | undefined;
-			if (durable?.data?.epoch !== a.epoch || durable.data.state !== "completed" || durable.data.sessionFile !== childFile) return;
-			const manager = openChildManager(main.sessionManager, childFile, a.config.cwd ?? main.cwd, name, a.id);
-			if (manager.getSessionId() !== a.session.sessionManager.getSessionId()
-				|| !manager.buildSessionProjection().messages.some(message => message.role !== "system")) return;
-		} catch { return; }
+		const record = main.sessionManager.getLeafEntry();
+		if (record?.type !== "custom" || record.customType !== CHILD_ENTRY || (record.data as SavedChild | undefined)?.id !== a.id) return;
+		const manager = a.session.sessionManager;
+		if (!manager.buildSessionProjection().messages.some(message => message.role !== "system")) return;
+		const [parentSaved, childSaved] = await Promise.all([
+			parentHoldsEntry(main.sessionManager, record),
+			savedHistoryMatches(main.sessionManager, childFile, name, a.id, manager),
+		]);
+		if (!parentSaved || !childSaved) return;
+		// The check yielded; a send or wake in the meantime keeps the child awake.
+		if (!canSleep(a)) return;
 		agents.delete(a.id);
 		saveSlot(data);
 		releaseChildManager(main.sessionManager, name, a.id);
@@ -1756,15 +1764,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				agents.delete(a.id);
 				onRunning();
 				coordinator.change(`${name}#${a.id}`, "stop");
-				close(a, false, () => {
+				close(a, false, async () => {
 					const manager = a.session.sessionManager;
 					const file = manager.getSessionFile();
-					if (!file || !ctx.sessionManager.getSessionFile() || retainedChildManager(ctx.sessionManager, name, a.id) !== manager) return;
-					try {
-						const saved = openChildManager(ctx.sessionManager, file, a.config.cwd ?? ctx.cwd, name, a.id, false);
-						if (saved.getSessionId() === manager.getSessionId() && isDeepStrictEqual(saved.getEntries(), manager.getEntries()))
-							releaseChildManager(ctx.sessionManager, name, a.id);
-					} catch { /* Keep the manager when its history cannot be reopened. */ }
+					const retained = () => retainedChildManager(ctx.sessionManager, name, a.id) === manager;
+					if (!file || !ctx.sessionManager.getSessionFile() || !retained()) return;
+					// Keep the manager when its history cannot be reopened; a restart during the check owns the slot.
+					if (await savedHistoryMatches(ctx.sessionManager, file, name, a.id, manager) && retained())
+						releaseChildManager(ctx.sessionManager, name, a.id);
 				});
 				return ok(`${name}#${a.id} stopped`);
 			}

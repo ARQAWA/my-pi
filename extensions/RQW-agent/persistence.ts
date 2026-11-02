@@ -1,5 +1,7 @@
 import { appendFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { open, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { continueNote, repairRequest } from "./history-repair.ts";
 import {
 	SessionManager,
@@ -94,7 +96,8 @@ export function createChildManager(parent: ReadonlySessionManager, cwd: string, 
 	return retainChild(parent, kind, id, SessionManager.open(file, directory, cwd));
 }
 
-export function openChildManager(parent: ReadonlySessionManager, childFile: string, cwd: string, kind: string, id: number, retain = true): SessionManager {
+/** The resolved child file after the ownership checks; throws when it is not a regular file of its owned directory. */
+function checkChildFile(parent: ReadonlySessionManager, childFile: string, kind: string, id: number): { directory: string; file: string } {
 	const directory = childDirectory(parent, kind, id);
 	if (!directory) throw new Error("Cannot open a durable child of an in-memory parent");
 	const file = resolve(childFile);
@@ -111,8 +114,83 @@ export function openChildManager(parent: ReadonlySessionManager, childFile: stri
 	if (!lstatSync(directory).isDirectory() || !lstatSync(file).isFile()) {
 		throw new Error("Child session must be a regular file in its owned directory");
 	}
+	return { directory, file };
+}
+
+export function openChildManager(parent: ReadonlySessionManager, childFile: string, cwd: string, kind: string, id: number, retain = true): SessionManager {
+	const { directory, file } = checkChildFile(parent, childFile, kind, id);
 	const manager = SessionManager.open(file, directory, cwd);
 	return retain ? retainChild(parent, kind, id, manager) : manager;
+}
+
+/** Bytes read from the end of the parent file; a record appended just now lies inside them. */
+const PARENT_TAIL_BYTES = 4 * 1024 * 1024;
+/** The header line is far shorter. */
+const HEADER_BYTES = 64 * 1024;
+
+/**
+ * Whether the parent file still starts with its own session header and holds `entry` as a saved line near its end.
+ * Only both ends are read, asynchronously: a full reopen of a long main session froze the UI for seconds.
+ */
+export async function parentHoldsEntry(parent: ReadonlySessionManager, entry: SessionEntry): Promise<boolean> {
+	const path = parent.getSessionFile();
+	if (!path) return false;
+	const handle = await open(path, "r").catch(() => undefined);
+	if (!handle) return false;
+	try {
+		const { size } = await handle.stat();
+		const head = Buffer.alloc(Math.min(size, HEADER_BYTES));
+		await handle.read(head, 0, head.length, 0);
+		const newline = head.indexOf(10);
+		const header = JSON.parse(head.toString("utf8", 0, newline < 0 ? head.length : newline));
+		if (header.type !== "session" || header.id !== parent.getSessionId()) return false;
+		const line = `\n${JSON.stringify(entry)}\n`;
+		const tail = Buffer.alloc(Math.min(size, Math.max(PARENT_TAIL_BYTES, Buffer.byteLength(line))));
+		await handle.read(tail, 0, tail.length, size - tail.length);
+		return tail.includes(line);
+	} catch {
+		return false;
+	} finally {
+		await handle.close();
+	}
+}
+
+/** One synchronous slice plus its last line stays under a frame, so the UI keeps drawing while a large file is checked. */
+const SLICE_MS = 4;
+
+/**
+ * Whether the child's file holds exactly the history of `manager`, so the manager can be released and reopened later.
+ * Pi writes every entry as one `JSON.stringify` line. Reads and compares in slices that yield to the event loop: a child file can be hundreds of megabytes, and a
+ * synchronous reopen froze the UI for seconds. Any unreadable, foreign or different file answers false.
+ */
+export async function savedHistoryMatches(parent: ReadonlySessionManager, childFile: string, kind: string, id: number, manager: SessionManager): Promise<boolean> {
+	try {
+		const { file } = checkChildFile(parent, childFile, kind, id);
+		const bytes = await readFile(file);
+		const entries = manager.getEntries();
+		let start = 0;
+		let index = -1; // the header line comes first
+		let slice = performance.now();
+		while (start < bytes.length) {
+			const newline = bytes.indexOf(10, start);
+			const end = newline < 0 ? bytes.length : newline;
+			const line = bytes.toString("utf8", start, end).trim();
+			start = end + 1;
+			if (!line) continue;
+			if (index < 0) {
+				const header = JSON.parse(line);
+				if (header.type !== "session" || header.id !== manager.getSessionId()) return false;
+			} else if (index >= entries.length || line !== JSON.stringify(entries[index])) return false;
+			index++;
+			if (performance.now() - slice > SLICE_MS) {
+				await nextTurn();
+				slice = performance.now();
+			}
+		}
+		return index === entries.length;
+	} catch {
+		return false;
+	}
 }
 
 export function repairInterrupted(session: AgentSession): boolean {
