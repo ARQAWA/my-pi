@@ -337,6 +337,17 @@ it("CXC survives a cache file written by a release that does not know credits", 
 	assert.ok(shown().includes("CXC 25  CX 77%"));
 });
 
+it("a failed first request after the update keeps the last percent of the old cache file with a star", async (t) => {
+	const cache = setup(t);
+	cache.response.status = 429;
+	mkdirSync(cache.cacheDir);
+	writeFileSync(cache.file("CX", "first", "CX"), JSON.stringify({ percent: 77, okAt: Date.now() - MINUTE, checkedAt: Date.now() - 10 * MINUTE }));
+	const shown = await cache.openTab();
+	await until(() => cache.reads.CX === 1 && cache.idle());
+	await until(() => shown().includes("CX *77%"));
+	assert.doesNotMatch(shown(), /CX \?\?\?/);
+});
+
 it("CXC follows the Codex login and is hidden without it", async (t) => {
 	const cache = setup(t);
 	cache.response.credits = { has_credits: true, unlimited: false, balance: "25" };
