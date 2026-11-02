@@ -2,7 +2,7 @@
 
 Append-only record of superseded and obsolete entries removed from [DECISIONS.md](DECISIONS.md). Current rules are
 in `DECISIONS.md`; this file is only for checking history. Each block is the text exactly as it was in
-`DECISIONS.md` at `30952e6`, with `> ` added at the start of each line. Do not edit a block after it is added.
+`DECISIONS.md` at `30952e6`, with `> ` added at the start of each line. Do not edit a block after it is added, except the owner-ordered clean-up of 2026-11-02 (`[D-WORK-NO-REMOVED-WORD]` in `DECISIONS.md`: owner «1»).
 
 ## A-0001 · archived 2026-10-23 · Work policy · Old development worker models (Sonnet medium/high/xhigh, Opus low only)
 
@@ -6148,11 +6148,11 @@ Replacement: repo-code-index second delivery; commit provenance:
 >   Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
 >   detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
 
-## Kimi model order and provider visibility - superseded 2026-10-25
+## Model order and provider visibility - superseded 2026-10-25
 
-Replaced by `[D-MODELS-KIMI]` and updated `[D-MODELS-ORDER]` / `[D-PROVIDERS-ALLOW]`.
+Replaced by a later decision and updated `[D-MODELS-ORDER]` / `[D-PROVIDERS-ALLOW]`.
 Verbatim superseded clauses from `61b81a3:DECISIONS.md`; replacement commit:
-`git log -S'D-MODELS-KIMI' -- DECISIONS.md`.
+the commit that replaced it in `DECISIONS.md`.
 
 > - **Model order and availability** `[D-MODELS-ORDER]`. `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
 >   `gpt-6.1-sol`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first.
@@ -6246,7 +6246,7 @@ Replacement: anthropic-model-ban delivery; commit provenance:
 
 ## Automatic naming model chain - superseded 2026-10-25
 
-Replaced by the owner's Kimi K2.8 Preview low direction in `[D-UI-NAMING]`.
+Replaced by the owner's later low-effort direction in `[D-UI-NAMING]`.
 Verbatim superseded clause from `99f69e5:DECISIONS.md`; replacement commit:
 `git log -S'Owner correction' -- DECISIONS.md`.
 
@@ -6424,7 +6424,7 @@ Verbatim text as it was in DECISIONS.md at `1633d50`:
 >   Owner (`16-27-59:7665`, entry `29908fc1`, 2026-10-25):
 >   «Возобнови полный запрет использования антропиков»
 >   Reason: restore the owner's full model prohibition, superseding the later Haiku allowance and the
->   Anthropic/GPT balance rule. Earlier separately owner-ordered Kimi benchmark work remains historical evidence,
+>   Anthropic/GPT balance rule. Earlier separately owner-ordered benchmark work remains historical evidence,
 >   not new model permission. This is model-use policy for Main and subagents, not a ban on Anthropic transport or
 >   subscription quota implementation, auth, provider visibility or product model settings.
 >   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
@@ -6433,12 +6433,12 @@ Verbatim text as it was in DECISIONS.md at `1633d50`:
 ## A-0362 · archived 2026-10-25 · Development executor models · D-WORK-MODELS
 
 Status: SUPERSEDED in executor selection and rotation by `[D-WORK-MODELS]` (DECISIONS.md#work-policy); Anthropic ban retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `967769a`.
+Superseded and archived by: the executors-only process squash. Source commit: `967769a`.
 Verbatim text as it was in DECISIONS.md at `967769a`:
 
 > - **Development executor models** `[D-WORK-MODELS]`. Future executor starts and restarts repeat two
->   `kimi-coding/k3.1-pro` assignments, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
->   either model; hardest work uses Kimi high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
+>   assignments of the other model, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
+>   either model; hardest work uses that model high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
 >   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
 >   The sequence is across assignments, not three simultaneous tasks; [D-WORK-PARALLEL]'s two-main-task cap stays.
 >   Main carries its next position and last counted assignment in the existing operational task-list decision context
@@ -6448,9 +6448,9 @@ Verbatim text as it was in DECISIONS.md at `967769a`:
 >   and do not consume the executor sequence. Recursive delegation and reviewer lifecycle stay unchanged; no new
 >   nested non-review helper restriction is added.
 >   Owner (`16-27-59:10630`, entry `6bb24615`, 2026-10-25):
->   «Пожалуйста в будущих задачах используй Kimi K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 кими к 1 гпт.»
+>   «Пожалуйста в будущих задачах используй [удалено по просьбе владельца] K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 [удалено по просьбе владельца] к 1 гпт.»
 >   Owner (`16-27-59:10759`, entry `8e9d2b57`, 2026-10-25):
->   «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с Kimi. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
+>   «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с [удалено по просьбе владельца]. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
 >   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
 >   The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
 >   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
@@ -6463,7 +6463,7 @@ Verbatim text as it was in DECISIONS.md at `967769a`:
 ## A-0363 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL
 
 Status: SUPERSEDED in numeric cap and test-lane exception by `[D-WORK-PARALLEL]` and `[D-PIPELINE-SINGLE-QUEUE]`; queue priority and the HTML-artifact exception are retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Superseded and archived by: the executors-only process squash. Source commit: `4c66755`.
 Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 
 > - **Two active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most two main tasks
@@ -6485,7 +6485,7 @@ Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 ## A-0364 · archived 2026-10-25 · Active-execution slots · D-PIPELINE-SLOTS
 
 Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]`; waiting and resume rules are retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Superseded and archived by: the executors-only process squash. Source commit: `4c66755`.
 Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 
 > - **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the two main slots under [D-WORK-PARALLEL]. A task
@@ -6505,7 +6505,7 @@ Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 ## A-0365 · archived 2026-10-25 · Separate test lane · D-PIPELINE-TEST-LANE
 
 Status: SUPERSEDED by `[D-PIPELINE-SINGLE-QUEUE]`; test purpose, triage and evidence rules are retained.
-Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Superseded and archived by: the executors-only process squash. Source commit: `4c66755`.
 Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 
 > - **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
