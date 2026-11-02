@@ -153,17 +153,17 @@ test("a child resumed after a reload that starts a new job stays open until that
 	const second = w.load();
 	const source = await adoptSource(second.pi, second.hooks, w.ctx);
 	await second.emit("before_agent_start", { systemPromptOptions: { selectedTools: [], hiddenTools: [], sections: {}, skills: [] } });
-	let answer: any;
-	void takeFrom(source, () => {}).then(result => { answer = result; });
+	const answer: Awaited<ReturnType<typeof takeFrom>>[] = [];
+	void takeFrom(source, () => {}).then(result => { answer.push(result); });
 	await w.fake.started(2);
 	t.mock.timers.tick(12_000);
 	await until(() => w.requests.some(request => JSON.stringify(request.messages).includes("started the new job") || request.messages.filter((m: any) => m.role === "toolResult").length === 2));
 	for (let i = 0; i < 40; i++) await new Promise(resolve => setImmediate(resolve));
-	assert.equal(answer, undefined, "the running job keeps the child's run open");
+	assert.equal(answer.length, 0, "the running job keeps the child's run open");
 	const job = w.processes.at(-1);
 	job.stdout.end(); job.stderr.end(); job.emit("close", 1);
-	await until(() => answer !== undefined);
-	assert.match(answer.details.results[0].text, /^job finished/);
+	await until(() => answer.length > 0);
+	assert.match(answer[0].details.results[0].text, /^job finished/);
 	await second.emit("session_shutdown", { reason: "shutdown" });
 });
 
@@ -177,14 +177,14 @@ test("a child started after a reload waits for its job and the parent gets the f
 	await w.fake.started();
 	t.mock.timers.tick(12_000);
 	await until(() => w.requests.length === 2);
-	let answer: any;
-	void takeFrom(source, () => {}).then(result => { answer = result; });
+	const answer: Awaited<ReturnType<typeof takeFrom>>[] = [];
+	void takeFrom(source, () => {}).then(result => { answer.push(result); });
 	for (let i = 0; i < 40; i++) await new Promise(resolve => setImmediate(resolve));
-	assert.equal(answer, undefined, "the running job keeps the child's run open");
+	assert.equal(answer.length, 0, "the running job keeps the child's run open");
 	const job = w.processes.at(-1);
 	job.stdout.end(); job.stderr.end(); job.emit("close", 1);
-	await until(() => answer !== undefined);
-	assert.match(answer.details.results[0].text, /^job finished/);
+	await until(() => answer.length > 0);
+	assert.match(answer[0].details.results[0].text, /^job finished/);
 	await second.emit("session_shutdown", { reason: "shutdown" });
 });
 
