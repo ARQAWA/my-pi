@@ -26,7 +26,8 @@ function checkImports(base: string, input: Manifest): void {
 	const visit = (file: string) => {
 		if (seen.has(file)) return;
 		seen.add(file);
-		const source = parseSync(file, readFileSync(file, "utf8"), { astType: "js" });
+		const text = readFileSync(file, "utf8");
+		const source = parseSync(file, text, { astType: "js" });
 		assert.deepEqual(source.errors, [], `parse ${file}`);
 		const check = (specifier: string) => {
 			if (specifier.startsWith(".")) { visit(resolve(dirname(file), specifier)); return; }
@@ -36,6 +37,15 @@ function checkImports(base: string, input: Manifest): void {
 		};
 		const walk = (node: any): void => {
 			if (!node || typeof node !== "object") return;
+			if (node.type === "CallExpression" && node.callee?.type === "MemberExpression" && !node.callee.computed &&
+				["evaluate", "waitForFunction"].includes(node.callee.property?.name) &&
+				["ArrowFunctionExpression", "FunctionExpression"].includes(node.arguments?.[0]?.type) &&
+				/\(\s*\/\* browser-context \*\/\s*$/.test(text.slice(node.callee.end, node.arguments[0].start))) {
+				// The function runs in the browser; its imports are not Node dependencies.
+				walk(node.callee);
+				node.arguments.slice(1).forEach(walk);
+				return;
+			}
 			if (node.type === "ImportExpression") {
 				assert.equal(typeof node.source?.value, "string", `${file}: dynamic import must use a literal specifier`);
 				check(node.source.value);
@@ -75,6 +85,14 @@ it("rejects an undeclared runtime dependency and accepts it when declared", () =
 		assert.throws(() => checkImports(fixture, input), /dynamic import must use a literal/);
 		writeFileSync(resolve(fixture, "nested.ts"), 'import("@earendil-works/pi-coding-agent");');
 		assert.doesNotThrow(() => checkImports(fixture, input));
+		writeFileSync(resolve(fixture, "nested.ts"), 'page.evaluate(/* browser-context */ async () => import(path)); page.waitForFunction(/* browser-context */ async () => import(path));');
+		assert.doesNotThrow(() => checkImports(fixture, input));
+		writeFileSync(resolve(fixture, "nested.ts"), 'page.evaluate(/* browser-context */ async () => import(path), import("fake-runtime"));');
+		assert.throws(() => checkImports(fixture, input), /undeclared runtime dependency fake-runtime/);
+		writeFileSync(resolve(fixture, "nested.ts"), 'page.evaluate(async () => import("fake-runtime"));');
+		assert.throws(() => checkImports(fixture, input), /undeclared runtime dependency fake-runtime/);
+		writeFileSync(resolve(fixture, "nested.ts"), 'other.evaluate(async () => import(path));');
+		assert.throws(() => checkImports(fixture, input), /dynamic import must use a literal/);
 	} finally {
 		rmSync(fixture, { recursive: true, force: true });
 	}

@@ -22,6 +22,7 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 	let downloads = 0;
 	const launches: any[] = [];
 	const connects: any[] = [];
+	const applicationConnects: any[] = [];
 	const browsers: any[] = [];
 	const installs: any[] = [];
 	const spawned: any[] = [];
@@ -63,7 +64,7 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 			return {
 				launch: async (args: unknown) => { launches.push(args); if (options.launchError) throw options.launchError; if (options.launchWait) await options.launchWait; return browser(); },
 				defaultArgs: (args: unknown) => { launches.push(args); return []; },
-				connect: async (args: any) => { if (args.browserWSEndpoint === "ws://localhost/devtools/browser/app") return browser(spawned.at(-1)); connects.push(args); return browser(); },
+				connect: async (args: any) => { if (args.browserWSEndpoint === "ws://localhost/devtools/browser/app") { applicationConnects.push(args); return browser(spawned.at(-1)); } connects.push(args); return browser(); },
 				Puppeteer: { customQueryHandlerNames: () => [], registerCustomQueryHandler() {} },
 			} as never;
 		},
@@ -78,7 +79,7 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 		const result = await tool.execute("id", input, signal, undefined, {});
 		return result.details.value;
 	}
-	return { call, shutdown: () => shutdown(), launches, connects, browsers, spawned, installs, loads: () => loads, downloads: () => downloads };
+	return { call, shutdown: () => shutdown(), launches, connects, applicationConnects, browsers, spawned, installs, loads: () => loads, downloads: () => downloads };
 }
 
 it("does not import browser dependencies at extension load or registration", async () => {
@@ -113,12 +114,14 @@ it("loads lazily and launches separate profiles with path and display settings",
 	assert.equal(env.launches[0].executablePath, resolve("/custom/chrome"));
 	assert.equal(env.launches[0].headless, false);
 	assert.deepEqual(env.launches[0].args, ["--flag"]);
+	assert.equal(env.applicationConnects[0].handleDevToolsAsPage, true);
 	const profile = env.launches[0].userDataDir;
 	assert.ok(existsSync(profile));
 	await env.call({ action: "open", name: "second" });
 	assert.equal(env.downloads(), 1);
 	assert.equal(env.launches[1].executablePath, "/fake/chrome");
 	assert.equal(env.launches[1].headless, true);
+	assert.equal(env.launches[1].handleDevToolsAsPage, true);
 	assert.notEqual(env.launches[1].userDataDir, profile);
 	await env.call({ action: "close", all: true, kill: true });
 	assert.equal(env.browsers[0].child.kills, 1);
@@ -296,12 +299,12 @@ it("does not delete a live application's profile when page close is cancelled", 
 it("disconnects a foreign CDP browser without killing it", async () => {
 	const env = setup();
 	await env.call({ action: "open", app: { cdp_url: "ws://localhost:9222/devtools/browser/1" } });
-	assert.deepEqual(env.connects, [{ browserWSEndpoint: "ws://localhost:9222/devtools/browser/1" }]);
+	assert.deepEqual(env.connects, [{ browserWSEndpoint: "ws://localhost:9222/devtools/browser/1", handleDevToolsAsPage: true }]);
 	await env.call({ action: "close", all: true, kill: true });
 	assert.equal(env.browsers[0].closed, 0);
 	assert.equal(env.browsers[0].disconnected, 1);
 	await env.call({ action: "open", app: { cdp_url: "http://localhost:9222" } });
-	assert.deepEqual(env.connects[1], { browserURL: "http://localhost:9222" });
+	assert.deepEqual(env.connects[1], { browserURL: "http://localhost:9222", handleDevToolsAsPage: true });
 	await env.shutdown();
 	assert.equal(env.browsers[1].closed, 0);
 	assert.equal(env.browsers[1].disconnected, 1);

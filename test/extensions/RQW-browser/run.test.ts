@@ -76,11 +76,11 @@ it("gives the model no call chain, only open, tabs, screenshot, markdown, run an
 	assert.equal(env.loads(), 0);
 });
 
-it("does not wait for DevTools on an existing tab with default recording", async () => {
-	const env = setupRun([reply(call(0)), done()], { waitForTarget: async () => ({ asPage: async () => { throw new Error("unexpected wait"); } }) });
+it("does not act on an existing tab when default recording is unavailable", async () => {
+	const env = setupRun([reply(call(0)), done()]);
 	await env.call({ action: "open", name: "existing" });
-	const result = await env.call({ action: "run", name: "existing", actions: ["first"], expected: "Done" });
-	assert.equal(result.files.recording_error, "No DevTools window for this tab.");
-	assert.equal(result.stopped, null);
+	await assert.rejects(env.call({ action: "run", name: "existing", actions: ["first"], expected: "Done" }));
+	assert.deepEqual(env.keys, []);
+	assert.deepEqual(env.requests, []);
 	await env.shutdown();
 });
