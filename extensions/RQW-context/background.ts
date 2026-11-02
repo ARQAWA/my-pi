@@ -248,16 +248,20 @@ export function ready(session: BackgroundSession): boolean {
 export function maybeStart(session: BackgroundSession, physical: unknown): void {
 	if (!state.on) return;
 	const manager = session.sessionManager;
-	const branch = manager.getBranch();
-	const base = Pi.getLatestCompactionEntry(branch as never)?.id ?? null;
 	const previous = state.candidates.get(manager);
-	if (previous?.base === base) return;
+	let branch: Entry[] | undefined;
+	if (previous) {
+		branch = manager.getBranch();
+		if (previous.base === (Pi.getLatestCompactionEntry(branch as never)?.id ?? null)) return;
+	}
 	const window = (physical as { contextWindow?: unknown } | undefined)?.contextWindow;
 	if (typeof window !== "number" || !(window > 0)) return;
 	const settings = session.settingsManager.getCompactionSettings(session.model);
 	if (!settings.enabled) return;
 	const tokens = session.getContextUsage()?.tokens;
 	if (typeof tokens !== "number" || tokens < BACKGROUND_PERCENT * window || Pi.shouldCompact(tokens, window, settings as never)) return;
+	branch ??= manager.getBranch();
+	const base = Pi.getLatestCompactionEntry(branch as never)?.id ?? null;
 	cancel(previous);
 	const snapshot = prepareSnapshot(branch, settings, tokens);
 	const controller = new AbortController();

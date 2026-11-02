@@ -209,6 +209,35 @@ it("append-only steps project only the appended entries and preserve earlier res
 	assert.ok(walks > 0, "the parent counter catches the original full branch walk");
 });
 
+it("appends to the cached branch without walking older parents and returns independent lists", () => {
+	installSafeProjection(Pi.SessionManager.prototype as never);
+	const manager = Pi.SessionManager.inMemory("/tmp");
+	const first = manager.appendMessage({ role: "user", content: "one", timestamp: 1 });
+	const state = manager.appendCustomEntry("state", {});
+	const before = manager.getBranch();
+	let walks = 0;
+	Object.defineProperty(manager.getEntry(first), "parentId", { get() { walks++; return null; }, configurable: true });
+	const tail = manager.appendCustomEntry("state", {});
+	const after = manager.getBranch();
+	assert.equal(walks, 0, "a new step does not traverse the old branch");
+	assert.deepEqual(before.map(entry => entry.id), [first, state]);
+	assert.deepEqual(after.map(entry => entry.id), [first, state, tail]);
+	after.pop();
+	assert.equal(manager.getBranch().length, 3);
+	assert.deepEqual(manager.getBranch(first).map(entry => entry.id), [first]);
+	assert.ok(walks > 0, "an explicit historical branch uses native traversal");
+	manager.branch(first);
+	assert.deepEqual(manager.getBranch().map(entry => entry.id), [first]);
+	const side = manager.appendCustomEntry("side", {});
+	assert.deepEqual(manager.getBranch().map(entry => entry.id), [first, side]);
+	manager.resetLeaf();
+	assert.deepEqual(manager.getBranch(), []);
+	const fresh = manager.appendCustomEntry("fresh", {});
+	assert.deepEqual(manager.getBranch().map(entry => entry.id), [fresh]);
+	manager.newSession();
+	assert.deepEqual(manager.getBranch(), []);
+});
+
 it("keeps the cached projection separate from mutable runtime message arrays", () => {
 	installSafeProjection(Pi.SessionManager.prototype as never);
 	const manager = Pi.SessionManager.inMemory("/tmp");

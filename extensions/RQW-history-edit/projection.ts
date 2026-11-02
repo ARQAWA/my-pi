@@ -14,7 +14,7 @@ type Projection = {
 };
 type Index = Map<string, Entry>;
 type Manager = { getEntries(): Entry[]; leafId: string | null | undefined; byId: Index; fileEntries?: Entry[] };
-type Method = (this: Manager) => unknown;
+type Method = (this: Manager, ...args: any[]) => unknown;
 
 /** Process-wide offer for code that calls Pi's free `buildSessionProjection(entries, leafId)` directly. */
 export const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
@@ -91,6 +91,7 @@ export function uninstallSafeProjection(proto: Record<string | symbol, any>): vo
 	if (!stock) return;
 	proto.buildContextEntries = stock.buildContextEntries;
 	proto.buildSessionProjection = stock.buildSessionProjection;
+	if (stock.getBranch) proto.getBranch = stock.getBranch;
 	delete proto[INSTALLED];
 	delete (globalThis as Record<symbol, unknown>)[SAFE_PROJECTION];
 }
@@ -210,7 +211,21 @@ export function installSafeProjection(proto: Record<string | symbol, any>): bool
 	} catch {
 		return false;
 	}
+	const branch = Object.getOwnPropertyDescriptor(proto, "getBranch");
+	if (typeof branch?.value === "function" && branch.configurable && branch.writable) {
+		try {
+			const probe = probeManager();
+			if (sameResult(branch.value.call(probe), sessionPath(probe.getEntries(), probe.leafId, probe.byId))) stock.getBranch = branch.value;
+		} catch { /* An unsupported traversal keeps the native method. */ }
+	}
 	const overflowed = new WeakSet<object>();
+	if (stock.getBranch) {
+		const original = stock.getBranch;
+		const cached = incremental(original, (manager) => original.call(manager) as Entry[], false, overflowed);
+		proto.getBranch = function (this: Manager, fromId?: string | null) {
+			return fromId === undefined ? cached.call(this) : original.call(this, fromId);
+		};
+	}
 	proto.buildContextEntries = incremental(stock.buildContextEntries!, (manager) => safeContextEntries(manager.getEntries(), manager.leafId, manager.byId), false, overflowed);
 	proto.buildSessionProjection = incremental(stock.buildSessionProjection!, (manager) => safeSessionProjection(manager.getEntries(), manager.leafId, manager.byId), true, overflowed);
 	proto[INSTALLED] = stock;

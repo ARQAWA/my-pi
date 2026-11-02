@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import * as PiRoot from "@earendil-works/pi-coding-agent";
 import { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
-import { installBackground, prepareSnapshot } from "../../../extensions/RQW-context/background.ts";
+import { installBackground, maybeStart, prepareSnapshot } from "../../../extensions/RQW-context/background.ts";
 import { harness, WINDOW } from "./harness.ts";
 
 // Test-only oracle: Pi's own pure preparation, which neither package build exports at its root.
@@ -27,6 +27,20 @@ async function toBackground(h: Awaited<ReturnType<typeof harness>>) {
 const userIds = (h: Awaited<ReturnType<typeof harness>>) =>
 	h.manager.getBranch().filter((entry: any) => entry.type === "message" && entry.message.role === "user").map((entry) => entry.id);
 
+it("does not read the branch below the background threshold", () => {
+	installBackground({ _runDefaultCompaction() {}, getContextUsage() {}, dispose() {} }, () => true);
+	let branches = 0;
+	const session = {
+		sessionManager: { getBranch() { branches++; return []; }, getSessionId() { return "test"; } },
+		settingsManager: { getCompactionSettings() { return { enabled: true, reserveTokens: 100, keepRecentTokens: 100 }; } },
+		getContextUsage() { return { tokens: 649 }; },
+		async _runDefaultCompaction() { throw new Error("unexpected summary"); },
+	};
+	maybeStart(session, { contextWindow: 1_000 });
+	maybeStart(session, { contextWindow: 1_000 });
+	assert.equal(branches, 0);
+});
+
 describe("RQW-context background compaction: trigger and lifecycle", () => {
 	it("starts one background summary from 65% of W per generation and reports it on the status channel", async () => {
 		const h = await harness();
@@ -40,6 +54,15 @@ describe("RQW-context background compaction: trigger and lifecycle", () => {
 		h.release("S");
 		await h.quiet();
 		assert.deepEqual(h.status, [{ sessionId, active: true }, { sessionId, active: false }]);
+	});
+
+	it("does not recompute usage after this compaction generation already has a candidate", async t => {
+		const h = await harness();
+		await toBackground(h);
+		const usage = t.mock.method(h.session, "getContextUsage");
+		maybeStart(h.session as never, h.session.model);
+		maybeStart(h.session as never, h.session.model);
+		assert.equal(usage.mock.callCount(), 0);
 	});
 
 	it("does not start when compaction is off or an explicit reserve puts Pi's threshold below 65%", async () => {
