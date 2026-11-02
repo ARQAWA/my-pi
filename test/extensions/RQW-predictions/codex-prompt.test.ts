@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Credential } from "@earendil-works/pi-ai";
+import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import { createPromptSource, PredictionAuthError, PREDICTION_CONFIG_URL, PREDICTION_PROMPT_TTL_MS } from "../../../extensions/RQW-predictions/codex-prompt.ts";
 
 const START = 1_000_000;
@@ -10,8 +10,8 @@ function token(accountId: string, userId = "user-1"): string {
 	return ["h", Buffer.from(JSON.stringify(claim)).toString("base64url"), "s"].join(".");
 }
 
-function login(accountId = "acc-1", expires = START + 3_600_000): Credential {
-	return { type: "oauth", access: token(accountId), refresh: "r", expires, accountId } as Credential;
+function login(accountId = "acc-1", expires = START + 3_600_000): OAuthCredential {
+	return { type: "oauth", access: token(accountId), refresh: "r", expires, accountId };
 }
 
 function config(version: string, prompt = `prompt ${version}`): Response {
@@ -141,7 +141,7 @@ describe("codex prediction prompt source", () => {
 
 	it("rejects a stored account id that disagrees with the token claim", async () => {
 		const { source, state, calls } = setup();
-		state.credential = { ...(login("acc-1") as object), accountId: "acc-2" } as Credential;
+		state.credential = { ...login("acc-1"), accountId: "acc-2" };
 		await assert.rejects(source.get(), PredictionAuthError);
 		assert.equal(calls.length, 0);
 	});

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { CTRL_E, harness, last, settle, SILENCE_RULE, text, USER } from "./harness.ts";
 
 // The extension is loaded as Pi loads it, with its real prompt loader. Only the network, Pi's saved login and the clock are fake.
@@ -19,8 +19,8 @@ let calls: Call[];
 const until = async (done: () => boolean) => { for (let i = 0; i < 20000 && !done(); i++) await settle(); };
 
 describe("RQW-predictions through the extension entry", () => {
-	beforeEach(t => {
-		t.mock.timers.enable({ apis: ["Date"], now: START });
+	beforeEach(() => {
+		mock.timers.enable({ apis: ["Date"], now: START });
 		dir = mkdtempSync(join(tmpdir(), "rqw-predictions-"));
 		writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: ACCESS, refresh: "r", expires: START + 3_600_000, accountId: "acc-1" } }));
 		process.env.PI_CODING_AGENT_DIR = dir;
@@ -32,12 +32,13 @@ describe("RQW-predictions through the extension entry", () => {
 		}) as typeof fetch;
 	});
 	afterEach(() => {
+		mock.timers.reset();
 		globalThis.fetch = realFetch;
 		if (realDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = realDir;
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("the prompt Codex serves reaches the model as the last message with the reply rules, and is cached for 300000 ms", async t => {
+	it("the prompt Codex serves reaches the model as the last message with the reply rules, and is cached for 300000 ms", async () => {
 		const h = harness({ entry: true });
 		h.asked();
 		await until(() => h.forks.length === 1);
@@ -53,13 +54,13 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.match(instruction, /Return only JSON matching this schema: \{.*"suggestion".*\}\./);
 		assert.ok(instruction.endsWith(SILENCE_RULE));
 
-		t.mock.timers.tick(299_999);
+		mock.timers.tick(299_999);
 		h.asked();
 		await until(() => h.forks.length === 2);
 		assert.equal(calls.length, 1);
 		assert.ok(String(last(h.forks[1].context).content).startsWith("SERVED PROMPT 1\n"));
 
-		t.mock.timers.tick(1);
+		mock.timers.tick(1);
 		h.asked();
 		await until(() => h.forks.length === 3);
 		assert.equal(calls.length, 2);
@@ -128,9 +129,9 @@ describe("RQW-predictions through the extension entry", () => {
 	const login = (expires: number) => writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: ACCESS, refresh: "r", expires, accountId: "acc-1" } }));
 	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-predictions-error");
 
-	it("an expired saved login shows the bright red footer error for 5000 ms without any request", async t => {
-		t.mock.timers.reset();
-		t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
+	it("an expired saved login shows the bright red footer error for 5000 ms without any request", async () => {
+		mock.timers.reset();
+		mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
 		login(START);
 		const h = harness({ entry: true });
 		h.asked();
@@ -138,30 +139,30 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.match(errorStatus(h).at(-1)![1]!, /^\x1b\[1;91mCtrl\+E failed: Codex token expired or rejected/);
 		assert.equal(calls.length, 0);
 		assert.deepEqual(h.notes, []);
-		t.mock.timers.tick(4999);
+		mock.timers.tick(4999);
 		assert.notEqual(errorStatus(h).at(-1)![1], undefined);
-		t.mock.timers.tick(1);
+		mock.timers.tick(1);
 		assert.equal(errorStatus(h).at(-1)![1], undefined);
 	});
 
-	it("a new Ctrl+E does not cut the error short: it stays its full 5000 ms", async t => {
-		t.mock.timers.reset();
-		t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
+	it("a new Ctrl+E does not cut the error short: it stays its full 5000 ms", async () => {
+		mock.timers.reset();
+		mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
 		login(START);
 		const h = harness({ entry: true });
 		h.asked();
 		await until(() => errorStatus(h).length > 0);
 		const shown = errorStatus(h).at(-1)![1];
-		t.mock.timers.tick(3000);
+		mock.timers.tick(3000);
 		h.key(CTRL_E);
 		assert.equal(errorStatus(h).at(-1)![1], shown);
-		t.mock.timers.tick(2000);
+		mock.timers.tick(2000);
 		assert.equal(errorStatus(h).at(-1)![1], undefined);
 	});
 
-	it("a token the endpoint rejects with 401 shows the same error; another HTTP failure stays a plain warning", async t => {
-		t.mock.timers.reset();
-		t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
+	it("a token the endpoint rejects with 401 shows the same error; another HTTP failure stays a plain warning", async () => {
+		mock.timers.reset();
+		mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
 		globalThis.fetch = (async () => new Response("no", { status: 401 })) as typeof fetch;
 		const rejected = harness({ entry: true });
 		rejected.asked();

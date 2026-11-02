@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { getKeybindings, setKeybindings } from "@earendil-works/pi-tui";
+import { getKeybindings, type Keybinding, type KeyId, setKeybindings } from "@earendil-works/pi-tui";
 import { CTRL_E, CTRL_R, harness, piKeybindings, settle } from "./harness.ts";
 
 const CTRL_G = "\x07";
@@ -63,7 +63,7 @@ describe("RQW-predictions key freeing", () => {
 		h.fire("session_start", { reason: "startup" });
 		assert.equal(Object.hasOwn(manager, "getKeys"), true);
 		const ours = manager.getKeys;
-		const foreign = function(this: typeof manager, id: string) { return ours.call(this, id).map(key => key.toUpperCase()); };
+		const foreign = function(this: typeof manager, id: Keybinding) { return ours.call(this, id).map(key => key.toUpperCase() as KeyId); };
 		manager.getKeys = foreign;
 
 		h.fire("session_shutdown", { reason: "reload" });
@@ -97,7 +97,8 @@ describe("RQW-predictions key freeing", () => {
 	});
 
 	it("an incompatible manager stays stock: one warning, the keys keep their Pi action and no prediction starts", async () => {
-		const manager = Object.assign(piKeybindings(), { getDefinition: undefined });
+		const manager = piKeybindings();
+		Object.defineProperty(manager, "getDefinition", { value: undefined });
 		const h = harness({ keybindings: manager });
 		h.ran();
 		h.editor.setText("hello");

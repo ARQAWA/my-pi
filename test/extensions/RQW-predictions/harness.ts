@@ -2,7 +2,7 @@
 // source, the fork listeners, the event bus and the TUI. The extension's own code runs for real.
 import { AgentSession, CustomEditor, createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Api, AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, TuiAltScreen } from "@earendil-works/pi-tui";
+import { type KeybindingsConfig, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, TuiAltScreen } from "@earendil-works/pi-tui";
 import predictions, { install } from "../../../extensions/RQW-predictions/index.ts";
 
 // Fixed texts from the design, not from the code under test.
@@ -20,7 +20,7 @@ export const CTRL_E_RELEASE = "\x1b[101;5:3u";
 export const CTRL_R_RELEASE = "\x1b[114;5:3u";
 
 /** Pi's manager: the TUI definitions plus the application actions this extension cares about. */
-export function piKeybindings(userBindings: Record<string, string | string[]> = {}) {
+export function piKeybindings(userBindings: KeybindingsConfig = {}) {
 	return new KeybindingsManager({
 		...TUI_KEYBINDINGS,
 		"app.session.rename": { defaultKeys: "ctrl+r", description: "Rename session" },
