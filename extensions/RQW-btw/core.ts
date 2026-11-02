@@ -1,6 +1,6 @@
 // Shared /btw core: freezes what the main model sees now and sends side turns from that mark.
 // Nothing here writes to the chat, the session file or the model context of the main session.
-import { isContextOverflow, normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
+import { isContextOverflow, normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ModelThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
 import { AgentSession, convertToLlm, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
@@ -11,7 +11,7 @@ type ContextForkRequest = {
 	sessionId: string;
 	model: Model<Api>;
 	context: Context;
-	reasoning?: ThinkingLevel;
+	reasoning?: ModelThinkingLevel;
 	signal: AbortSignal;
 	offer(infer: () => Promise<AssistantMessage>): void;
 };
@@ -19,7 +19,6 @@ type Snapshot = {
 	sessionId: string;
 	model: Model<Api>;
 	messages: Message[];
-	reasoning?: ThinkingLevel;
 	after: MessageEndEvent["message"][];
 };
 
@@ -28,7 +27,7 @@ export type Mark = {
 	/** The main session id when the mark is the last main request; the fork can then reuse its cached prefix. */
 	sessionId: string | undefined;
 	model: Model<Api>;
-	reasoning?: ThinkingLevel;
+	reasoning?: ModelThinkingLevel;
 	messages: readonly Message[];
 	/** Messages after the sent part, as text for the first question: an unfinished tool call or a cut tail. */
 	tail: string;
@@ -149,7 +148,7 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		const wrapped: typeof original = function(this: unknown, model, context, options) {
 			if (active && options?.sessionId !== undefined && options.sessionId === manager.getSessionId()) {
 				hasMainRequest = true;
-				snapshot = { sessionId: options.sessionId, model, messages: context.messages, reasoning: options.reasoning, after: [] };
+				snapshot = { sessionId: options.sessionId, model, messages: context.messages, after: [] };
 			}
 			return original.call(this, model, context, options);
 		};
@@ -244,7 +243,10 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 			if (infer) return infer();
 		}
 		// No sessionId: RQW-codex would route the main session id into the main thread's controller.
-		return ctx.modelRegistry.streamSimple(model, normalizeContext({ messages }), { reasoning, signal }).result();
+		const options = reasoning === "off"
+			? model.provider === "openai-codex" ? { reasoningEffort: "none" as const, signal } : { signal }
+			: { reasoning, signal };
+		return ctx.modelRegistry.streamSimple(model, normalizeContext({ messages }), options).result();
 	}
 
 	pi.on("session_start", (_event, ctx) => bind(ctx));
@@ -263,7 +265,7 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 			if (!model) return undefined;
 			const shot = snapshot && sameModel(snapshot.model, model) ? snapshot : undefined;
 			const level = pi.getThinkingLevel();
-			const reasoning = shot ? shot.reasoning : level === "off" ? undefined : level;
+			const reasoning = level;
 			const frozen = { system: systemOf(ctx), leafId: ctx.sessionManager.getLeafId() };
 			const { kept, running } = settle(shot ? [...shot.messages, ...convertToLlm(shot.after)] : fallback(ctx, frozen.system));
 			if (!shot || tokens(kept) + tokens(running) <= budget(model)) {

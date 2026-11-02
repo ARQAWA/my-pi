@@ -1,4 +1,4 @@
-import { getCurrentTools, normalizeContext, type Api, type AssistantMessage, type Context, type Model, type ThinkingLevel } from "@earendil-works/pi-ai";
+import { getCurrentTools, normalizeContext, type Api, type AssistantMessage, type Context, type Model, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { uuidv7 } from "./compaction.ts";
 import { canonicalJson } from "./history.ts";
 import { clientMetadata, type CodexIdentity } from "./metadata.ts";
@@ -13,7 +13,7 @@ export type ContextForkRequest = {
 	sessionId: string;
 	model: Model<Api>;
 	context: Context;
-	reasoning?: ThinkingLevel;
+	reasoning?: ModelThinkingLevel;
 	signal: AbortSignal;
 	/** Prepare in small slices that yield to the event loop; the offer is still made synchronously. */
 	cooperative?: boolean;

@@ -34,7 +34,7 @@ type Entry = { type: string; id: string; parentId: string | null; summary?: stri
 /** Every panel a test opened; closed after each test so no spinner timer outlives it. */
 const panels = new Set<{ panel?: Panel; closed: boolean }>();
 
-function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replies = [] as Reply[], tree = [] as Entry[], rows = 30, mode = "tui", transport, startup = false } : { fork?: boolean; projection?: Message[]; replies?: Reply[]; tree?: Entry[]; rows?: number; mode?: string; transport?: typeof fetch; startup?: boolean } = {}) {
+function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replies = [] as Reply[], tree = [] as Entry[], rows = 30, mode = "tui", transport, startup = false, level = "medium" } : { fork?: boolean; projection?: Message[]; replies?: Reply[]; tree?: Entry[]; rows?: number; mode?: string; transport?: typeof fetch; startup?: boolean; level?: string } = {}) {
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const commands = new Map<string, { handler(args: string, ctx: unknown): Promise<void> }>();
 	const events = createEventBus();
@@ -47,7 +47,7 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 			{ name: "read", description: "Read a file", parameters: { type: "object" } },
 			{ name: "write", description: "Write a file", parameters: { type: "object" } },
 		],
-		getThinkingLevel: () => "medium",
+		getThinkingLevel: () => level,
 	} as unknown as ExtensionAPI;
 	btw(pi);
 	if (startup) prompt(pi);
@@ -94,7 +94,7 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 	const forks: Fork[] = [];
 	const provider: Request[] = [];
 	const next = () => Promise.resolve(replies.shift() ?? text("side answer"));
-	if (overlay) events.on(CONTEXT_FORK, data => { overlay.forks.offer(data as Parameters<typeof overlay.forks.offer>[0]); });
+	if (overlay && fork) events.on(CONTEXT_FORK, data => { overlay.forks.offer(data as Parameters<typeof overlay.forks.offer>[0]); });
 	else if (fork) events.on(CONTEXT_FORK, data => { forks.push(data as Fork); (data as Fork).offer(next); });
 	const notes: string[] = [];
 	const popup: { panel?: Panel; closed: boolean; options?: unknown; opened: number } = { closed: false, opened: 0 };
@@ -148,6 +148,60 @@ describe("RQW-btw with Anthropic transport", () => {
 	afterEach(() => {
 		for (const popup of panels) if (popup.panel && !popup.closed) popup.panel.handleInput("\x1b");
 		panels.clear();
+	});
+
+	for (const fork of [true, false]) it(`uses the current effort in the ${fork ? "fork" : "fallback"} request`, async () => {
+		const bodies: any[] = [];
+		const transport: typeof fetch = async (_input, init) => {
+			const body = JSON.parse(String(init?.body));
+			bodies.push(body);
+			const events = [
+				{ type: "message_start", message: { id: "fake", model: body.model, usage: { input_tokens: 1, output_tokens: 0 } } },
+				{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+				{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "side answer" } },
+				{ type: "content_block_stop", index: 0 },
+				{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } },
+				{ type: "message_stop" },
+			];
+			return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
+		};
+		const h = harness({ transport, fork });
+		h.setModel(builtinProviders().find(provider => provider.id === "anthropic")!.getModels()[0]);
+		const snapshotOnly = { role: "user", content: "Request-only reminder", timestamp: 3 } as Message;
+		await h.request({ messages: [SYSTEM, USER, snapshotOnly] });
+		await h.btw("why?");
+		for (let i = 0; i < 5000 && !shows(h.screen(), "side answer"); i++) await settle();
+		assert.ok(shows(h.screen(), "side answer"));
+		assert.equal(bodies[0].output_config.effort, "high");
+		assert.equal(bodies[1].output_config.effort, "medium");
+		assert.match(JSON.stringify(bodies[1].messages), /Fix the tests\./);
+		assert.match(JSON.stringify(bodies[1].messages), /Request-only reminder/);
+		assert.match(JSON.stringify(bodies[1].messages), /Question: why\?/);
+		assert.equal(h.provider.length, fork ? 0 : 1);
+	});
+
+	it("turns off Anthropic thinking in a fork after a high request", async () => {
+		const bodies: any[] = [];
+		const transport: typeof fetch = async (_input, init) => {
+			bodies.push(JSON.parse(String(init?.body)));
+			const events = [
+				{ type: "message_start", message: { id: "fake", model: bodies.at(-1).model, usage: { input_tokens: 1, output_tokens: 0 } } },
+				{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+				{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "side answer" } },
+				{ type: "content_block_stop", index: 0 },
+				{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } }, { type: "message_stop" },
+			];
+			return new Response(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""), { headers: { "content-type": "text/event-stream" } });
+		};
+		const h = harness({ transport, level: "off" });
+		h.setModel(builtinProviders().find(provider => provider.id === "anthropic")!.getModels()[0]);
+		await h.request({ messages: [SYSTEM, USER] });
+		await h.btw("question?");
+		for (let i = 0; i < 5000 && !shows(h.screen(), "side answer"); i++) await settle();
+		assert.ok(shows(h.screen(), "side answer"));
+		assert.equal(bodies.length, 2);
+		assert.notEqual(bodies[0].thinking?.type, undefined);
+		assert.ok(bodies[1].thinking === undefined || bodies[1].thinking.type === "disabled");
 	});
 
 	it("fresh /btw projects the actual startup prompt without changing the main session", async () => {
