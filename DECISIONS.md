@@ -1993,17 +1993,18 @@ Since: web-search-tool.
 
 - **Codex compatibility on public Pi APIs** `[D-COMPAT-CODEX]`. A new independent `extensions/RQW-codex-compat/` reads
   Codex skill roots, skill rules and project instructions; Codex profiles stay in `RQW-agent`. Pi sources are not edited,
-  and the current implementation does not yet cover the parts that needed a public Pi API; under `[D-SCOPE-RUNTIME-PATCH]` they no longer wait for one. The restriction against runtime patches is superseded by `[D-SCOPE-RUNTIME-PATCH]`. The built-in Codex
+  and the restriction against runtime patches is superseded by `[D-SCOPE-RUNTIME-PATCH]`. The built-in Codex
   `explorer` role stays removed (`[D-AGENT-PROFILES]`).
-  Coordinator question: «начинаем совместимость с codex? 1. да, по этому проекту». Owner answer: «1».
-  Source: the coordinator brief for this task; the session file locator is not machine-verified. Coordinator text, not owner quotations: the
+  Coordinator question: «дальше по плану совместимость с codex, 9 sp». Owner answer: «1» (pi 2026-10-28T23:45:13.913Z).
+  Coordinator text, not owner quotations: the
   design `design-codex-compat.html` (9 SP, reviewed CLEAN) and its project decisions, each marked "проект" there.
   Instruction order (design decision M150, owner words as relayed by the design): the global Codex override, then Pi's personal
   file from `getAgentDir()`, then project Codex files; no new source is added beyond that.
   Profile layers (design item 4.2, project decision): project `.codex` layers need Codex trust; administrative and managed
   Codex config is not supported (owner chose the lightest variant); this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers.
   Role fields (design item 4.3, recorded in the design): supported are model, effort and instructions; `model_reasoning_summary`,
-  `model_verbosity`, `personality`, `service_tier`, `features` and `skills` are not applied yet and are listed as such; the earlier public-API wait is superseded by `[D-SCOPE-RUNTIME-PATCH]`; they no longer wait for a public Pi API.
+  `model_verbosity`, `personality`, `service_tier`, `features` and `skills` are listed as not applied; the owner cancelled this work, and it must not be revived.
+  Owner (pi 2026-10-29T16:47:18.246Z): «Так, насчёт этой хуйни. Переопределение ролей Codecs. Эти поля, которые ты сказал, это что-то на низком уровне, что отправляется в запрос. Personality, Featured and Skills. Если мы их не используем, ты выбрасывай их. Отменяем все четыре штуки. Personality, Featured and Skills. Это сдаче ничего не даст, поэтому сдачу отменяем, выбрасываем.»
   Project instruction budget (deliberate deviation from the Codex default 32768): without `project_doc_max_bytes` in Codex config the
   default is 262144 (256 KB), the same on every OS; a configured value, including `0`, still wins. Reason: the owner saw the
   warning «Warning: Codex project_doc_max_bytes cut /Users/arkadijcukavin/PycharmProjects/superbot/AGENTS.md» while his config sets no limit.
@@ -2014,8 +2015,7 @@ Since: web-search-tool.
   (codex-rs `ext/skills/src/loader/host_merge.rs`), plain `$name` takes the first enabled (`ext/skills/src/selection.rs`), a `[$name](skill://path)` link takes its path.
   `/skill:name` and `$name` read this one list; `/skill:` of a skill the config disables is dropped with a warning. Coordinator text: the design page says a plain name of
   several skills expands nothing; the task brief and Codex source say it picks one, and Codex's rule is followed. Reason: Codex parity without a public Pi API, by a second scan of the roots and the `input` event.
-  Carriers: `extensions/RQW-codex-compat/` (`selection.ts`, `index.ts`), `extensions/RQW-skill-dollar/index.ts`; contract: [README](extensions/RQW-codex-compat/README.md#same-name-skills).
-  Carriers: `extensions/RQW-codex-compat/`, `extensions/RQW-agent/profiles.ts`, `extensions/RQW-skill-dollar/`, `package.json`.
+  Carriers: `extensions/RQW-codex-compat/` (`selection.ts`, `index.ts`), `extensions/RQW-agent/profiles.ts`, `extensions/RQW-skill-dollar/` (`index.ts`), `package.json`; contract: [README](extensions/RQW-codex-compat/README.md#same-name-skills).
 
 ## Predictions
 
