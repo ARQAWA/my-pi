@@ -1275,12 +1275,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **No Marketplace description** `[D-PCLI-NODESC]`. No `description` field in `pcli-vscode/package.json`, no README, no
   LICENSE; `pcli.yml` asserts an empty VSIX description. Coordinator text (owner quote not found in the Pi sessions):
   "При публикации в маркетплейс там НЕ ДОЛЖНО БЫТЬ НИКАКОГО ОПИСАНИЯ". Since: `3b6d6c1`.
-- **End-to-end proof** `[D-PCLI-E2E]`. `.github/workflows/pcli.yml` on `windows-latest` builds the VSIX, installs it into
-  a real VS Code and runs `pcli-vscode/test/run.mjs` and `pcli-vscode/test/suite.cjs`: Pi answers through a local proxy
-  `pcli-vscode/test/proxy.cjs` with a fake HTTPS model, with the proxy from the environment under a hostile Git Bash profile and from
-  VS Code settings; strict TLS fails and `http.proxyStrictSSL: false` works; CONNECT with proxy credentials; paths with
-  Cyrillic, spaces and an apostrophe; no `pi.exe` left after closing tabs, `/quit` or VS Code. Not covered: a real model
-  call and the corporate VDI restrictions. Since: `3b6d6c1`.
+- **Synthetic tests and mouse capture** `[D-PCLI-TESTS]`. The PCLI workflow runs synthetic tests, the retained mouse
+  capture and the VSIX build in job `mouse`, then uploads `pcli.vsix` as `pcli-vsix`. It runs on push to `pcli` only.
+  The root `npm test` also includes the PCLI synthetic tests. The Windows end-to-end job and its test files are removed.
+  Owner: «2», answering Coordinator text: "Сквозной тест PCLI на Windows оставить или удалить?" Option 2: "Удалить джоб e2e и файлы run.mjs, suite.cjs, proxy.cjs, quit.test.mjs, pi-agent/extensions/ready.js. Захват мыши остаётся."
+  Owner (`16-27-59:13742`): «Все тесты сугубо синтетические, никаких end-to-end, никаких интеграций. Всё на моках максимально.»
+  Reason: remove the end-to-end suite by owner choice while retaining the mouse capture.
+  Carriers: `.github/workflows/pcli.yml`, `package.json`, `pcli-vscode/test/`.
 - **Wheel scroll cause** `[D-PCLI-MOUSE-CAUSE]`. In PCLI the wheel scrolled the input history instead of the
   conversation. Cause in Pi 1.4.0: `TuiAltScreen.beforeTerminalStart` writes `?1049h` and the mouse enable
   `?1000h ?1002h ?1003h ?1004h ?1006h` (without `?1003h` under tmux, Zellij or screen) before `terminal.start` enables raw
@@ -1317,10 +1318,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   --target win32-x64` from `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct
   owner request. Since: `3b6d6c1`.
 
-- **English UI text** `[D-PCLI-ENGLISH]`. PCLI user-visible text is English. The four messages in
-  `pcli-vscode/extension.js` are `[pi exited, code N]`, `node-pty not found in VS Code: ...`,
-  `Not found: <path>. Install Git for Windows.` and `Not found: <path>`. Russian code comments and Cyrillic
-  test paths in `pcli-vscode/test/run.mjs` are not user-visible and stay.
+- **English UI text** `[D-PCLI-ENGLISH]`. All user-visible messages are English.
   Owner: «Да переводить на англ то что ты спрашивал все переводить)»
   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl:4221` in the Pi USER session directory named in Provenance.
   Reason: the interface must be English; the owner approved translating the listed Russian messages.

@@ -7242,3 +7242,15 @@ Source: `de414a26:DECISIONS.md`. Verbatim replaced passages (an ellipsis marks u
 >   is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
 >   without cancelling accepted children. Same callback as `[D-TOOLS-NOTIFY]`. Reason: a waiting agent must not hold a call.
 >   Crash recovery (coordinator text): an accepted notification wait is saved as `rqw-agent-wait` entries in the parent session and a restore raises the open ones with their id, targets and remaining deadline, as described in the [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
+
+## A-0415 · PCLI · end-to-end proof
+
+Status: SUPERSEDED by `[D-PCLI-TESTS]` (DECISIONS.md#pcli).
+Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
+
+> - **End-to-end proof** `[D-PCLI-E2E]`. `.github/workflows/pcli.yml` on `windows-latest` builds the VSIX, installs it into
+>   a real VS Code and runs `pcli-vscode/test/run.mjs` and `pcli-vscode/test/suite.cjs`: Pi answers through a local proxy
+>   `pcli-vscode/test/proxy.cjs` with a fake HTTPS model, with the proxy from the environment under a hostile Git Bash profile and from
+>   VS Code settings; strict TLS fails and `http.proxyStrictSSL: false` works; CONNECT with proxy credentials; paths with
+>   Cyrillic, spaces and an apostrophe; no `pi.exe` left after closing tabs, `/quit` or VS Code. Not covered: a real model
+>   call and the corporate VDI restrictions. Since: `3b6d6c1`.
