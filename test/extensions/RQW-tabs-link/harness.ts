@@ -105,6 +105,15 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 		sessionFs: nodeSessionFs, sessionsRoot: join(deps.dir, "no-sessions"), ...deps, ...extra,
 	};
 	const handlers = new Map<string, Handler[]>();
+	const listeners = new Map<string, Set<(event: any) => void>>();
+	const events = {
+		on(name: string, listener: (event: any) => void) {
+			if (!listeners.has(name)) listeners.set(name, new Set());
+			listeners.get(name)!.add(listener);
+			return () => listeners.get(name)!.delete(listener);
+		},
+		emit(name: string, event: any) { for (const listener of listeners.get(name) ?? []) listener(event); },
+	};
 	const tools: ToolDefinition[] = [];
 	const model: FakeModel = { provider: "p", id: "owner", api: FAKE_API };
 	const world: World = { idle: true, model, level: "medium", models: [model, { provider: "p", id: "other", api: FAKE_API }], entries: [], sent: [], autoRecord: true, active: ["tool_search"], noAuth: new Set(), crashed: false };
@@ -115,6 +124,7 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 		return result;
 	};
 	const pi = {
+		events,
 		on: (name: string, handler: Handler) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		registerTool: (tool: ToolDefinition) => {
 			tools.push(tool);

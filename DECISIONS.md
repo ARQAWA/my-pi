@@ -109,14 +109,15 @@ Provenance:
 
 ## Tabs link
 
-- **Chats talk through three deferred tools** `[D-TABS-LINK]`. The independently disableable
+- **Chats talk through four deferred tools** `[D-TABS-LINK]`. The independently disableable
   `extensions/RQW-tabs-link/index.ts` lets main chats in visible Pi tabs on one computer list, read and message each
   other, as Codex does through `list_threads`, `read_thread` and `send_message_to_thread`. The user opens every tab
   himself; a closed chat gets the answer "Chat is closed. Ask the user to open it." with an open hint that is shown,
-  never run. The tools are `list_chats`, `read_chat` and `send_message_to_chat`: plain code, no model call, no
-  summary, no waiting; they read stored turns from the open tab, not the session file. They are registered deferred;
-  one fixed prompt line names them and the shared search key `rqwchat` loads exactly these three through
-  `tool_search`. Delivery is a follow-up after the current work, never an interruption, one turn at a time. Same
+  never run. The tools are `list_chats`, `read_chat`, `send_message_to_chat` and `wait_answer`: plain code, no model
+  call or summary. The first three return without waiting; `wait_answer` waits for a saved answer and yields to user
+  input. They read stored turns from the open tab, not the session file. They are registered deferred; one fixed prompt
+  line names them and the shared search key `rqwchat` loads all four through `tool_search`. Delivery is a follow-up
+  after the current work, never an interruption, one turn at a time. Same
   computer only; Mac and Windows (PCLI inside the VDI) work the same way. No change to PCLI, no Herder, no auto-open.
   Owner: «создавать несколько вкладок и соединять их через session ID, чтобы они могли общаться друг с другом»
   Owner: «Да. VDI запущен через VS Code, через наш PCLI.»

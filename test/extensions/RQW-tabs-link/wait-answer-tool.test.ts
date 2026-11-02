@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "node:test";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { pairOfTabs } from "./harness.ts";
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -61,6 +62,63 @@ it("holds the call until the answer is saved", async t => {
 	recv.world.entries.push(message("a", "assistant", "stop"));
 	await recv.fire("turn_end");
 	assert.equal((await pending).entry.id, "a");
+});
+
+it("wakes for queued and new user steering, announces and closes the wait, and leaves the target running", async t => {
+	const { recv, send } = await pairOfTabs(t);
+	const ctx = send.ctx();
+	const messages: string[] = [];
+	const listeners = new Set<(event: any) => void>();
+	const session = Object.assign(Object.create(AgentSession.prototype), {
+		sessionManager: ctx.sessionManager, agent: { steeringQueue: { messages: [] } },
+		getSteeringMessages: () => messages,
+		subscribe: (listener: (event: any) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+	});
+	ctx.isIdle = () => session.isIdle;
+	const announcements: any[] = [];
+	const stop = send.pi.events.on("rqw:waiting:v1", event => announcements.push(event));
+	t.after(stop);
+	const tool = send.tools.find(item => item.name === "wait_answer")!;
+	const run = () => tool.execute("wait", { chatId: "recv", afterEntryId: null } as never, undefined, undefined, ctx as never);
+	messages.push("queued");
+	assert.equal(parse(await run()).reason, "steered");
+	messages.length = 0;
+	const pending = run();
+	await tick();
+	messages.push("new");
+	for (const listener of listeners) listener({ type: "queue_update", steering: [...messages], followUp: [] });
+	assert.equal(parse(await pending).reason, "steered");
+	assert.equal(listeners.size, 0);
+	assert.deepEqual(announcements.map(event => event.open), [true, false, true, false]);
+	messages.length = 0;
+	recv.world.entries.push(message("a", "assistant", "stop"));
+	assert.equal(parse(await run()).entry.id, "a");
+	assert.equal(listeners.size, 0);
+	await tick();
+});
+
+it("does not announce a mixed batch while useful work remains", async t => {
+	const { send } = await pairOfTabs(t);
+	const announced: unknown[] = [];
+	const stop = send.pi.events.on("rqw:waiting:v1", event => announced.push(event));
+	t.after(stop);
+	send.world.entries.push({ id: "batch", parentId: null, type: "message", message: { role: "assistant", content: [
+		{ type: "toolCall", id: "wait", name: "wait_answer", arguments: {} },
+		{ type: "toolCall", id: "work", name: "read_chat", arguments: {} },
+	] } });
+	assert.equal(parse(await send.run("wait_answer", { chatId: "recv", afterEntryId: null }, "wait")).reason, "work_pending");
+	assert.deepEqual(announced, []);
+	await tick();
+});
+
+it("wakes only for a matching explicit steering notice", async t => {
+	const { send } = await pairOfTabs(t);
+	const pending = send.run("wait_answer", { chatId: "recv", afterEntryId: null });
+	await tick();
+	send.pi.events.emit("rqw:wait-steer:v1", { sessionId: "other" });
+	send.pi.events.emit("rqw:wait-steer:v1", { sessionId: "send" });
+	assert.equal(parse(await pending).reason, "steered");
+	await tick();
 });
 
 it("does not take a streaming part or a tool turn for the final answer, and times out", async t => {
