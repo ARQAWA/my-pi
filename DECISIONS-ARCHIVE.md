@@ -7286,3 +7286,14 @@ Source: `a407e8f3:DECISIONS.md`, the whole entry, verbatim:
 >   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
 >   Reason: no synthetic keepalive inference before the first real request.
 >   Carrier: `extensions/RQW-settings/cache-warming.ts`. Since: `b91f832`.
+
+## A-0420 · archived 2026-11-02 · PROCESS rules 2, 4 and 5 · approval above and up to 2 SP
+
+Status: SUPERSEDED by `[D-WORK-NO-REASK]` (DECISIONS.md#work-policy): up to and including 2 SP is done without approval; a plan above 2 SP is shown task by task and started after the owner accepts it; ordered or approved work is not asked again.
+Source: `a407e8f3:PROCESS.md`, rules 2, 4 and 5, verbatim:
+
+> 2. прямой заказ разрешает простую работу. её предел: два SP. все требования должны быть выполнимы. обсуждение разрешением не считается. спорное оставь до ответа владельца.
+>
+> 4. спроектируй любую задачу сначала. простая задача до двух SP? все требования выполнимы? тогда делай сразу. задача больше двух SP? принеси проект, обоснование и план. предложи самый лёгкий вариант. проект держит всё заказанное и ничего сверх. лишнее считаешь критичным? спроси владельца и пометь критом. проект проверяет spotty до показа. не влезаешь в заказанный объём SP? скажи почему, предложи лёгкий вариант. всё общение строго по правилу дислексии.
+>
+> 5. план и макет показывай по заказу. свыше двух SP показывай всегда. согласование не нужно только до двух SP. неясный объём сначала уточни.
