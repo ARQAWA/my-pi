@@ -463,7 +463,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: the exact-1.5.0 gates of `RQW-settings` (`selection.ts`, `cache-warming.ts`), `RQW-tools` (`selection.ts`)
   and `RQW-anthropic` (`index.ts`, `retry.ts`, `lifecycle.ts`, `registration.ts`); the shared tool-selection symbol
   keeps one namespace in both copies of `selection.ts`; `package.json` pins the development dependency and the peer
-  range to 1.5.0, with `package-lock.json`; PCLI bundles the official 1.4.0 binary ([PCLI](#pcli)). Since: `02bd178`.
+  range to 1.5.0, with `package-lock.json`; PCLI bundles the official 1.5.0 binary ([PCLI](#pcli)). Since: `02bd178`.
 - **Extension layer, not a fork** `[D-SCOPE-LAYER]`. my-pi is an extension layer around stock Pi 1.5.0. Coordinator text
   (historical unverified attribution, not found in the session files above): "Мы делаем просто обвес вокруг
   оригинального Pi."; "Нет, никаких форков." Ported UI: `RQW-models`, `RQW-statusbar` and `RQW-send-now`
@@ -1314,12 +1314,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Since: `3b6d6c1`.
 - **Inside VS Code only** `[D-PCLI-VDI]`. Everything runs inside VS Code as a subprocess of the extension host.
   Coordinator text (owner quote not found in the Pi sessions): "у нас нет админских прав, у нас нет wsl, и нам нельзя запускать ничего такого прямо на хосте, только внутри vs code, только как extension vs code, как субпроцесс extension VS code. только так". Carrier: `pcli-vscode/extension.js`. Since: `3b6d6c1`.
-- **Pinned bundled Pi** `[D-PCLI-PIN]`. Pi 1.4.0 is bundled in the VSIX, with no runtime update. `vscode:prepublish`
-  runs `pcli-vscode/fetch-pi.mjs`: it downloads `pi-windows-x64.zip` of release `earendil-works/pi` v1.4.0, checks the
-  hard-coded SHA256 `0f7256ea8bdac3af20012b94fdc1252a31cc6dc0d2f9b9eb539555d22e3e321b` and extracts into
+- **Pinned bundled Pi** `[D-PCLI-PIN]`. Pi 1.5.0 is bundled in the VSIX, with no runtime update. `vscode:prepublish`
+  runs `pcli-vscode/fetch-pi.mjs`: it downloads `pi-windows-x64.zip` of release `earendil-works/pi` v1.5.0, checks the
+  hard-coded SHA256 `12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3` and extracts into
   `pcli-vscode/pi/` (git-ignored). A new Pi version needs new VERSION, URL and SHA256 there and a new VSIX; the root npm
   dependency does not change the bundled `pi.exe`. Coordinator text (owner quotes not found in the Pi sessions): "мы не будем автоматически обновлять PCLai."; "1 да давай 2 да давай". The pin moved from
-  1.3.0 to 1.4.0 with the package upgrade ([Scope](#scope)). Since: `3b6d6c1`.
+  1.3.0 to 1.4.0 and to 1.5.0 with the package upgrades ([Scope](#scope)); PCLI 0.0.8 on the `pcli` branch bundles 1.5.0. Since: `3b6d6c1`.
 - **Release binary, not npm** `[D-PCLI-BINARY]`. Pi from npm is a Node program and would run inside `Code.exe` with
   `ELECTRON_RUN_AS_NODE=1`, which leaks into every bash command and depends on VS Code's Node; `pi.exe` carries its own
   runtime, the path omp-vscode already uses on the VDI. Carrier: `pcli-vscode/fetch-pi.mjs`. Since: `3b6d6c1`.
