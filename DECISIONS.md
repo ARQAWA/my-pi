@@ -24,6 +24,12 @@ Provenance:
 - Only the quoted lines are copied from the sessions; no full transcript and no credential is copied into this
   repository.
 
+## Todo panel
+
+- **Todo working memory and panel** `[D-TODO-PANEL]`. The independent `RQW-todo` extension is for the main chat. The `todo` skill enables the mode until it is switched off; `todo` updates items together and stores branch state in tool-result details. An open list supplies a request-only summary and a three-line panel above the editor. The panel shows the current item, its current substep and the next item. `/todo` opens a full-screen view of items, substeps, reasons and closed lists. `blocked` requires a reason, shows a yellow `!` and is not done. Escape does not restart work. Before a completed turn, pending or active items receive at most one reminder per user message; blocked items do not trigger it. The extension follows RQW-statusbar in the package manifest.
+  Owner answers in the delegated task, verbatim: Q1 «по туду 1»; Q2 «1»; mockup «макет подшагов принял»; Q3 «1»; Q4 «1». Q1 selects the name `todo`, session-long mode and the request «выключи список» to turn it off. Q2 selects current item, current substep, then next item. Q3 selects the full-screen `/todo` view. Q4 selects one blocker status with a required reason and the reminder and Escape behaviour above.
+  Reason: maintain the task as working memory without imposing planning on every conversation. Design: `my-pi-evidence/designs/todo-panel/PLAN.md`. Carriers: `extensions/RQW-todo/`, `package.json`, `test/extensions/RQW-todo/`, `test/synthetic-todo.test.ts`.
+
 ## Auto-wait
 
 - **Automatic wait in the main chat** `[D-AUTO-WAIT]`. After a settled turn, the independently disableable `RQW-auto-wait` shows a context-free wait card for live direct agents and main jobs. Ready results share one hidden custom message and one new turn. There is no polling or model call for waiting. Explicit waits remain available. Auto-wait follows a completed model turn, so its final answer stays visible while intermediate text folds under `[D-UI-WORKED-FOR]`. Owner chose «1» for this behavior. Idle progress notices wait for user input instead of waking the model.
