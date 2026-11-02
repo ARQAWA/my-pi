@@ -62,7 +62,7 @@ Provenance:
   Owner: «да делай + к этому надо вырубить эти хоткеи шифт таб, ктрл л и ктрл п и шифт ктрл п».
   Owner: «Так, смотри у нас еще есть хоткейн и Ctrl+T это показать скрыть thinking надо его тоже удалить нахуй выключить».
   Owner: «три убирай».
-  Owner: «Пусть будет не курсивом, просто другим цветом шрифта и всё и да делай».
+  Owner source: [D-LIVE-TAIL].
   Design: `my-pi-evidence/designs/command-cleanup/DESIGN.md`.
   Reason: remove conflicting interactive command entrances without editing Pi.
   Carriers: `extensions/RQW-commands/`, `package.json`, `test/extensions/RQW-commands/`.
@@ -82,7 +82,6 @@ Provenance:
   Owner answered «1» to the coordinator's question to approve the 6 SP plan in three parts of at most 2 SP each: 1) the safe projection and the session manager methods, 2) RQW-context direct calls onto it, 3) RQW-codex direct calls onto it (2026-11-02; the question text is as given in the task brief, the session locator is not machine-verified).
   Decision, part 1: `extensions/RQW-history-edit/projection.ts` is a runtime patch (`[D-SCOPE-RUNTIME-PATCH]`) of `SessionManager.prototype.buildContextEntries` and `buildSessionProjection`. Pi's own call runs first; only a `RangeError` switches to a copy that builds the same result with loops, and a manager that overflowed once skips the stock call afterwards. Install checks the shape: both methods are writable functions and a probe branch (compaction, dropped system message, edit, settings entries) gives the same result as Pi's methods; otherwise nothing is installed and Pi stays stock. The wrappers stay for the process and a reload keeps them; they are transparent while Pi works. The patch offers the guarded free function on `globalThis[Symbol.for("rqw:safe-projection:v1")]` for callers that hold an entry list, not a manager (parts 2 and 3). Part 2: `extensions/RQW-context/background.ts` projects its branch snapshots through that offer when it exists (`project`), otherwise through Pi's function; it imports nothing from RQW-history-edit. Part 3: `extensions/RQW-codex/session-history.ts` does the same for its free-function call `projectedMessages`, the path of the crash trace (`WireHistory.load` through `portable-history.ts` on session close); its calls on the session manager use the manager's own method, which part 1 patches. Huge-tail compaction: Pi's module-bound `prepareCompaction` cannot use the offer. `RQW-context/large-tail.ts` therefore uses the existing `prepareSnapshot` for manual, threshold and overflow compaction only when Pi's projection throws a `RangeError` and the offer and session seams are available. Ordinary or unsupported shapes stay on Pi's own path. One shared bypass, not copies of Pi's private methods, calls the normal summary generator (including ready/running background adoption), stores through `appendCompaction` and refreshes context through `refreshContext`. It preserves before/after hooks, cancellation, compaction state, failure reporting, queued-message continuation and overflow retry. Entry count does not measure tokens: a synthetic branch with 130000 `custom` records projects to 2 estimated tokens, then visible input and a usage-backed reply grow it to 550001 against a 500000 window; the old native pre-request checkpoint returns that oversized context unchanged. Background preparation and generation worked, but native preparation prevented storing the ready summary. The bypass closes that gap. It does not make a single oversized retained message or an oversized summarization request fit a model window.
   Owner, huge-tail compaction, verbatim: «Подожди, если, блядь, автожатие молча пропускается, а ручное сжатие ошибку показывает, то получается все на этом. пи перестает работать, ведь контекст переполнен». Owner's follow-up, verbatim: «а почему бы, ну, как-то по-другому это не организовать... по 50 тысяч элементов обрабатывает собирает их кусками в одну портянку склеивает и от дает нажатие... типа вообще никак нельзя, блядь, сделать какой-то обход, ну, типа, максимально простой, легковесный, выйти за рамки пи». The follow-up task explicitly forbids copying Pi's private methods and authorizes the shared preparation bypass within 2 SP. Carriers: `extensions/RQW-context/large-tail.ts`, `index.ts`, `test/extensions/RQW-context/large-tail.test.ts`.
-  Before the huge-tail fix, the limitation was: Pi's own compaction preparation, `prepareCompaction` in `dist/core/compaction/compaction.js`, calls the projection through a module binding that cannot be patched; it keeps the stock behaviour: compacting a session with such a tail is not a crash: manual compaction shows Pi's error, and automatic compaction fails in `prepareCompaction` before Pi starts reporting, so `_runAutoCompaction` returns without a message and the session is not compacted. Fixing it needs a copy of Pi's two compaction entry points and is outside this decision; it is reported to the owner as an open question.
   Measurement: `scripts/measure-safe-projection.ts` runs in the CI test job and prints Pi's time and the safe copy's time on a synthetic long tail; it asserts no time.
   Reason: a long session must open, project and be edited without the user losing the chat to a stack overflow. Carriers: `extensions/RQW-history-edit/projection.ts`, `index.ts`, `extensions/RQW-context/background.ts`, `extensions/RQW-codex/session-history.ts`, `scripts/measure-safe-projection.ts`, `.github/workflows/tests.yml`, `test/extensions/RQW-history-edit/projection.test.ts` (with `uninstallSafeProjection`, a hook used only by tests; the four test files that load the extension use it too, so every test restores `SessionManager.prototype`), `test/extensions/RQW-context/background.test.ts`, `test/extensions/RQW-codex/session-history.test.ts`.
 
@@ -432,30 +431,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: `AGENTS.md`, `extensions/RQW-agent/prompt.ts`, `test/isolation.test.ts`,
   `.pi/extensions/qa-status/fit.ts`. Since: harness-isolation.
 
-- **Web-search model follows the caller** `[D-SCOPE-WEB-SEARCH-MODEL]`. The search-side GPT model matches the
-  calling agent, independently of the coordinator's development subagent table. GPT callers use the same model and
-  thinking; Claude callers use a fixed GPT counterpart from the product-side search mapping. Reviewer profiles
-  are independent and have no cross-provider fallback. The owner's confirmed model/thinking table is in [D-WEB-MAPPING](#web-search).
-  Search consumes the owner's ChatGPT
-  subscription usage like any Codex message; the subagent matrix is unchanged.
-  Owner (`16-27-59:4924`, entry `89d7b2e6`):
-  «Мы не привязываемся к координатам. Короче, модель будет та же, которая соответствует нашей модели, которая делает запрос. Вот так. Как понял меня? Давай синканемся здесь.»
-  «У нас у каждой cloud-модели есть соответственная модель GPT. А там какая модель на GPT? Там какая-то определённая модель выбирается, или как это происходит? Я не понимаю.»
-  Owner follow-up (`16-27-59:4928`, entry `e8dc0395`):
-  «Надо таблицу соответствия закрепить сразу же заранее. Просто надо понимать, какие модели ищут. Какая-то модель Soul 6, допустим.»
-  Coordinator text, interpretation before the owner's follow-up at line 4928: same GPT model/thinking for a GPT
-  caller; product-side fixed GPT counterpart for a Claude caller, not the coordinator's subagent classes;
-  searches spend subscription usage.
-  Owner fixed mapping (`16-27-59:4937`, entry `a8684155`):
-  «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё. Только Sol 6.1 и Sol 6 знаешь как будут соответствовать Haiku? Следующим образом, смотри: Sonnet и Opus: low модель соответствует low модели. Sol 6.1 один к одному соответствует Sonnet. А вот Opus 5.5 и Sol 6.1 соответствуют следующим образом: Opus 5.5 low соответствует Sol 6.1 low, Opus 5.5 medium соответствует Sol 6.1 high, а Opus 5.5 high соответствует Sol 6.1 extra high. Соответственно, все высшие рислинги Opus соответствует Sol 6.1 max.»
-  Owner confirmed the complete table (`16-27-59:4941`, entry `2502a877`):
-  «Да, всё именно так, как ты записал.»
-  The shipped tool applies the mapping automatically from its calling agent's model/thinking, without model
-  arguments for the agent. Owner (`16-27-59:4945`, entry `5a0f77bd`):
-  «И потом в будущем, когда мы сделаем tooling, таблица соответствия модели будет прокидываться автоматически на уровне функционала. Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться»
-  Reason: search follows the caller's capability instead of a universal cheap backend. Carrier: `extensions/RQW-web/core/model-map.ts`,
-  table in [D-WEB-MAPPING](#web-search).
-  Since: process-rules-oct23 squash.
 
 - **Pi version** `[D-SCOPE-PI-VERSION]`. Pi 1.4.0 is the one supported and tested version; 1.3.0 is no longer supported
   and the range is not widened to future versions. Owner (`16-27-59:1839`, `16-27-59:1887`, `16-27-59:1953`):
@@ -472,8 +447,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   оригинального Pi."; "Нет, никаких форков." Ported UI: `RQW-models`, `RQW-statusbar` and `RQW-send-now`
   ([Models](#models), [Status bar](#status-bar), [Send now](#send-now)); `RQW-scroll` adds one key behavior
   ([Scroll](#scroll)). Compact tools, agent cards and naming are registered in `pi.extensions`;
-  the native `RQW-theme` resource is registered separately in `pi.themes` ([UI activation](#ui-activation)). omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
-  tools ([Tools](#tools)). Reason: keep Pi's own behavior and add only agreed extensions. Carriers: `package.json`,
+  the native `RQW-theme` resource is registered separately in `pi.themes` ([UI activation](#ui-activation)). The model uses our own `rqw_readfile`, `rqw_glob` and `rqw_rg`; stock `read`, `find` and `grep` stay hidden as the fallback ([Tools](#tools)). Reason: keep Pi's own behavior and add only agreed extensions. Carriers: `package.json`,
   `extensions/`. Since: `9ef1519`. Any restriction on runtime changes is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
 - **Runtime changes and patches** `[D-SCOPE-RUNTIME-PATCH]`. Owner, verbatim: «Надо переписать правила работы с нашим репозиторием, с нашим harness, что разрешены все виды правок в runtime, все виды патчей в runtime. Можно патчить все что угодно в runtime с условием, что это будет сверхлегковесно, производительно, эффективно работать на всех стендах. То есть Windows, MacOS. И при апдейте надо будет их поддерживать тоже, при апдейте версии P.»
   Extensions may make any runtime change or patch to Pi in memory. Installed Pi files are not edited; there is no fork or rebuild. Changes and patches must be ultra-light, fast and efficient on every stand, including Windows VDI through PCLI and macOS. Each patch checks its expected shape and falls back to stock on mismatch. Every Pi version update includes checking every runtime patch and keeping it working.
@@ -489,14 +463,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Coordinator text (historical unverified attribution): "мы их не упраздняем, а откладываем". Status of each item:
   [BACKLOG.md](BACKLOG.md). The agent runtime and reviewer profiles are separate decisions:
   [Agent](#agent), [Review](#review). Since: `d28ae41`.
-- **Reviewers** `[D-SCOPE-REVIEWERS]`. `RQW-review` supplies Codex TOML role profiles and native Agent Skills,
-  while RQW-agent supplies their ordinary execution lifecycle. The contract and models are in [Review](#review).
-  Owner source: `[D-AGENT-PROFILES]`; reason: one shared runtime for every specialized role.
-  Carriers: `extensions/RQW-review/`, `extensions/RQW-agent/`. Since: subagent-profiles.
-- **Two visible providers** `[D-SCOPE-PROVIDERS]`. `/login` and model lists show only `anthropic` and `openai-codex`;
-  the rule and its carriers are in [Providers](#providers). Coordinator text (historical unverified attribution, see
-  `C:3171` there): "Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и
-  авторизация через Anthropic, которую ты сейчас делаешь. И всё". Since: `c8434b0`.
 ## UI activation
 
 - **Enable the ready interface now** `[D-UI-ENABLE-NOW]`. Owner: «1а».
@@ -505,22 +471,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Coordinator text, option a, assistant entry `60ca78d9`, `2026-10-23T19:03:52Z`:
   Включить сейчас всё готовое вместе с карточками агентов, а карточку ревьюера добавить позже, когда будет новый ревьюер. Ты получишь интерфейс в ближайшие часы.
   Register naming, agent-ui and tool-ui now; statusbar is already registered.
-  Change of circumstances, coordinator text, not an owner answer: the owner answered 1а while the new reviewer was
-  still open. Since then the new reviewer has landed on `main` (`11b0fe2`), so the review card T14 is no longer
-  deferred. It is part of the same switch-on and is delivered with `RQW-agent-ui`: cards for `agent`
-  including ordinary reviewer-profile results.
   Reason: deliver the ready interface at once; the one deferred part became ready before delivery.
   Carriers: `package.json`, `extensions/RQW-agent-ui/`.
 - **Renderer order** `[D-UI-RENDERER-ORDER]`. Technical decision under the activation approval above:
   preserve the existing extension order, then append `RQW-naming`, `RQW-agent-ui`, `RQW-tool-ui`.
   Pi 1.4.0 `dist/core/extensions/loader.js` `loadExtensionsInternal` initializes paths in order;
   `runner.js` `resolveToolRenderers` calls resolvers in load order with `next()` delegating to later resolvers.
-  Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
-  tool-ui's: the summary part `Waited for N agents` and the live block `wait <ids>`, per the owner's wait amendment
-  "1а 2а". Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
-  cards: header with id, status, model, effort and seconds, then the full answer verbatim. With tool-ui off,
-  agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
-  gives the same result.
+  Thus agent-ui is the outer resolver. The order is explicit and tested, not a claim that reversing it gives the same result.
   `getMessageRenderer` returns the first matching extension renderer; agent-ui owns `agent`
   results, including reviewer-profile agents. Naming registers no competing tool/message renderer and keeps the existing producers first.
   Reason: preserve independent cards and compact tools without changing execution. Carrier: `package.json`.
@@ -556,7 +513,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   All tool calls between assistant answers share a muted summary with confirmed edit/read/search/run/wait/other
   counts. Latest top-level call leads; current call shows its header, last four output rows and status. The next
   call folds the previous; answer text immediately folds the live block. Ctrl+O shows every original at its place
-  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`; `host.ts` patches Pi in memory and reads host internals with shape checks and stock fallback. Unsupported nested-result details remain omitted, not invented.
+  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. `host.ts` patches Pi in memory and reads host internals with shape checks and stock fallback. Unsupported nested-result details remain omitted, not invented.
   Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{host,index,groups,render,summary,live}.ts`,
   its README, `package.json` and `test/isolation.test.ts`.
   Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
@@ -581,14 +538,10 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Accepted clock recommendation: «часы идут от твоего сообщения. если тебя нет, от карточки агента. пауза перед ними не считается.»
   Accepted cut recommendation: «кусок после линии сжатия тоже сворачивать. сейчас он остаётся открытым.»
 
-  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles,
-  unless agents or background processes are still running. Owner: «они должны сворочиваться все в одну строку»
+  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles; background work cannot hold the fold open. Old `rqw-tool-ui-final` marks remain readable, but no new marks are written.
+  Owner: «они должны сворочиваться все в одну строку»
   when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).
-  The extension reads `rqw:running-counts:request/offer` and writes invisible `rqw-tool-ui-final` entries with
-  `{ key, final: false }` for such answers. When the idle session remains quiet for 500 ms after background work
-  ends, it writes `{ key, final: true }` if no message or card followed; a new run can close the span instead.
-  Marks preserve the verdict in history; sessions without marks keep the earlier behavior. A pending mark is not
-  restored after exit or session switch, so it can remain unclosed on resume.
+  Coordinator note: the earlier real-final condition in this quote was replaced by the settled-answer rule above.
   Earlier real final answers, including questions, stay outside later folds; later tools and notifications never remove them.
   User messages no longer split spans. The closed fold lifts every owner user message, in order, above one dim
   `worked for 42s ›` row and the final answer. Agent cards and tools fold. Open restores exactly the original
@@ -598,7 +551,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
   Owner approval and clarification of the mockup (`my-pi-evidence/designs/worked-for-placement/MOCKUP.md`), verbatim:
   «раскрытый блок, он типа встает под самое первое сообщение, а так же как он стоит под последним сообщением, ну, свернутом, в свернутом статусе, под последнее мое сообщение, только под первое мое сообщение из этого. чанка то есть если в чанке всего одно сообщение то значит он остается на месте если там несколько то он уходит под первое сообщение вот а визуально окей. да, вот. получается, что да, делаем два сторипоинта.»
-  The earlier `˅` of the open state is superseded by this order. Carrier: `extensions/RQW-tool-ui/fold.ts` (`Fold.at`).
+  Carrier: `extensions/RQW-tool-ui/fold.ts` (`Fold.at`).
   Time starts with the span's first message timestamp, or a delivered card's saved timestamp when it starts without
   an owner message; it ends with the final answer's saved entry timestamp. The preceding idle pause is excluded;
   waiting and closed Pi within the span count. Round whole seconds first: `42s`, `2m 03s`, `1h 05m`; no space before
@@ -614,15 +567,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Restart, reload, rebuild and reloaded history intervals start closed; redraw and resize preserve open state.
   Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: `InteractiveMode.prototype.addMessageToChat` records message
   bundles and finds the chat container; its O(1) render guard rebinds on a new transcript or settled run.
-  Components keep place, order and identity; hidden members return without original render. The real-final
-  check uses the 500 ms timer described above. An unexpected shape keeps today's view.
+  Components keep place, order and identity; hidden members return without original render. An unexpected shape keeps today's view.
   The header owner caches original user/skill bundle rows and their mouse transforms; source updates invalidate
   that cache. Closed messages appear once above the header, including a sole owner message after an agent card.
   Opening removes the projection and restores their original order without moving any components.
   Every loaded interval binds separately, including local suffixes after older cuts. Source-update wrappers and
   lifted-row references are released on unload. Own and inherited descriptors are checked before wrapping; an
   unsupported component leaves its entire span visible. Skill-dollar compatibility is tested without a product import.
-  Carriers: `extensions/RQW-tool-ui/{background,fold,groups,host,index}.ts`, its README,
+  Carriers: `extensions/RQW-tool-ui/{fold,groups,host,index}.ts`, its README,
   `test/extensions/RQW-tool-ui/{fold,real-final}.test.ts`, `test/lazy-folds.test.ts` and `test/worked-for-skills.test.ts`.
 
 ## Agent cards
@@ -634,6 +586,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   cut at the front with `…`, rows cached per card and width. Owner: «Вообще не надо отрисовывать. Что там агент пишет? Мне вообще поебать, что там написано. [...] Эти карточки, которые ты отрисовываешь, во-первых, должны занимать ноль CPU. И для их отрисовки тебе не надо весь текст, тебе надо только конец текста. Последние символы текста должны быть. Ты должен всё сделать супер просто, супер оптимально, супер легко.» Missing metadata stays omitted. Reviewer profiles
   use these same ordinary `agent#N` cards; there is no separate review delivery or review card.
   The card shows the model as its picker label (`Sonnet 5.5`, `GPT-6.1 Terra`, plain `text` colour, unknown models by id) and the effort as the status-bar short label (`md`, `xh`). Owner: «Я хочу что бы в интерфейсе отображалась модель как алиса в пикере так же красиво и пиздато» «и что бы ризонинг так же писался кратко и цветом тем же». Coordinator mockup: «было: agent#1638 Reviewer efforts finished · sonnet-5-5 medium · 1m 10s / станет: agent#1638 Reviewer efforts finished · Sonnet 5.5 md · 1m 10s / gpt: agent#1629 Codex agent texts finished · GPT-6.1 Terra xh · 4m 02s. 1. имя модели берётся из пикера. Sonnet 5.5, Opus 5.5, GPT-6.1 Terra. 2. имя станет ярким, как в строке состояния. сейчас оно серое. 3. ризонинг кратко, как в строке состояния. lo, md, hi, xh, mx. 4. цвет ризонинга тот же, что в пикере. с medium и выше он жирный. делаем так? 1. да. 2. имя жирное, как выбранная строка в пикере.» Owner: «1».
+  Owner wait amendment: "1а 2а". Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
   Stored wait results: with both agent-ui and tool-ui loaded, the collapsed result is tool-ui's (summary part
   `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
   id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
@@ -2018,9 +1971,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); RQW-settings selects it once on first start (`[D-SETTINGS-SETUP]`); later choice stays native through `/settings` -> Theme.
 
 - **Wait mockup palette** `[D-THEME-WAIT-PALETTE]`. `userMessageBg` is directly `#36312c`, `muted` is `#b8b3aa`, and `dim` is `#96918a`. Shared variables `card`, `smoke`, and `steel` and all other colours stay unchanged. The approved mockup is `my-pi-evidence/designs/wait-card-colors/MOCKUP.md`, `MOCKUP.html`, and `MOCKUP.png`.
-  Owner, verbatim: «Давай делай как на макете, но с названиями аргентов
-
-По карточкам, короче, мне все нравится, кроме задника. Вот, задник пусть будет, короче, фиолетовый, так же, как у.. Это же туллинг агентов, соответственно. А, подожди, там не только туллинг, там еще могут быть эти. Там еще.. могут быть инструменты до какие-то блять ну ладно пусть такой остается макет похуй цветовая гамма оставляет какая на макете».
+  Owner source: [D-AUTO-WAIT-CARD].
   Reason: make user messages and secondary text clearer with the approved warm palette. Carriers: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`, `test/extensions/RQW-theme/schema.test.ts`.
 
 - **Gold accent kept** `[D-THEME-ACCENT-GOLD]`. `accent` in `RQW-theme` is `sourceGold` (`#c9a227`), unlike the empty `accent` of the owner's OMP theme. Owner answered «1» to the question "Оставить золотой accent в диалогах и списках?" (option 1: keep, record in `DECISIONS.md`), 2026-11-02. Dialog and list accents, the `/btw` label and the model picker use it.
@@ -2112,7 +2063,20 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
 - **Tool interface** `[D-WEB-INTERFACE]`. Owner (`16-27-59:4917`): «Если для агента это будет тяжело, то сделай две команды. А если казуально, то оставь одну» One tool `web` takes nonempty `queries` OR `urls`, optional URL-only `focus`, `mode: cached|live|indexed` and `response_length: short|medium|long`. It returns concise summaries, supporting links, statuses and actual search model/thinking. Carrier: `extensions/RQW-web/tool.ts`, `description.md`.
 - **Automatic model mapping** `[D-WEB-MAPPING]`. Owner: «кстати еще надо веб туллинг переделать что бы он давал паритетные модели соннету опусу и хайку» Owner: «нет уровень не тот же везде) щас скажу какой)))» Owner: «опус лоу и медиум берет тоже самое опус хай и выше берет сол хай
   по терра берет хай для хай и икс хай для выше чем икс хай соннета
-  у хайку так же» Owner confirmed the table below: «да верная матрица». Owner (`16-27-59:4945`): «Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться» The tool captures `ctx.model` and its own Pi API's `getThinkingLevel()` at each invocation, not the coordinator model; model arguments are absent. The model rule stays in [D-SCOPE-WEB-SEARCH-MODEL](#scope).
+  у хайку так же» Owner confirmed the table below: «да верная матрица». Owner (`16-27-59:4945`): «Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться» The tool captures `ctx.model` and its own Pi API's `getThinkingLevel()` at each invocation, not the coordinator model; model arguments are absent.
+
+  Owner (`16-27-59:4924`, entry `89d7b2e6`):
+  «Мы не привязываемся к координатам. Короче, модель будет та же, которая соответствует нашей модели, которая делает запрос. Вот так. Как понял меня? Давай синканемся здесь.»
+  «У нас у каждой cloud-модели есть соответственная модель GPT. А там какая модель на GPT? Там какая-то определённая модель выбирается, или как это происходит? Я не понимаю.»
+  Owner follow-up (`16-27-59:4928`, entry `e8dc0395`):
+  «Надо таблицу соответствия закрепить сразу же заранее. Просто надо понимать, какие модели ищут. Какая-то модель Soul 6, допустим.»
+  Owner fixed mapping (`16-27-59:4937`, entry `a8684155`):
+  «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё. Только Sol 6.1 и Sol 6 знаешь как будут соответствовать Haiku? Следующим образом, смотри: Sonnet и Opus: low модель соответствует low модели. Sol 6.1 один к одному соответствует Sonnet. А вот Opus 5.5 и Sol 6.1 соответствуют следующим образом: Opus 5.5 low соответствует Sol 6.1 low, Opus 5.5 medium соответствует Sol 6.1 high, а Opus 5.5 high соответствует Sol 6.1 extra high. Соответственно, все высшие рислинги Opus соответствует Sol 6.1 max.»
+  Owner confirmed the complete table (`16-27-59:4941`, entry `2502a877`):
+  «Да, всё именно так, как ты записал.»
+  Owner (`16-27-59:4945`, entry `5a0f77bd`):
+  «И потом в будущем, когда мы сделаем tooling, таблица соответствия модели будет прокидываться автоматически на уровне функционала. Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться»
+  Coordinator note: the earlier fixed mapping in the quoted table was replaced by the mapping below.
 
   | Caller | Search model | low | medium | high | xhigh | max |
   | --- | --- | --- | --- | --- | --- | --- |

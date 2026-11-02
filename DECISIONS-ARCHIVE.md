@@ -7495,3 +7495,131 @@ Source: `9c362a31:DECISIONS.md`, the whole entry, verbatim:
 >   Running agent counts, the activity indicator and its shimmer are RQW-statusbar's, not the cards' ([D-STATUSBAR-ACTIVITY](#status-bar)).
 >   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
 >   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
+
+## A-0438 · archived 2026-11-02 · History edit · old compaction limitation
+
+Status: SUPERSEDED by [D-HISTORY-BIG-SESSION] (DECISIONS.md#history-edit): the shared bypass fixes the limitation.
+Introduced: `666b803c`. Source: `8a0cab5d:DECISIONS.md`, lines 85-85. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Before the huge-tail fix, the limitation was: Pi's own compaction preparation, `prepareCompaction` in `dist/core/compaction/compaction.js`, calls the projection through a module binding that cannot be patched; it keeps the stock behaviour: compacting a session with such a tail is not a crash: manual compaction shows Pi's error, and automatic compaction fails in `prepareCompaction` before Pi starts reporting, so `_runAutoCompaction` returns without a message and the session is not compacted. Fixing it needs a copy of Pi's two compaction entry points and is outside this decision; it is reported to the owner as an open question.
+
+
+## A-0439 · archived 2026-11-02 · Scope · web model mapping
+
+Status: MERGED by [D-WEB-MAPPING] (DECISIONS.md#web-search): the model rule is consolidated.
+Introduced: `b0b36729`. Source: `8a0cab5d:DECISIONS.md`, lines 435-458. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Web-search model follows the caller** `[D-SCOPE-WEB-SEARCH-MODEL]`. The search-side GPT model matches the
+>   calling agent, independently of the coordinator's development subagent table. GPT callers use the same model and
+>   thinking; Claude callers use a fixed GPT counterpart from the product-side search mapping. Reviewer profiles
+>   are independent and have no cross-provider fallback. The owner's confirmed model/thinking table is in [D-WEB-MAPPING](#web-search).
+>   Search consumes the owner's ChatGPT
+>   subscription usage like any Codex message; the subagent matrix is unchanged.
+>   ...
+>   ...
+>   ...
+>   ...
+>   ...
+>   Coordinator text, interpretation before the owner's follow-up at line 4928: same GPT model/thinking for a GPT
+>   caller; product-side fixed GPT counterpart for a Claude caller, not the coordinator's subagent classes;
+>   searches spend subscription usage.
+>   ...
+>   ...
+>   ...
+>   ...
+>   The shipped tool applies the mapping automatically from its calling agent's model/thinking, without model
+>   arguments for the agent. ...
+>   ...
+>   Reason: search follows the caller's capability instead of a universal cheap backend. Carrier: `extensions/RQW-web/core/model-map.ts`,
+>   table in [D-WEB-MAPPING](#web-search).
+>   Since: process-rules-oct23 squash.
+
+
+## A-0440 · archived 2026-11-02 · Scope · reviewers
+
+Status: MERGED by [D-REVIEW-PROFILES] (DECISIONS.md#review): the contract is consolidated.
+Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 492-495. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Reviewers** `[D-SCOPE-REVIEWERS]`. `RQW-review` supplies Codex TOML role profiles and native Agent Skills,
+>   while RQW-agent supplies their ordinary execution lifecycle. The contract and models are in [Review](#review).
+>   Owner source: `[D-AGENT-PROFILES]`; reason: one shared runtime for every specialized role.
+>   Carriers: `extensions/RQW-review/`, `extensions/RQW-agent/`. Since: subagent-profiles.
+
+
+## A-0441 · archived 2026-11-02 · Scope · providers
+
+Status: MERGED by [D-PROVIDERS-ALLOW] (DECISIONS.md#providers): the provider rule is consolidated.
+Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 496-499. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Two visible providers** `[D-SCOPE-PROVIDERS]`. `/login` and model lists show only `anthropic` and `openai-codex`;
+>   the rule and its carriers are in [Providers](#providers). Coordinator text (historical unverified attribution, see
+>   `C:3171` there): "Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и
+>   авторизация через Anthropic, которую ты сейчас делаешь. И всё". Since: `c8434b0`.
+
+
+## A-0442 · archived 2026-11-02 · UI activation · changed circumstances
+
+Status: OBSOLETE by [D-UI-AGENT-CARDS] (DECISIONS.md#agent-cards): delivery is complete.
+Introduced: `005fac9d`. Source: `8a0cab5d:DECISIONS.md`, lines 508-511. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Change of circumstances, coordinator text, not an owner answer: the owner answered 1а while the new reviewer was
+>   still open. Since then the new reviewer has landed on `main` (`11b0fe2`), so the review card T14 is no longer
+>   deferred. It is part of the same switch-on and is delivered with `RQW-agent-ui`: cards for `agent`
+>   including ordinary reviewer-profile results.
+
+
+## A-0443 · archived 2026-11-02 · UI activation · wait card rendering
+
+Status: MERGED by [D-UI-AGENT-CARDS] (DECISIONS.md#agent-cards): card rendering is stated there.
+Introduced: `005fac9d`. Source: `8a0cab5d:DECISIONS.md`, lines 518-523. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
+>   tool-ui's: the summary part `Waited for N agents` and the live block `wait <ids>`, per the owner's wait amendment
+>   ... agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
+>   cards: header with id, status, model, effort and seconds, then the full answer verbatim. With tool-ui off,
+>   agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
+>   gives the same result.
+
+
+## A-0444 · archived 2026-11-02 · Scope · tool implementations
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the model uses our file tools with stock fallback.
+Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 475-476. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
+>   tools
+
+## A-0445 · archived 2026-11-02 · Compact tool display · final marker writes
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `4d770408` (opening sentence), `0fcab111` (background condition and marker design). Source: `8bc85e26:DECISIONS.md`, lines 541-548. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles,
+>   unless agents or background processes are still running. ...
+>   The extension reads `rqw:running-counts:request/offer` and writes invisible `rqw-tool-ui-final` entries with
+>   `{ key, final: false }` for such answers. When the idle session remains quiet for 500 ms after background work
+>   ends, it writes `{ key, final: true }` if no message or card followed; a new run can close the span instead.
+>   Marks preserve the verdict in history; sessions without marks keep the earlier behavior. A pending mark is not
+>   restored after exit or session switch, so it can remain unclosed on resume.
+
+## A-0446 · archived 2026-11-02 · Compact tool display · real-final timer
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `0fcab111`. Source: `8bc85e26:DECISIONS.md`, lines 573-575. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> The real-final
+>   check uses the 500 ms timer described above.
+
+## A-0447 · archived 2026-11-02 · Compact tool display · old open arrow
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `1a451132`. Source: `8bc85e26:DECISIONS.md`, lines 558-558. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   The earlier `˅` of the open state is superseded by this order.
+
+## A-0448 · archived 2026-11-02 · Compact tool display · repeated patch restriction
+
+Status: MERGED by [D-SCOPE-RUNTIME-PATCH] (DECISIONS.md#scope): the restriction is already addressed.
+Introduced: `a9873f64`. Source: `8bc85e26:DECISIONS.md`, line 516. Verbatim replaced text:
+
+> The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`;
