@@ -867,7 +867,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
-  Reason: no synthetic keepalive inference before the first real request.
+  Reason: Pi's own generic warmer stays off. The one background request is the separate main-chat Anthropic warm `[D-ANTHROPIC-WARM]` ([Anthropic subscription adapter](#anthropic-subscription-adapter)), ordered by the owner; children are never warmed. Earlier reason: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0419.
   Carrier: `extensions/RQW-settings/cache-warming.ts`. Since: `b91f832`.
 - **Default tools and reload** `[D-SETTINGS-DEFAULT-TOOLS]`. RQW-settings activates registered built-in `codemode` and `tool_search` at `session_start` only without an explicit CLI or `defaultTools` selection, using the same selection policy as RQW-tools for grep/find. Disabled built-ins are not added. The default codemode mode stays `on`; Pi adds codemode call signatures to the seven RQW-tools descriptions, including `job`. On `/reload` both extensions leave the existing active set alone, preserving user changes. Replaces the former `[D-SETTINGS-CODEMODE]`, which the archive still cites.
   Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
@@ -1456,7 +1456,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Since: `9ef1519`.
 - **Proof boundary** `[D-ANTHROPIC-PROOF]`. Tests: `test/extensions/RQW-anthropic/adapter.test.ts`,
   `test/extensions/RQW-anthropic/quota.test.ts`, `test/extensions/RQW-anthropic/retry.test.ts`,
-  `test/extensions/RQW-anthropic/context-fork.test.ts`. They do not prove live subscription acceptance, billing or actual
+  `test/extensions/RQW-anthropic/context-fork.test.ts`, `test/extensions/RQW-anthropic/main-warm.test.ts`. They do not prove live subscription acceptance, billing or actual
   Windows execution. The status of old Claude benchmark campaigns is recorded once in
   [Work policy](#work-policy). Independent review follows `PROCESS.md`. Since: `8a1f2ed`.
 - **Header boundary, per-request version** `[D-ANTHROPIC-HEADERS]`. Engineering follow-up to four review findings:
@@ -1479,6 +1479,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   compaction. Bounds: Pi's `maxAgentDelayMs` including 0, and the timer maximum. A private retry method of another shape stays stock. Owner: «по антропикам оставляем то что есть сейчас и проведи ресерч как мы можем это улучшить за 1 стори поинт и надо ли что то улучшать»; «Есть ли еще какие то улучшения по антропику на минимальное количество сторей не обязательно на 1, мне надо все импрувменты которые будут полезны»; «по пакетам пакет один, пакет два делай. По пакетам Anthropic.»
   Evidence: `my-pi-evidence/opencode-claude/REPORT.md` section «Все полезные улучшения». Carriers:
   `extensions/RQW-anthropic/retry-hints.ts`, `transport.ts`, `auth.ts`.
+
+- **Main cache warm** `[D-ANTHROPIC-WARM]`. Only the main chat and only Anthropic. After 50 minutes without a real request, counted from the start of the last answered one, Pi itself repeats that request asking for a one-token answer (`max_tokens: 1` is the only change, no dot, so the cache prefix matches exactly). The answer is dropped; nothing reaches the history or the session file, no tool runs. A real request, the owner writing, queued input, a new model, branch or session identity, a compaction, reload or close cancels it; busy work at the deadline skips it; a timer more than 5 minutes late (sleep) is skipped; an error ends the cycle without a retry; the cycle goes on only after a cache read. Only `long` retention, OAuth, adaptive or no thinking and local tools only are warmed; a running shell command also skips it. Subagents are not warmed (short cache, `[D-AGENT-CACHE]`). Pi's generic warmer stays off (`[D-SETTINGS-WARMING]`) and the hourly wrapper `bindSessionCache` stays (`[D-ANTHROPIC-OAUTH-TTL]`).
+  Owner: «делай конечно» (`16-27-59:88041`), answering this offer (coordinator text, not owner words): "only the main chat and only Anthropic; after 50 minutes of silence Pi itself repeats the last request asking for a one-token answer (instead of a dot, so the cache matches exactly); the answer is discarded and nothing is written to history; if the owner writes or work is running the warm is cancelled; subagents are not warmed (short cache)." Accepted risk: each warm spends subscription quota.
+  Reason: a long-open main chat keeps its one-hour cache without paying a cold write after a pause. This replaces, for the main Anthropic chat only, the old ban on background requests (`[D-SETTINGS-WARMING]`, earlier reason archived as A-0419).
+  Carriers: `extensions/RQW-anthropic/warm.ts` (timer, cancel rules), `context-fork.ts` (`replay`, the isolated one-shot send), `transport.ts`, `index.ts`. Design: `my-pi-evidence/designs/cache-warm/DESIGN.md`, chunk B. Tests: `test/extensions/RQW-anthropic/main-warm.test.ts`. Not proven on a live subscription: real cache hits and quota use.
 
 ## Models
 

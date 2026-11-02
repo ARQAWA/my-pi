@@ -185,7 +185,7 @@ test("registered main summaries traverse RQW-anthropic without changing the main
 	t.after(() => { globalThis.fetch = originalFetch; });
 	anthropic(d.pi);
 	d.ctx.model = d.runtime!.getModels("anthropic").find(model => model.id === "claude-sonnet-5-5") ?? d.runtime!.getModels("anthropic")[0];
-	await d.emit("rqw-anthropic:session-bind", { session: { sessionId: d.manager.getSessionId() } });
+	await d.emit("rqw-anthropic:session-bind", { session: { sessionId: d.manager.getSessionId(), subscribe: () => () => {} } });
 	const options = { sessionId: d.manager.getSessionId(), reasoning: "low" as const };
 	assert.equal((await d.registry.streamSimple(d.ctx.model, mainContext, options).result()).stopReason, "stop");
 	await d.steps();

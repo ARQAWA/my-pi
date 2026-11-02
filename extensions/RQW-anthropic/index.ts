@@ -48,6 +48,7 @@ export default function anthropic(pi: ExtensionAPI) {
 		releaseQuota();
 		releaseWarning?.();
 		quota.dispose();
+		overlay.warm.dispose();
 		overlay.forks.clear();
 		try { lifecycle?.release(); }
 		finally {
@@ -66,6 +67,7 @@ export default function anthropic(pi: ExtensionAPI) {
 				const session = (event as unknown as { session: AgentSession }).session;
 				lifecycle!.bindSession(ctx.sessionManager, session);
 				sessionId = session.sessionId;
+				overlay.warm.bind(session);
 				releaseWarning?.();
 				releaseWarning = bindRetryWarning(session, () => pi.events.emit("rqw:background-warning:v1", {
 					sessionId: session.sessionId, text: "anthropic: no retry",
@@ -112,6 +114,12 @@ export default function anthropic(pi: ExtensionAPI) {
 				throw new Error(`${LOGIN_HELP} Adapter registration is unavailable.`);
 			}
 		});
+		// The owner writing, a new model or branch, or a compaction ends the main cache-warm cycle; the next real request starts one.
+		pi.on("input", () => { overlay.warm.cancel(); });
+		pi.on("model_select", () => overlay.warm.cancel());
+		pi.on("session_before_tree", () => { overlay.warm.cancel(); });
+		pi.on("session_tree", () => overlay.warm.cancel());
+		pi.on("session_compact", () => overlay.warm.cancel());
 		pi.on("session_shutdown", cleanup);
 	} catch (error) { cleanup(); throw error; }
 }

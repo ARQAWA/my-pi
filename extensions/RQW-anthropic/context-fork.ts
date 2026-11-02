@@ -34,7 +34,7 @@ const nextTurn: Pause = () => new Promise(resolve => setImmediate(resolve));
 const SLICE = 16;
 
 type Body = Record<string, any>;
-type Snapshot = { model: Model<Api>; context: Context; options: SimpleStreamOptions; body: Body; local: boolean };
+export type Snapshot = { model: Model<Api>; context: Context; options: SimpleStreamOptions; body: Body; local: boolean };
 
 // Keep only transport/sampling data. Session observers and the child's signal never enter a fork.
 function forkOptions(options: SimpleStreamOptions): SimpleStreamOptions {
@@ -121,11 +121,20 @@ export function contextForks(captureStream: (single: boolean) => Stream, pause: 
 		clear() { snapshots.clear(); },
 		registerSource(sessionId: string) { if (!snapshots.has(sessionId)) snapshots.set(sessionId, undefined); },
 		release(sessionId: string) { snapshots.delete(sessionId); },
-		capture(model: Model<Api>, context: Context, options: SimpleStreamOptions, raw: string) {
-			if (!options.sessionId || !snapshots.has(options.sessionId) || options.signal?.aborted) return;
+		capture(model: Model<Api>, context: Context, options: SimpleStreamOptions, raw: string): Snapshot | undefined {
+			if (!options.sessionId || !snapshots.has(options.sessionId) || options.signal?.aborted) return undefined;
 			const body = JSON.parse(raw);
-			snapshots.set(options.sessionId, { model: structuredClone(model), context: structuredClone(context),
-				options: forkOptions(options), body, local: localToolsOnly(body) });
+			const snapshot: Snapshot = { model: structuredClone(model), context: structuredClone(context),
+				options: forkOptions(options), body, local: localToolsOnly(body) };
+			snapshots.set(options.sessionId, snapshot);
+			return snapshot;
+		},
+		/** Sends a saved request once, isolated, with the same wire body and only `max_tokens: 1`. */
+		replay(snapshot: Snapshot, signal: AbortSignal): Promise<AssistantMessage> {
+			const stream = captureStream(true);
+			return stream(structuredClone(snapshot.model), structuredClone(snapshot.context), { ...forkOptions(snapshot.options), signal,
+				// The SDK moves `betas` into a header, so the saved wire body lacks them; the rebuilt payload still has them.
+				onPayload: built => ({ ...structuredClone(snapshot.body), ...((built as Body).betas ? { betas: (built as Body).betas } : {}), max_tokens: 1 }) }).result();
 		},
 		offer(request: ContextForkRequest) {
 			if (request.model.provider !== "anthropic" || request.model.api !== "anthropic-messages") return;

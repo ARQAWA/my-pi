@@ -6,7 +6,8 @@ import { subscriptionCacheOptions } from "./cache.ts";
 import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, summarySink, type AuthOrigin } from "./retry.ts";
 import { billingBody, versionState, type VersionState } from "./wire.ts";
 import { OVERLAY } from "./registration.ts";
-import { contextForks } from "./context-fork.ts";
+import { contextForks, type Snapshot } from "./context-fork.ts";
+import { mainWarm } from "./warm.ts";
 import { attachHttpDiagnostic, httpDiagnostic, type HttpDiagnostic } from "./retry-hints.ts";
 
 // Shared side-request contract: preserve Claude Code identity without replacing the main snapshot.
@@ -86,6 +87,7 @@ export function createOverlay(
 		const isolated = createOverlay(base, () => store, deviceId, version.fork(), !single);
 		return (model, context, options) => isolated.streamSimple(model, context as Parameters<Provider["streamSimple"]>[1], options);
 	});
+	const warm = mainWarm((snapshot, signal) => forks.replay(snapshot, signal));
 	const handler = (model: Parameters<Provider["streamSimple"]>[0], context: Parameters<Provider["streamSimple"]>[1], options?: SimpleStreamOptions) => {
 		// Pi merges both entrypoints into this handler; retain the original options contract.
 		const provenance = options as (SimpleStreamOptions & { [STREAM_CONTRACT]?: string; [AUTH_ORIGIN]?: AuthOrigin; [SESSION_IDENTITY]?: string }) | undefined;
@@ -94,6 +96,8 @@ export function createOverlay(
 		const delegate = simple ? base.streamSimple.bind(base) : base.stream.bind(base);
 		if (!assertAnthropicAuthBoundary(model, options, process.env.ANTHROPIC_CUSTOM_HEADERS)) return delegate(model, context, options);
 		const transport = options?.fetch ?? globalThis.fetch;
+		const turn = warm.begin(options?.sessionId);
+		let saved: Snapshot | undefined;
 		let rejection: HttpDiagnostic | undefined;
 		const subscription = subscriptionFetch(transport, getStore(), version, provenance?.[SESSION_IDENTITY] ?? options?.sessionId ?? randomUUID(), deviceId,
 			options?.signal, provenance?.[AUTH_ORIGIN],
@@ -105,7 +109,7 @@ export function createOverlay(
 			((effective?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long" ? "long" : "short");
 		const fetch: typeof globalThis.fetch = async (input, init) => {
 			const request = new Request(input, init);
-			forks.capture(model, context, { ...effective, cacheRetention: retention, fetch: transport }, await request.clone().text());
+			saved = forks.capture(model, context, { ...effective, cacheRetention: retention, fetch: transport }, await request.clone().text());
 			try { return await subscription(request); }
 			catch (error) {
 				options?.signal?.throwIfAborted();
@@ -118,8 +122,11 @@ export function createOverlay(
 		};
 		// A supplied SDK client skips Pi's OAuth builder and ignores this protected fetch.
 		const stream = delegate(model, context, { ...subscriptionCacheOptions(options), client: undefined, maxRetries: 0, fetch });
-		return protectPartialStream(attachHttpDiagnostic(stream, () => rejection, summarySink(), options?.signal));
+		const final = protectPartialStream(attachHttpDiagnostic(stream, () => rejection, summarySink(), options?.signal));
+		// Only an answered request may become the replayable one; the observer never changes the stream.
+		void final.result().then(message => warm.arm(turn, saved, retention, message), () => {});
+		return final;
 	};
 	Object.assign(handler, { [OVERLAY]: true });
-	return { api: "anthropic-messages", streamSimple: handler, forks };
+	return { api: "anthropic-messages", streamSimple: handler, forks, warm };
 }

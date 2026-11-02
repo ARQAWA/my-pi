@@ -7276,3 +7276,13 @@ Status: SUPERSEDED by `[D-DELETE-UNORDERED]` (DECISIONS.md#quality-control): the
 Source: `1172461c:DECISIONS.md`, the replaced opening of the Decision paragraph, verbatim:
 
 > Decision: what the extension audits prove unordered, and no owner source or active decision asks for, is deleted. Deleted: 
+
+## A-0419 · archived 2026-11-02 · Settings · D-SETTINGS-WARMING before the main cache warm
+
+Status: SUPERSEDED in its reason by `[D-ANTHROPIC-WARM]` (DECISIONS.md#anthropic-subscription-adapter): the main Anthropic chat may send one background warm request; Pi's generic warmer stays off.
+Source: `a407e8f3:DECISIONS.md`, the whole entry, verbatim:
+
+> - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
+>   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
+>   Reason: no synthetic keepalive inference before the first real request.
+>   Carrier: `extensions/RQW-settings/cache-warming.ts`. Since: `b91f832`.
