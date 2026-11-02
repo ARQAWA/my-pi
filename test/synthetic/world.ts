@@ -45,7 +45,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, type Terminal } from "@earendil-works/pi-tui";
+import { resetCapabilitiesCache, stripTerminalSequences, type Terminal } from "@earendil-works/pi-tui";
 import { blockNetwork, fakeProcesses, guardProcess, patchedMembers, type ProcessCall, trapExit } from "./guard.ts";
 import { createModel } from "./model.ts";
 
@@ -201,6 +201,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	const handover = { done: false };
 	const giveBack = () => {
 		guard.restore();
+		resetCapabilitiesCache();
 		t.mock.restoreAll();
 		t.mock.timers.reset();
 		syncBuiltinESMExports();
@@ -220,6 +221,9 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	process.env.PI_OFFLINE = "1";
 	process.env.PI_SKIP_VERSION_CHECK = "1";
 	for (const name of ["TMUX", "HERDR_ENV"]) delete process.env[name];
+	// Colours must not depend on the machine's terminal: a CI runner has no COLORTERM and Pi would draw 256 colours.
+	process.env.COLORTERM = "truecolor";
+	resetCapabilitiesCache();
 
 	const networkAttempts: string[] = [];
 	const processAttempts: string[] = [];

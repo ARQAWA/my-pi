@@ -17,6 +17,8 @@ const DISABLE = "\x1b[?1006l\x1b[?1004l\x1b[?1003l\x1b[?1002l\x1b[?1000l";
 const shutdowns: (() => void)[] = [];
 const environmentKeys = ["TMUX", "ZELLIJ", "STY", "TERM"];
 const savedEnvironment = new Map<string, string | undefined>();
+// These hooks also run for tests of other files that share the process; the prototype check belongs to this file's own tests.
+let loadedHere = false;
 beforeEach(() => {
 	for (const key of environmentKeys) {
 		savedEnvironment.set(key, process.env[key]);
@@ -31,6 +33,8 @@ afterEach(() => {
 		else process.env[key] = value;
 	}
 	savedEnvironment.clear();
+	if (!loadedHere) return;
+	loadedHere = false;
 	assert.equal(Object.getOwnPropertyDescriptor(proto, "afterTerminalStart"), undefined);
 });
 
@@ -43,6 +47,7 @@ function setPlatform(value: string) {
 /** Runs the extension's factory as one owner; returns that owner's session_shutdown handler. */
 function load(platform = "win32") {
 	let shutdown = () => {};
+	loadedHere = true;
 	const restore = setPlatform(platform);
 	try {
 		mouse({ on: (name: string, handler: () => void) => { if (name === "session_shutdown") shutdown = handler; } } as unknown as ExtensionAPI);
