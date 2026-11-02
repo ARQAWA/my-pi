@@ -11,7 +11,7 @@ function setup(t: any, mode = "tui", nativeSend = false) {
 	t.after(() => Object.defineProperty(AgentSession.prototype, "prompt", original));
 	const events = createEventBus(), hooks = new Map<string, Function[]>(), branch: any[] = [], sent: any[] = [];
 	const manager = { getSessionId: () => "main", getLeafId: () => branch.at(-1)?.id ?? null, getBranch: () => branch };
-	const ctx: any = { mode, sessionManager: manager, isIdle: () => !session._isAgentRunActive, hasPendingMessages: () => false, signal: new AbortController().signal, ui: { notify() {} } };
+	const ctx: any = { mode, sessionManager: manager, isIdle: () => !session._isAgentRunActive, hasPendingMessages: () => false, abort() {}, signal: new AbortController().signal, ui: { notify() {} } };
 	const session: any = Object.assign(Object.create(AgentSession.prototype), { sessionManager: manager, _isAgentRunActive: false });
 	let listener: Function = () => {}, ready = false, reserved = false, delivered = false, targets = ["agent#1"], titles: Record<string, string> = {};
 	const source = { version: 1, snapshot: () => ({ targets: ready ? [] : targets, titles, ready }),

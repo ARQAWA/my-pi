@@ -86,7 +86,5 @@ it("send to a running child steers it: the message joins its next request after 
 	assert.doesNotMatch(JSON.stringify(firstRequest.context.messages), /also check b/);
 	assert.match(JSON.stringify(secondRequest.context.messages), /also check b/);
 
-	// The child is about to finish: stop background work, so no wake outlives the world.
-	w.press("\x1c");
 	await w.settle();
 });

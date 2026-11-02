@@ -188,7 +188,8 @@ export default function autoWait(pi: ExtensionAPI) {
 		}
 	});
 	pi.on("session_tree", (_event, current) => { setActive(false); generation++; armed = flight = false; release(); releaseHold(); card.restore(current); });
-	pi.on("session_shutdown", () => { setActive(false); generation++; armed = flight = deliverOnIdle = holdSettle = false; release(); releaseHold(); clearSources(); restore?.(); restore = undefined; ctx = undefined; manager = undefined; sessionId = undefined; });
+	// A wake handed to the session but not yet saved would still send its request after the shutdown, in the next session: stop it.
+	pi.on("session_shutdown", () => { if (flight && pending && !reconcile()) ctx?.abort(); setActive(false); generation++; armed = flight = deliverOnIdle = holdSettle = false; release(); releaseHold(); clearSources(); restore?.(); restore = undefined; ctx = undefined; manager = undefined; sessionId = undefined; });
 	pi.on("input", () => { generation++; armed = false; card.close("input"); setActive(false); return { action: "continue" }; });
 	pi.on("before_agent_start", event => {
 		if (event.messageType === "custom" && event.message.customType === TYPE) return;

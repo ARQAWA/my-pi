@@ -85,3 +85,28 @@ it("a child that finishes while the chat is idle wakes it once", async (t) => {
 	w.see("child said 3");
 	assert.equal(wakeRequests(w).length, 1);
 });
+
+it("a result that is ready exactly when Pi reloads starts no wake request after the reload", async (t) => {
+	const w = await world(t);
+	w.model.when(isTask("count files"), text("3"));
+	const afterStart = w.model.hold((request) => request.background === undefined && !isTask("count files")(request) && request.context.messages.some((message) => message.role === "toolResult"));
+	w.model.script(call("agent", { action: "start", task: "count files", title: "Count" }, "c1"), text("child said 3"));
+	// The reload begins in the same tick in which the wake message is handed to the session.
+	let reloaded: Promise<void> | undefined;
+	const send = w.session.sendCustomMessage.bind(w.session);
+	t.mock.method(w.session, "sendCustomMessage", (message: { customType?: string }, options?: object) => {
+		const started = send(message as never, options as never);
+		if (message.customType === RESULTS) reloaded ??= w.session.reload();
+		return started;
+	});
+	w.type("go");
+	w.press(keys.enter);
+	await w.until(() => afterStart.arrived && resultStored(w), "the child's result is stored");
+	afterStart.reply(text("started"));
+	await w.until(() => reloaded !== undefined, "the wake message is sent");
+	await reloaded;
+	await w.settle();
+
+	assert.equal(wakeRequests(w).length, 0);
+	assert.deepEqual(w.model.unscripted, []);
+});
