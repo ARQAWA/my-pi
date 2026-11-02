@@ -105,6 +105,8 @@ Provenance:
   Reason: a side conversation about the session without touching the main run, its history or its context.
   Carriers: `extensions/RQW-btw/`, `package.json`, `test/extensions/RQW-btw/btw.test.ts`.
 
+- **Keep slash commands with dollar skills** `[D-SKILL-DOLLAR-SLASH]`. A leading `/skill:name` stays first so Pi expands it alongside `$skill` mentions. Other leading slash commands stay unchanged, including their `$skill` arguments. This overrides the 2026-10-26 choice to leave the conflict unchanged. Owner: «Да, надо чинить... то, что сломано, должно быть подчинено». Carriers: `extensions/RQW-skill-dollar/index.ts`, `test/extensions/RQW-skill-dollar/skill-dollar.test.ts`.
+
 ## Tabs link
 
 - **Chats talk through three deferred tools** `[D-TABS-LINK]`. The independently disableable

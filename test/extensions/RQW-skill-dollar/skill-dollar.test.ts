@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
-import type { ExtensionAPI, ExtensionContext, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import { AgentSession, type ExtensionAPI, type ExtensionContext, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { SelectList, type AutocompleteProvider, type AutocompleteSuggestions } from "@earendil-works/pi-tui";
 import skillDollar from "../../../extensions/RQW-skill-dollar/index.ts";
 
@@ -160,6 +160,16 @@ it("expands every valid mentioned skill on one submit", async (t) => {
 		action: "transform",
 		text: expanded(commands, ["review", "release"], "report"),
 	});
+});
+
+it("preserves leading skill commands and leaves prompt templates unchanged", async (t) => {
+	const { input, commands } = await setup(t, ["alpha", "review"]);
+	const result = await input({ text: "/skill:alpha $review", source: "interactive" }, {}) as { text: string };
+	const alpha = commands[0];
+	const session = { resourceLoader: { getSkills: () => ({ skills: [{ name: "alpha", filePath: alpha.sourceInfo.path, baseDir: dirname(alpha.sourceInfo.path) }] }) } };
+	const nativeExpand = (AgentSession.prototype as unknown as { _expandSkillCommand(this: unknown, text: string): string })._expandSkillCommand;
+	assert.equal(nativeExpand.call(session, result.text), expanded(commands, ["alpha", "review"]));
+	assert.equal(await input({ text: "/template $review", source: "interactive" }, {}), undefined);
 });
 
 it("renders at most four rows including the scroll line", async (t) => {

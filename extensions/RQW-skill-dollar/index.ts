@@ -158,6 +158,12 @@ function expandMentions(text: string, skills: Skill[]): string | undefined {
 	if (!found) return undefined;
 	rest += text.slice(last);
 	const args = rest.trim();
+	if (text.startsWith("/skill:")) {
+		const space = args.indexOf(" ");
+		const command = space === -1 ? args : args.slice(0, space);
+		const remaining = space === -1 ? "" : args.slice(space + 1);
+		return `${command} ${[...blocks, ...(remaining ? [remaining] : [])].join("\n\n")}`;
+	}
 	return [...blocks, ...(args ? [args] : [])].join("\n\n");
 }
 
@@ -217,6 +223,7 @@ export default function skillDollar(pi: ExtensionAPI): void {
 		restoreRows();
 		// A mention needs a dollar; skip building the skill catalog for every other message.
 		if (event.source !== "interactive" || !event.text.includes("$")) return;
+		if (event.text.startsWith("/") && !event.text.startsWith("/skill:")) return;
 		const text = expandMentions(event.text, getSkills(true));
 		return text === undefined ? undefined : { action: "transform", text };
 	});

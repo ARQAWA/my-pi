@@ -7,7 +7,7 @@ Adds Codex-style skill mentions to Pi's input editor.
 - Fuzzy suggestions use `ctx.ui.addAutocompleteProvider()` and keep every match selectable.
 - Only active `$` suggestions change the live editor's public `setAutocompleteMaxVisible()` value. Overflow uses three items plus Pi's scroll row; four or fewer matches use up to four item rows. The previous height is restored for slash, file, and other autocompletes.
 - Selecting a suggestion inserts `$skill-name` at the active token.
-- On interactive submit, every valid mention is read and formatted exactly like Pi's native skill block through the `input` transform. Multiple blocks share one submission, duplicates are included once, and unknown dollar tokens stay unchanged.
+- On interactive submit, valid mentions are formatted like Pi's native skill block through the `input` transform. Multiple blocks share one submission, duplicates are included once, and unknown dollar tokens stay unchanged. A leading `/skill:name` remains first for Pi to expand; other leading slash commands and their arguments stay unchanged.
 - A submitted message with skills shows them as one line at the bottom of the user card, `└ skill  a · b`, instead of Pi's separate blue block, wrapped when long; Ctrl+O shows the text of every skill under it, in the same card. This patches Pi's component prototypes at runtime (not a public API); if Pi changes, stock rendering stays. See `[D-UI-SKILL-CARD]` in `DECISIONS.md`.
 
 - Same-name skills (offered by a filter) are all listed, with their paths. `$name` takes the first in the filter's order; a Codex link `[$name](skill://path)` takes exactly that path, and the suggestion for each later skill of a name inserts such a link. A link to an unknown path stays text.
