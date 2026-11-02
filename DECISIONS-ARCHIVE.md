@@ -7223,3 +7223,22 @@ Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
 
 > - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
 >   `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks.
+
+## A-0414 · Tools and Agent · notification waits
+
+Status: wording SUPERSEDED in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`, owner approval «1»): no wait returns a receipt or sends a later notification.
+Source: `de414a26:DECISIONS.md`. Verbatim replaced passages (an ellipsis marks unchanged text left out):
+
+> - **Background jobs** `[D-TOOLS-BG]`. ... `job wait`, `status` and `kill` return results, status and exit codes; a completion wait sends one notification. ...
+
+> - **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Where notifications are available, `job wait` returns `waiting` at once and one later notification carries the result. Inside codemode or without a notification callback it blocks. A newer wait on the same job replaces the older one.
+
+> - **Notification waits for children** `[D-AGENT-NOTIFY]`. ... Taken by default (coordinator text, not an owner quote): where the caller can
+>   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
+>   `terminate: true` and the result later wakes the caller once through the existing delivery broker.
+>   A wait inside a codemode script stays blocking,
+>   as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
+>   is not affected by its SDK mode). A timeout or alert
+>   is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
+>   without cancelling accepted children. Same callback as `[D-TOOLS-NOTIFY]`. Reason: a waiting agent must not hold a call.
+>   Crash recovery (coordinator text): an accepted notification wait is saved as `rqw-agent-wait` entries in the parent session and a restore raises the open ones with their id, targets and remaining deadline, as described in the [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).

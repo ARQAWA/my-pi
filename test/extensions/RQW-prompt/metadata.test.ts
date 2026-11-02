@@ -40,6 +40,18 @@ it("builds the default prefix and preserves explicit prompts and hidden bash", (
 	assert.doesNotMatch(hidden.customPrompt!, /the bash tool runs bash/);
 });
 
+it("the critical stop rule is the owner's: do all possible work, stop only when nothing more can be done", () => {
+	const hook = hooks();
+	const input = hook.options();
+	hook.prepare(input);
+	const critical = input.customPrompt!.match(/<critical>\n([\s\S]*?)\n<\/critical>/)![1].split("\n");
+	assert.equal(
+		critical[0],
+		"- Each response MUST advance the task. Do everything you can; while a blocker or a wait holds, keep doing all other work that is possible. Stop only when nothing more can be done: the task is complete, a blocker is stated, or you wait for results you cannot speed up.",
+	);
+	assert.doesNotMatch(input.customPrompt!, /wait tool ends your turn/);
+});
+
 it("preserves a forced prompt before the agent starts", () => {
 	const hook = hooks();
 	const input = hook.options();
