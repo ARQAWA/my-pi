@@ -76,6 +76,13 @@ export default function autoWait(pi: ExtensionAPI) {
 		for (const unsubscribe of sources.values()) unsubscribe();
 		sources.clear();
 	}
+	function showCard() {
+		const snapshots = [...sources.keys()].map(source => source.snapshot());
+		const targets = snapshots.flatMap(snapshot => snapshot.targets);
+		const titles = Object.assign({}, ...snapshots.map(snapshot => snapshot.titles));
+		card.show(targets, titles);
+		return targets.length;
+	}
 	function requestCheck() {
 		if (!ctx || !armed || scheduled) return;
 		scheduled = true;
@@ -83,14 +90,16 @@ export default function autoWait(pi: ExtensionAPI) {
 		queueMicrotask(() => {
 			scheduled = false;
 			if (generation !== version || manager?.getLeafId() !== leaf) { requestCheck(); return; }
-			if (ctx !== current || !armed || aborted || compacting || flight
-				|| current.signal?.aborted || !current.isIdle() || current.hasPendingMessages()) return;
+			if (ctx !== current || !armed || aborted || compacting || flight || current.signal?.aborted) return;
+			if (!current.isIdle() || current.hasPendingMessages()) {
+				if (active && current.mode === "tui" && !showCard()) setActive(false);
+				return;
+			}
 			const claims = claimAll();
 			if (!claims.length) {
-				const snapshots = [...sources.keys()].map(source => source.snapshot());
-				const targets = snapshots.flatMap(snapshot => snapshot.targets);
-				const titles = Object.assign({}, ...snapshots.map(snapshot => snapshot.titles));
-				setActive(targets.length > 0); if (current.mode === "tui") card.show(targets, titles); return;
+				if (current.mode === "tui") setActive(showCard() > 0);
+				else setActive([...sources.keys()].some(source => source.snapshot().targets.length > 0));
+				return;
 			}
 			setActive(true); card.close("result");
 			const { id, content, details } = resultsMessage(claims);

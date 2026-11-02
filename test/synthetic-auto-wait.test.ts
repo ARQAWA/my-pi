@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { retainedChildManager } from "../extensions/RQW-agent/persistence.ts";
 import { after, it } from "node:test";
 import { bashCommand, call, isTask, keys, reportTimings, text, world } from "./synthetic/world.ts";
@@ -37,26 +38,40 @@ it("the open card follows direct children started and stopped while it is visibl
 	const w = await world(t);
 	const first = w.model.hold(isTask("first child"));
 	const second = w.model.hold(isTask("second child"));
+	const third = w.model.hold(isTask("third child"));
 	w.model.script(call("agent", { action: "start", task: "first child", title: "First" }, "c1"), text("started"));
 	await w.submit("go");
 	await w.until(() => first.arrived, "first child starts");
 	w.see("wait 1 агент");
 
+	const main = w.model.hold(request => JSON.stringify(request.context.messages).includes("external wake"));
+	const busy = w.session.sendCustomMessage({ customType: "external-wake", content: "external wake", display: false }, { triggerTurn: true });
+	await w.until(() => main.arrived, "main chat starts without user input");
 	const runner = w.session.extensionRunner;
 	const tool = runner.getToolDefinition("agent")!;
 	const invoke = (args: object) => tool.execute("external", args as never, new AbortController().signal, undefined, runner.createToolContext("external", undefined));
 	await invoke({ action: "start", task: "second child", title: "Second" });
 	await w.until(() => second.arrived, "second child starts");
-	w.see("wait 2 агента");
+	await w.tick(16);
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента")), "card repaints after start");
 	w.see("agent#2 Second");
 	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
 
 	await invoke({ action: "stop", id: "agent#2" });
-	await w.until(() => w.screen().join("\n").includes("wait 1 агент"), "card updates after stop");
+	await w.until(() => true, "stop notification arrives");
+	await w.tick(16);
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 1 агент")), "card repaints after stop");
 	w.notSee("agent#2 Second");
 	await invoke({ action: "stop", id: "agent#1" });
 	await w.until(() => !w.screen().join("\n").includes("wait 1 агент"), "card closes after last stop");
-	await w.until(() => [1, 2].every(id => !retainedChildManager(w.session.sessionManager, "agent", id)), "stopped children close");
+	await invoke({ action: "start", task: "third child", title: "Third" });
+	await w.until(() => third.arrived, "third child starts");
+	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
+	main.reply(text("done"));
+	await busy;
+	await w.until(() => w.screen().join("\n").includes("agent#3 Third"), "card returns after the chat settles");
+	await invoke({ action: "stop", id: "agent#3" });
+	await w.until(() => [1, 2, 3].every(id => !retainedChildManager(w.session.sessionManager, "agent", id)), "stopped children close");
 });
 
 it("a delivered child stays idle and is excluded from the active counts", async (t) => {
