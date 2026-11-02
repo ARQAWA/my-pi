@@ -110,6 +110,37 @@ it("list of a project folder gives the fast row and reports progress once", asyn
 	assert.deepEqual(await SessionManager.list(join(tmpdir(), "other"), dir), []);
 });
 
+it("matches project paths without case on Windows and with case on other platforms", async () => {
+	await writeFile(join(dir, "a.jsonl"), line({ type: "session", version: 3, id: "a", timestamp: "2026-01-01T00:00:00.000Z", cwd: cwd.toUpperCase() }) + named("a"));
+	const original = process.platform;
+	try {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		assert.deepEqual((await SessionManager.list(cwd, dir)).map(row => row.id), ["a"]);
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		assert.deepEqual(await SessionManager.list(cwd, dir), []);
+	} finally {
+		Object.defineProperty(process, "platform", { value: original });
+	}
+});
+
+it("recognizes a default session directory with different case on Windows", async () => {
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	const original = process.platform;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const defaultDir = join(dir, "sessions", `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`);
+	await mkdir(defaultDir, { recursive: true });
+	await writeFile(join(defaultDir, "a.jsonl"), header("a") + named("a"));
+	try {
+		Object.defineProperty(process, "platform", { value: "win32" });
+		assert.deepEqual((await SessionManager.list(cwd.toUpperCase(), defaultDir)).map(row => row.id), ["a"]);
+		Object.defineProperty(process, "platform", { value: "darwin" });
+		assert.deepEqual(await SessionManager.list(cwd.toUpperCase(), defaultDir), []);
+	} finally {
+		Object.defineProperty(process, "platform", { value: original });
+		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+	}
+});
+
 it("listAll with the default agent dir, as /resume calls it, scans every project folder", async () => {
 	const previous = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;

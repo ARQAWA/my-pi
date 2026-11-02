@@ -1,5 +1,4 @@
-import { getSupportedThinkingLevels, type AnyModel, type Provider } from "@earendil-works/pi-ai";
-import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { getSupportedThinkingLevels, type AnyModel } from "@earendil-works/pi-ai";
 import { AgentSession, ModelRuntime, parseArgs, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ModelEffortPicker, sameModel, stepDraft, type ChatModel, type Draft, type PickerSpec, type Step } from "./picker.ts";
 
@@ -72,7 +71,6 @@ export const notListed = (model: { provider: string; id: string }) =>
 type Mask = { count: number; restore: () => void; cleanups: Set<() => void>; warn?: (text: string) => void };
 const SESSION_MASK = Symbol.for("rqw-models/session-mask");
 const RUNTIME_MASK = Symbol.for("rqw-models/runtime-mask");
-const CATALOG_MASK = Symbol.for("rqw-models/catalog-mask");
 type Masked = { [key: symbol]: Mask | undefined };
 const masked = (target: object): Masked => target as Masked;
 type PrepareRequest = (this: ModelRuntime, model: AnyModel, options?: unknown) => Promise<unknown>;
@@ -110,7 +108,7 @@ function lease(target: object, key: symbol, install: (mask: Mask) => () => void)
 }
 
 /**
- * Pi 1.4.0 gives extensions no session handle; borrow it for one synchronous call. The probe is the prototype getter
+ * Pi 1.5.0 gives extensions no session handle; borrow it for one synchronous call. The probe is the prototype getter
  * isIdle, which ctx.isIdle() reads as `this.isIdle`. Instance wrappers of getContextUsage (RQW-codex's compaction hook
  * calls the stock method it captured) cannot hide the session from it. The exact prototype descriptor is restored in finally.
  */
@@ -123,62 +121,6 @@ function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 	try { ctx.isIdle(); } catch { captured = undefined; } finally { Object.defineProperty(prototype, "isIdle", descriptor); }
 	const session = captured as AgentSession | undefined;
 	return session && session.sessionManager === ctx.sessionManager && session.modelRuntime ? session : undefined;
-}
-
-const CODEX = "openai-codex";
-const TERRA = "gpt-6.1-terra";
-
-// Pi 1.4.0 has no catalog hook that keeps another extension's transport, so Terra joins openai-codex where the runtime composes it.
-type Composing = {
-	composeProvider: (providerId: string) => Provider | undefined;
-	recomposeProvider: (providerId: string) => unknown;
-	updateModelSnapshot: () => void;
-};
-
-let terraModel: ChatModel | undefined;
-function terra(): ChatModel {
-	if (!terraModel) {
-		const codex = builtinProviders().find((provider) => provider.id === CODEX)!;
-		const sol = codex.getModels().find((model) => model.id === "gpt-6.1-sol")!;
-		terraModel = { ...sol, id: TERRA, name: "GPT-6.1 Terra", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 1_050_000, maxTokens: 128_000,
-			thinkingLevelMap: { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } };
-	}
-	return terraModel;
-}
-
-function withTerra(provider: Provider): Provider {
-	const add = <T extends { id: string }>(models: readonly T[]) => models.some((model) => model.id === TERRA) ? models : [...models, terra() as unknown as T];
-	return { ...provider, getModels: () => add(provider.getModels()), getAllModels: () => add(provider.getAllModels?.() ?? provider.getModels()) } as Provider;
-}
-
-function composing(runtime: ModelRuntime): Composing | undefined {
-	const shape = runtime as unknown as Partial<Composing>;
-	return typeof shape.composeProvider === "function" && typeof shape.recomposeProvider === "function" && typeof shape.updateModelSnapshot === "function"
-		? shape as Composing : undefined;
-}
-
-function recompose(runtime: ModelRuntime) {
-	const internals = composing(runtime);
-	if (!internals) return;
-	internals.recomposeProvider(CODEX);
-	internals.updateModelSnapshot();
-}
-
-// Runtimes whose last owner ended: the shared layer stays for other runtimes but no longer adds Terra here.
-const released = new WeakSet<object>();
-
-/** Layer over every runtime's composition; the last holder removes it. Pi restores a saved model before session_start, so hold it from load. */
-function holdTerra(): () => void {
-	const prototype = ModelRuntime.prototype as unknown as Partial<Composing>;
-	const original = prototype.composeProvider;
-	if (typeof original !== "function") return () => {};
-	return lease(prototype, CATALOG_MASK, () => override(prototype, {
-		composeProvider: { writable: true, value: function(this: ModelRuntime, providerId: string) {
-			const provider = original.call(this, providerId);
-			return provider && providerId === CODEX && !released.has(this) ? withTerra(provider) : provider;
-		} },
-	}))[1];
 }
 
 function maskRuntime(runtime: ModelRuntime) {
@@ -217,10 +159,6 @@ function maskSession(session: AgentSession) {
 }
 
 export default function modelsExtension(pi: ExtensionAPI) {
-	let releaseTerra: (() => void) | undefined;
-	const holdCatalog = () => { releaseTerra ??= holdTerra(); };
-	const dropCatalog = () => { releaseTerra?.(); releaseTerra = undefined; };
-	holdCatalog();
 	// Event contexts have live getters; the TUI shortcut dispatcher passes snapshots.
 	let liveContext: ExtensionContext;
 	// Pi invokes shortcut handlers without awaiting the previous press.
@@ -258,23 +196,17 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		const session = sessionOf(ctx);
 		if (!session) {
 			unbind();
-			warn(ctx, "RQW-models cannot restrict Pi's own model selection: incompatible Pi internals (requires Pi 1.4.0)", true);
+			warn(ctx, "RQW-models cannot restrict Pi's own model selection: incompatible Pi internals (requires Pi 1.5.0)", true);
 			return;
 		}
 		if (bound?.session === session) return;
 		unbind();
 		const [sessionMask, releaseSession] = maskSession(session);
 		const [, releaseRuntime] = maskRuntime(session.modelRuntime);
-		released.delete(session.modelRuntime);
-		const runtime = session.modelRuntime;
 		const release = () => {
 			sessionMask.cleanups.delete(release);
 			releaseRuntime();
 			releaseSession();
-			// Drops only our composition layer; another extension's registration stays.
-			if (!masked(runtime)[RUNTIME_MASK]) released.add(runtime);
-			dropCatalog();
-			recompose(runtime);
 		};
 		sessionMask.cleanups.add(release);
 		sessionMask.warn = (text) => warn(ctx, text);
@@ -421,8 +353,6 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		invalidateSession();
 		liveContext = ctx;
 		bind(ctx);
-		holdCatalog();
-		if (bound) recompose(bound.session.modelRuntime);
 		const args = parseArgs(process.argv.slice(2));
 		// Only an actual choice waits for the availability pass.
 		let pass: Promise<ChatModel[]> | undefined;
@@ -444,6 +374,5 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		invalidateSession();
 		unbind();
-		dropCatalog();
 	});
 }

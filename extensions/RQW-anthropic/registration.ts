@@ -16,7 +16,7 @@ type Hook = (this: RuntimeView, ...args: unknown[]) => unknown;
 type Original = [object, string, PropertyDescriptor];
 type PatchState = { count: number; originals: Original[] };
 
-// Pi 1.4.0 has no hook for the Anthropic transport's registration and request boundary. Never patch stores or credential contents.
+// Pi 1.5.0 has no hook for the Anthropic transport's registration and request boundary. Never patch stores or credential contents.
 // Provider visibility is not here: it belongs to RQW-providers.
 export function installRegistrationGuard(Runtime = ModelRuntime): () => void {
 	const owner = Runtime as unknown as { [PATCH]?: PatchState };
@@ -27,7 +27,7 @@ export function installRegistrationGuard(Runtime = ModelRuntime): () => void {
 		const descriptors = methods.map(name => Object.getOwnPropertyDescriptor(runtime, name));
 		if (descriptors.some(d => typeof d?.value !== "function" || !d.configurable) ||
 			typeof runtime.getRegisteredProviderConfig !== "function" || typeof runtime.getRegisteredNativeProvider !== "function") {
-			throw new Error("RQW-anthropic: incompatible Pi internals; requires Pi 1.4.0. Nothing was patched.");
+			throw new Error("RQW-anthropic: incompatible Pi internals; requires Pi 1.5.0. Nothing was patched.");
 		}
 		const originals: Original[] = methods.map((name, i) => [runtime, name, descriptors[i]!]);
 		const enabled = (instance: RuntimeView) => instance.getRegisteredProviderConfig("anthropic")?.streamSimple?.[OVERLAY] === true;
@@ -49,7 +49,7 @@ export function installRegistrationGuard(Runtime = ModelRuntime): () => void {
 							if (bind) {
 								const store = this.credentials;
 								if (!store || typeof store.read !== "function" || typeof store.modify !== "function") {
-									throw new Error("RQW-anthropic: Pi 1.4.0 runtime credential bridge is unavailable; adapter not registered");
+									throw new Error("RQW-anthropic: Pi 1.5.0 runtime credential bridge is unavailable; adapter not registered");
 								}
 								registered = bind(store, this as unknown as ModelRuntime);
 							}

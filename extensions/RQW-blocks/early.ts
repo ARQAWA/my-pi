@@ -40,7 +40,7 @@ export function installEarly(installStyles: InstallStyles): Binding {
 	};
 	const optional = (target: any, name: string) => typeof target[name] === "function" ? mutable(target, name) : !(name in target) && Object.isExtensible(target);
 	const valid = (target: any, names: string[]) => names.every(name => mutable(target, name));
-	if (VERSION !== "1.4.0" || !valid(proto, names)) return { shutdown() {} };
+	if (VERSION !== "1.5.0" || !valid(proto, names)) return { shutdown() {} };
 	const summary = (target: any) => valid(target, ["render", "invalidate", "setExpanded", "updateDisplay"]) && optional(target, "handleMouse");
 	const supported = {
 		compaction: summary(CompactionSummaryMessageComponent.prototype),

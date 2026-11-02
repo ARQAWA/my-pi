@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { getCurrentTools, getSupportedThinkingLevels, StringEnum } from "@earendil-works/pi-ai";
+import { getCurrentTools, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentSession,
@@ -14,6 +14,7 @@ import {
 	getAgentDir,
 	SessionManager,
 	SettingsManager,
+	VERSION,
 	shouldCompact,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
@@ -73,6 +74,10 @@ export const DESCRIPTION = [
 	"Defaults: your system prompt with the reminder, this session's thinking, all tools.",
 	"By default children inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.",
 ].join("\n");
+
+function StringEnum<const T extends readonly string[]>(values: T, options: { description?: string } = {}) {
+	return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options });
+}
 
 const PARAMETERS = Type.Object({
 	action: StringEnum(["start", "status", "send", "resume", "interrupt", "stop", "restart"]),
@@ -386,6 +391,60 @@ const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "
 
 // The main session's runtime (a plain field of ModelRegistry): same credentials, OAuth refresh and providers.
 const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
+const REQUEST_OWNER = Symbol.for("rqw:request-owner:v1");
+const CHILD_PROCESSED = Symbol.for("rqw:child-request-processed:v1");
+const REQUEST_LAYER = Symbol.for("rqw:request-stream-layer:v1");
+
+type ChildStream = NonNullable<AgentSession["agent"]["streamFunction"]>;
+function bindChildRequests(runtime: ModelRuntime, owner: string, handle: (model: Parameters<ChildStream>[0], context: Parameters<ChildStream>[1], options: NonNullable<Parameters<ChildStream>[2]>, next: ChildStream) => ReturnType<ChildStream>): (() => void) | undefined {
+	const target = runtime as any;
+	const names = ["stream", "streamSimple"];
+	if (VERSION !== "1.5.0" || names.some(name => typeof target?.[name] !== "function")) return undefined;
+	const bindings: { name: string; wrapped: Function; layer: { active: boolean; descriptor?: PropertyDescriptor } }[] = [];
+	let current: typeof handle | undefined = handle;
+	const release = () => {
+		current = undefined;
+		for (const { name, wrapped, layer } of bindings) {
+			layer.active = false;
+			if (target[name] !== wrapped) continue;
+			let descriptor = layer.descriptor;
+			while (descriptor && typeof descriptor.value === "function" && descriptor.value[REQUEST_LAYER]?.active === false) {
+				descriptor = descriptor.value[REQUEST_LAYER].descriptor;
+			}
+			if (descriptor) Object.defineProperty(target, name, descriptor); else delete target[name];
+		}
+	};
+	try {
+		for (const name of names) {
+			const descriptor = Object.getOwnPropertyDescriptor(target, name);
+			if (descriptor ? !("value" in descriptor && descriptor.writable) : !Object.isExtensible(target)) throw new Error("runtime stream is not replaceable");
+			if (!descriptor) for (let proto = Object.getPrototypeOf(target); proto; proto = Object.getPrototypeOf(proto)) {
+				const inherited = Object.getOwnPropertyDescriptor(proto, name);
+				if (inherited) {
+					if (!("value" in inherited && inherited.writable)) throw new Error("runtime stream is not replaceable");
+					break;
+				}
+			}
+			const original = target[name];
+			const wrapped = function (this: unknown, model: any, context: any, options: any) {
+				const next = (m: any, c: any, o: any) => original.call(this, m, c, o);
+				const marker = options?.[REQUEST_OWNER];
+				if (!current || (marker ? marker.kind !== "request" || marker.sessionId !== owner : options?.sessionId !== owner) || options?.[CHILD_PROCESSED]) {
+					return next(model, context, options);
+				}
+				return current(model, context, { ...options, [REQUEST_OWNER]: { sessionId: owner, kind: "request" }, ...(model.api === "pi-virtual" ? {} : { [CHILD_PROCESSED]: true }) }, next);
+			};
+			const layer = { active: true, descriptor };
+			Object.defineProperty(wrapped, REQUEST_LAYER, { value: layer });
+			Object.defineProperty(target, name, descriptor ? { ...descriptor, value: wrapped } : { value: wrapped, writable: true, configurable: true });
+			bindings.push({ name, wrapped, layer });
+		}
+	} catch {
+		release();
+		return undefined;
+	}
+	return release;
+}
 
 export default function agent(pi: ExtensionAPI) {
 	registerMainProgress(pi);
@@ -1129,10 +1188,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						send(notice, { triggerTurn: options?.triggerTurn === true && callerIdle() && !mainAborted });
 					});
 				});
-				const stream = session.agent.streamFunction;
 				let pendingPayload = firstPayload;
-				session.agent.streamFunction = (model, context, options) => {
+				const releaseRequests = bindChildRequests(runtimeOf(ctx), manager.getSessionId(), (model, context, options, stream) => {
 					check();
+					if (model.api === "pi-virtual") return stream(model, context, options);
 					// Pi drops failed assistant turns, so their results must not reach the provider alone.
 					let discarded = new Set<string>();
 					const messages = context.messages.filter(message => {
@@ -1146,7 +1205,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					context = { ...context, messages: repairRequest(messages, continueNote()) };
 					progress!.capture(model, context);
 					const first = pendingPayload;
-					if (first && options?.sessionId !== manager.getSessionId()) return stream(model, context, options);
 					if (first) {
 						const onPayload = options?.onPayload;
 						return stream(model, context, { ...options,
@@ -1168,7 +1226,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					}
 					// Ordinary child Anthropic requests use the built-in 5m tier.
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
-				};
+				});
+				if (!releaseRequests) ctx.ui?.notify?.("Child request runtime shape is incompatible; using Pi defaults.", "warning");
 				activity = new Activity(session, () => {
 					onRunning(); coordinator.notify();
 					const a = agents.get(localNumber(childName)!);
@@ -1177,7 +1236,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						if (!activity?.isRunning()) armSleep(a);
 					}
 				}, { alert_after_ms: config.alert_after_ms });
-				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: policy.release, captureRun: policy.capture, core, bridge };
+				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: () => { releaseRequests?.(); policy.release(); }, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {

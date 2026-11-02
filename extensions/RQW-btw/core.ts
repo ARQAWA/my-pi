@@ -1,7 +1,91 @@
 // Shared /btw core: freezes what the main model sees now and sends side turns from that mark.
 // Nothing here writes to the chat, the session file or the model context of the main session.
 import { isContextOverflow, normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ModelThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
-import { AgentSession, convertToLlm, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
+import { AgentSession, VERSION, convertToLlm, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
+
+// Shared by the capture extensions through a symbol, without cross-extension imports.
+const REQUEST_OWNER = Symbol.for("rqw:request-owner:v1");
+const REQUEST_LAYER = Symbol.for("rqw:request-stream-layer:v1");
+const WARMER_LAYER = Symbol.for("rqw:request-warmer-layer:v1");
+type RequestOwner = { sessionId: string | undefined; kind: "request" | "cache-replay" };
+type CaptureOptions = import("@earendil-works/pi-ai").ModelsSimpleStreamOptions & { [REQUEST_OWNER]?: RequestOwner };
+type CaptureStream = (model: Model<Api>, context: Context, options?: CaptureOptions) => unknown;
+
+function installCapture(session: AgentSession, ctx: ExtensionContext, capture: (model: Model<Api>, context: Context, options: CaptureOptions) => CaptureOptions): (() => void) | undefined {
+	const runtime = session.modelRuntime as unknown as Record<string, unknown> | undefined;
+	const warmer = (session as unknown as { _cacheWarmer?: { models: Record<string, unknown> } })._cacheWarmer;
+	const writable = (target: object, key: string) => {
+		const own = Object.getOwnPropertyDescriptor(target, key);
+		if (own) return "value" in own && own.writable === true;
+		if (!Object.isExtensible(target)) return false;
+		for (let proto = Object.getPrototypeOf(target); proto; proto = Object.getPrototypeOf(proto)) {
+			const inherited = Object.getOwnPropertyDescriptor(proto, key);
+			if (inherited) return "value" in inherited && inherited.writable === true;
+		}
+		return true;
+	};
+	if (VERSION !== "1.5.0" || !runtime || typeof runtime.stream !== "function" || typeof runtime.streamSimple !== "function" ||
+		!writable(runtime, "stream") || !writable(runtime, "streamSimple") ||
+		(!warmer || !warmer.models || typeof warmer.models.streamSimple !== "function" || !writable(warmer, "models"))) {
+		ctx.ui?.notify("Request capture unavailable: incompatible Pi runtime.", "warning");
+		return undefined;
+	}
+	let active = true;
+	const seen = Symbol("capture");
+	const restores: (() => void)[] = [];
+	for (const key of ["stream", "streamSimple"]) {
+		const descriptor = Object.getOwnPropertyDescriptor(runtime, key);
+		const original = runtime[key] as CaptureStream;
+		const wrapped: CaptureStream = function(this: unknown, model, context, options) {
+			const marked = options as (CaptureOptions & { [seen]?: boolean }) | undefined;
+			const owner = options?.[REQUEST_OWNER];
+			const id = owner ? owner.sessionId : options?.sessionId;
+			if (active && !marked?.[seen] && owner?.kind !== "cache-replay" && id !== undefined && id === session.sessionManager.getSessionId()) {
+				const next = capture(model, context, options ?? {});
+				options = { ...next, [seen]: true } as CaptureOptions;
+			}
+			return original.call(this, model, context, options);
+		};
+		const layer = { active: true, descriptor };
+		Object.defineProperty(wrapped, REQUEST_LAYER, { value: layer });
+		runtime[key] = wrapped;
+		restores.push(() => {
+			layer.active = false;
+			if (runtime[key] !== wrapped) return;
+			let previous = layer.descriptor;
+			while (previous && typeof previous.value === "function" && previous.value[REQUEST_LAYER]?.active === false) {
+				previous = previous.value[REQUEST_LAYER].descriptor;
+			}
+			if (previous) Object.defineProperty(runtime, key, previous);
+			else delete runtime[key];
+		});
+	}
+	if (warmer) {
+		const original = warmer.models;
+		const view = Object.create(original) as Record<string, unknown>;
+		view.streamSimple = (model: Model<Api>, context: Context, options?: CaptureOptions) => {
+			const owner = options?.[REQUEST_OWNER];
+			const forwarded = active ? { ...options, [REQUEST_OWNER]: { sessionId: owner ? owner.sessionId : options?.sessionId, kind: "cache-replay" as const } } : options;
+			return (original.streamSimple as CaptureStream).call(original, model, context, forwarded);
+		};
+		const layer = { active: true, previous: original };
+		Object.defineProperty(view, WARMER_LAYER, { value: layer });
+		warmer.models = view;
+		restores.push(() => {
+			layer.active = false;
+			if (warmer.models !== view) return;
+			let previous = layer.previous;
+			let covered = Object.getOwnPropertyDescriptor(previous, WARMER_LAYER)?.value;
+			while (covered?.active === false) {
+				previous = covered.previous;
+				covered = Object.getOwnPropertyDescriptor(previous, WARMER_LAYER)?.value;
+			}
+			warmer.models = previous;
+		});
+	}
+	return () => { active = false; for (const restore of restores.reverse()) restore(); };
+}
+
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
 export const INSTRUCTION = "Side chat from the user via /btw. Answer only from this conversation. Tools are unavailable: do not call or write tool calls. Do not continue the main task.";
@@ -140,23 +224,14 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		drop();
 		hasMainRequest = false;
 		const session = sessionOf(ctx);
-		const agent = session?.agent;
-		if (!session || typeof agent?.streamFunction !== "function") return;
-		const manager = session.sessionManager;
-		const original = agent.streamFunction;
-		let active = true;
-		const wrapped: typeof original = function(this: unknown, model, context, options) {
-			if (active && options?.sessionId !== undefined && options.sessionId === manager.getSessionId()) {
-				hasMainRequest = true;
-				snapshot = { sessionId: options.sessionId, model, messages: context.messages, after: [] };
-			}
-			return original.call(this, model, context, options);
-		};
-		agent.streamFunction = wrapped;
-		release = () => {
-			active = false;
-			if (agent.streamFunction === wrapped) agent.streamFunction = original;
-		};
+		if (!session) return;
+		release = installCapture(session, ctx, (model, context, options) => {
+			const owner = options[REQUEST_OWNER];
+			const sessionId = owner ? owner.sessionId : options.sessionId;
+			hasMainRequest = true;
+			snapshot = { sessionId: sessionId!, model, messages: context.messages, after: [] };
+			return options;
+		});
 	}
 
 	/**

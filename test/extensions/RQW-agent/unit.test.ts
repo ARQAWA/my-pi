@@ -4,9 +4,10 @@ import { queryObjects } from "node:v8";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, type TestContext } from "node:test";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
+import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools, validateToolArguments } from "@earendil-works/pi-ai";
 import { AgentSession, createEventBus, SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
 import { type AutoSource, takeBackground, untilBackgroundChange } from "../../../extensions/RQW-agent/background.ts";
@@ -554,6 +555,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		hasConfiguredAuth: () => true, getAuth: async () => ({ apiKey: "fake" }),
 		checkAuth: async () => ({}), isUsingOAuth: () => false,
 		getAvailableSnapshot: () => [model, other], getRegisteredProviderIds: () => [],
+		stream: core.streamSimple,
 		streamSimple: (selected: any, context: any, options: any) => { requestModels.push(selected.id); return core.streamSimple(selected, context, options); },
 	};
 	let definition: any;
@@ -1357,6 +1359,116 @@ test("custom system and system_file prompts still get the subagent reminder last
 	assert.match(description, /subagent reminder is still appended/);
 	assert.doesNotMatch(description, /replacing the default \(your prompt, the subagent reminder/);
 	live.runtime.close();
+});
+
+test("Pi extension loader retains enum schemas for agent, todo and job", async t => {
+	const root = fileURLToPath(new URL("../../../", import.meta.url));
+	const cwd = await temp(t);
+	const loader = await import(new URL("node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js", new URL("../../../", import.meta.url)).href);
+	const methods = ["bindExtensions", "_refreshToolRegistry", "_setActiveTools"];
+	const originals = methods.map(name => Object.getOwnPropertyDescriptor(AgentSession.prototype, name));
+	const loaded = await loader.loadExtensions(["RQW-agent", "RQW-todo", "RQW-tools"].map(name => join(root, "extensions", name, "index.ts")), cwd);
+	try {
+		assert.deepEqual(loaded.errors, []);
+		const tool = (name: string) => loaded.extensions.flatMap((extension: any) => [...extension.tools.values()]).find((entry: any) => entry.definition.name === name).definition;
+		assert.deepEqual(tool("agent").parameters.properties.action.enum, ["start", "status", "send", "resume", "interrupt", "stop", "restart"]);
+		assert.deepEqual(tool("todo").parameters.properties.items.items.properties.status.enum, ["pending", "active", "done", "dropped", "blocked"]);
+		assert.deepEqual(tool("job").parameters.properties.action.enum, ["status", "kill"]);
+	} finally {
+		const tools = loaded.extensions.find((extension: any) => extension.tools.has("job"));
+		for (const handler of tools?.handlers.get("session_shutdown") ?? []) await handler({ type: "session_shutdown", reason: "quit" }, { sessionManager: {} });
+	}
+	assert.deepEqual(methods.map(name => Object.getOwnPropertyDescriptor(AgentSession.prototype, name)), originals);
+});
+
+test("agent enum schema validates and coerces Pi 1.5 tool arguments", async t => {
+	const root = await temp(t);
+	const live = runtimeFixture(SessionManager.create(root, join(root, "parent")), root);
+	const tool: any = { name: "agent", parameters: live.parameters() };
+	const parse = (args: unknown) => validateToolArguments(tool, { type: "toolCall", id: "id", name: "agent", arguments: args } as any);
+	assert.deepEqual(JSON.parse(JSON.stringify(tool.parameters)).properties.action.enum, ["start", "status", "send", "resume", "interrupt", "stop", "restart"]);
+	assert.deepEqual(parse({ action: "status", ids: "agent#1", messages: "5", thinking: null }), { action: "status", ids: ["agent#1"], messages: 5 });
+	assert.throws(() => parse({ action: "invalid" }), /Validation failed/);
+	live.runtime.close();
+});
+
+test("child keeps Pi summary identity and custom SDK auth", async t => {
+	const root = await temp(t);
+	const live = runtimeFixture(SessionManager.create(root, join(root, "parent")), root);
+	let child: any;
+	let nativeStream: any;
+	let afterChildHook: any;
+	live.ctx.modelRegistry.runtime.getAuth = async () => ({ auth: { apiKey: "explicit-key" }, env: {} });
+	live.events.on("rqw-codex:session-policy", (request: any) => {
+		child = request.session;
+		nativeStream = child.agent.streamFunction;
+		queueMicrotask(() => { afterChildHook = child.agent.streamFunction; });
+	});
+	try {
+		await live.execute({ action: "start", task: "task" });
+		await live.runtime.wait(new AbortController().signal);
+		assert.equal(afterChildHook, nativeStream);
+		const original = child.agent.streamFunction;
+		assert.equal(child.agent.streamFunction, nativeStream);
+		const summary = await child._getSummarizationRequestAuth(child.model, new AbortController().signal);
+		assert.equal(summary.apiKey, undefined);
+		child.agent.streamFunction = () => { throw new Error("custom stream"); };
+		const custom = await child._getSummarizationRequestAuth(child.model, new AbortController().signal);
+		assert.equal(custom.apiKey, "explicit-key");
+		child.agent.streamFunction = original;
+	} finally { live.runtime.close(); }
+});
+
+test("child virtual routing repairs once and keeps parent and cache replay untouched", async t => {
+	const root = await temp(t);
+	const live = runtimeFixture(SessionManager.create(root, join(root, "parent")), root);
+	const runtime = live.ctx.modelRegistry.runtime;
+	const original = runtime.streamSimple;
+	const seen: { context: any; options: any }[] = [];
+	let childId = "";
+	live.events.on("rqw-codex:session-policy", (request: any) => { childId = request.session.sessionManager.getSessionId(); });
+	runtime.streamSimple = (model: any, context: any, options: any) => {
+		if (model.api === "pi-virtual") return runtime.streamSimple({ ...model, api: "anthropic-messages" }, context, options);
+		seen.push({ context, options });
+		return original(model, context, options);
+	};
+	try {
+		await live.execute({ action: "start", task: "task" });
+		await live.runtime.wait(new AbortController().signal);
+		const model = { ...live.ctx.model, api: "pi-virtual" };
+		const context = { messages: [{ role: "user", content: "task", timestamp: 1 },
+			{ role: "toolResult", toolCallId: "orphan", toolName: "read", content: [], isError: false, timestamp: 1 }] };
+		const owner = Symbol.for("rqw:request-owner:v1");
+		await runtime.streamSimple(model, context, { sessionId: childId, cacheRetention: "long" }).result();
+		const child = seen.at(-1)!;
+		assert.equal(child.options.cacheRetention, "short");
+		assert.deepEqual(child.options[owner], { sessionId: childId, kind: "request" });
+		assert.deepEqual(child.context.messages.map((message: any) => message.role), ["user"]);
+		const replay = { sessionId: childId, cacheRetention: "long", [owner]: { sessionId: childId, kind: "cache-replay" } };
+		await runtime.streamSimple(model, context, replay).result();
+		assert.equal(seen.at(-1)!.options, replay);
+		assert.equal(seen.at(-1)!.context, context);
+		const parent = { sessionId: live.ctx.sessionManager.getSessionId(), cacheRetention: "long" };
+		await runtime.streamSimple(model, context, parent).result();
+		assert.equal(seen.at(-1)!.options, parent);
+		assert.equal(seen.at(-1)!.context, context);
+	} finally { live.runtime.close(); }
+});
+
+test("child runtime hooks release out of order without retaining inactive layers", async t => {
+	const root = await temp(t);
+	const live = runtimeFixture(SessionManager.create(root, join(root, "parent")), root);
+	const runtime = live.ctx.modelRegistry.runtime;
+	const original = runtime.streamSimple;
+	try {
+		await live.execute({ action: "start", task: "one" });
+		await live.runtime.wait(new AbortController().signal);
+		await live.execute({ action: "start", task: "two" });
+		await live.runtime.wait(new AbortController().signal);
+		await live.execute({ action: "stop", id: "agent#1" });
+		await live.execute({ action: "stop", id: "agent#2" });
+		assert.equal(runtime.streamSimple, original);
+	} finally { live.runtime.close(); }
 });
 
 test("registered description and parameters carry adapted Codex guidance", async t => {

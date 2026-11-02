@@ -1,9 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { installTodoMode } from "./mode.ts";
 import { createTodoPanel } from "./panel.ts";
 import { registerTodoView } from "./view.ts";
+
+function StringEnum<const T extends readonly string[]>(values: T) {
+	return Type.Unsafe<T[number]>({ type: "string", enum: [...values] });
+}
 
 const status = StringEnum(["pending", "active", "done", "dropped", "blocked"] as const);
 const stepStatus = StringEnum(["pending", "active", "done"] as const);

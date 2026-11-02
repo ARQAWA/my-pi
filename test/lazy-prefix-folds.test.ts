@@ -41,6 +41,8 @@ async function open(origin: "owner" | "card" | "work" = "owner", ms = 42_000, su
 	cleanups.push(async () => { for (const extension of extensions.toReversed()) for (const handler of extension.handlers.get("session_shutdown") ?? []) await handler({}, ctx); });
 	const fx = makeFullscreen(s.manager, { columns: WIDTH, rows: 20 });
 	(fx.host.runtimeHost.session as any).resourceLoader = { getExtensions: () => loaded };
+	const metadata: { text: string; messageId?: string; timestamp?: string }[] = [];
+	(fx.host.runtimeHost.session as any).extensionRunner.getMarkdownTransformers = () => [(text: string, context: any) => { metadata.push({ text, messageId: context.messageId, timestamp: context.timestamp }); return text; }];
 	cleanups.push(() => fx.stop());
 	cleanups.push(() => {
 		const host = fx.host as any;
@@ -74,7 +76,7 @@ async function open(origin: "owner" | "card" | "work" = "owner", ms = 42_000, su
 		fx.send(`\x1b[<0;2;${y + 1}M`); fx.send(`\x1b[<0;2;${y + 1}m`);
 	};
 	const unload = () => { fx.screen.scrollToBottom(); fx.frame(); };
-	return { fx, rows, loadOlder, click, unload };
+	return { fx, rows, loadOlder, click, unload, metadata, manager: s.manager };
 }
 
 for (const [origin, ms, label] of [["owner", 42_000, "42s"], ["card", 123_000, "2m 03s"], ["work", 3_900_000, "1h 05m"]] as const) {
@@ -116,6 +118,14 @@ it("opening a prefix restores the card among its original work and lifted-owner 
 	assert.ok(sequence.every(at => at >= 0));
 	assert.deepEqual(sequence, [...sequence].sort((a, b) => a - b));
 	assert.equal(rows.filter(row => row === "prefix card").length, 1);
+});
+
+it("preserves message metadata when a lazy folded prefix opens", async () => {
+	const m = await open();
+	m.loadOlder();
+	m.click("worked for 42s ›");
+	const entry = m.manager.getBranch().find((item: any) => item.type === "message" && item.message.role === "assistant" && item.message.content.some((part: any) => part.text === "prefix work"))!;
+	assert.ok(m.metadata.some(item => item.text === "prefix work" && item.messageId === entry.id && item.timestamp === entry.timestamp));
 });
 
 it("opening a prefix never absorbs the kept suffix or its final answer", async () => {

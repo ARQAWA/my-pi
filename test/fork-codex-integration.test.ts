@@ -55,9 +55,17 @@ test("Codex fork sends the caller's prepared prefix with isolated tool execution
 	const children = new Map<string, CodexThreadTransport>();
 	const root = Object.create(AgentSession.prototype);
 	root.sessionManager = parent;
-	root.agent = { streamFunction: (m: any, context: any, options: any) => rootTransport.stream(m, context, options) };
+	const stream = (m: any, context: any, options: any) => {
+		const id = options.sessionId;
+		if (id === parent.getSessionId()) return rootTransport.stream(m, context, options);
+		if (!children.has(id)) children.set(id, transport(id));
+		return children.get(id)!.stream(m, context, options);
+	};
 	const runtime = { getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true, getAuth: async () => ({ apiKey: "fake" }), checkAuth: async () => ({}), isUsingOAuth: () => true, getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [],
-		streamSimple: (m: any, context: any, options: any) => { const id = options.sessionId; if (!children.has(id)) children.set(id, transport(id)); return children.get(id)!.stream(m, context, options); } };
+		stream, streamSimple: stream };
+	root._modelRuntime = runtime;
+	root._cacheWarmer = { models: runtime };
+	root.agent = { streamFunction: (m: any, context: any, options: any) => runtime.streamSimple(m, context, options) };
 	const ctx: any = { cwd: w.cwd, sessionManager: parent, model, modelRegistry: { runtime, find: () => model, hasConfiguredAuth: () => true }, isIdle: () => root.isIdle, isProjectTrusted: () => true, getSystemPrompt: () => "caller system", signal: new AbortController().signal, mode: "tui" };
 	const hooks = new Map<string, any[]>();
 	const events = createEventBus();

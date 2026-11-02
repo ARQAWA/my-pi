@@ -5,7 +5,7 @@ import { Spacer, Text } from "@earendil-works/pi-tui";
 
 /** Wraps `updateContent` of the assistant message; returns the undo. Incompatible shapes leave Pi's drawing alone. */
 export function installQuiet(isQuiet: (message: { timestamp?: number }) => boolean, prototype: any = AssistantMessageComponent.prototype, version = VERSION): () => void {
-	if (version !== "1.4.0" || typeof prototype.updateContent !== "function") return () => {};
+	if (version !== "1.5.0" || typeof prototype.updateContent !== "function") return () => {};
 	const original = prototype.updateContent;
 	const own = Object.getOwnPropertyDescriptor(prototype, "updateContent");
 	const wrapper = function (this: any, message: any, ...args: unknown[]) {

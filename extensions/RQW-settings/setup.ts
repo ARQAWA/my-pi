@@ -10,7 +10,7 @@ import { INNER, joinChain, leaveChain, type Link } from "./cache-warming.ts";
 
 export const SETUP_MARKER = "rqwSetupVersion";
 const METHOD = "updateThemesFromPaths";
-const STATE = Symbol.for("rqw-settings/setup-bridge/1.4.0");
+const STATE = Symbol.for("rqw-settings/setup-bridge/1.5.0");
 const DIR = dirname(fileURLToPath(import.meta.url));
 const OWN_ENTRY = resolve(DIR, "index.ts");
 
@@ -150,7 +150,7 @@ export function installSetupBridge(pi: ExtensionAPI): () => void {
 	const method = Object.getOwnPropertyDescriptor(proto, METHOD);
 	let profile: Profile;
 	try {
-		if (VERSION !== "1.4.0" || typeof method?.value !== "function" || !method.configurable) {
+		if (VERSION !== "1.5.0" || typeof method?.value !== "function" || !method.configurable) {
 			throw new Error("incompatible Pi resource loader");
 		}
 		profile = readProfile();

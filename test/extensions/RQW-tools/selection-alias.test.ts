@@ -241,7 +241,7 @@ test("an abandoned registration restores Pi's original methods", () => {
 	const refresh = Object.getOwnPropertyDescriptor(prototype, "_refreshToolRegistry");
 	const set = Object.getOwnPropertyDescriptor(prototype, "_setActiveTools");
 	const release = installSelectionAliases();
-	const state = prototype[Symbol.for("rqw/tool-selection-aliases/1.4.0")];
+	const state = prototype[Symbol.for("rqw/tool-selection-aliases/1.5.0")];
 	for (const reference of state.leases) Object.defineProperty(reference, "deref", { value: () => undefined });
 	try {
 		const session = host();

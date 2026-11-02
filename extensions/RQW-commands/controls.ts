@@ -54,7 +54,7 @@ function bind(state: State, host: any, owner: Owner) {
 }
 
 export function installControls(pi: ExtensionAPI, registerShutdown = true): () => void {
- if (VERSION !== "1.4.0") throw new Error(WARNING);
+ if (VERSION !== "1.5.0") throw new Error(WARNING);
  const proto = InteractiveMode.prototype as any;
  let state = proto[STATE] as State | undefined;
  if (!state) {

@@ -52,7 +52,7 @@ it("uses the session directory before rendering a switched session", () => {
 	resetCapabilitiesCache();
 	const host = { renderInitialMessages() { return render("[file](src/app.ts:12)"); } };
 	const original = host.renderInitialMessages;
-	const restore = installLinks(undefined, "1.4.0", host);
+	const restore = installLinks(undefined, "1.5.0", host);
 	try {
 		assert.ok(restore);
 		const cwd = resolve("different-project");
@@ -119,6 +119,6 @@ it("leaves an unsupported renderer untouched", () => {
 	assert.equal(proto.renderInlineTokens, original);
 	const incompatible = { renderInlineTokens() { return "stock"; } };
 	const stock = incompatible.renderInlineTokens;
-	assert.equal(installLinks(incompatible, "1.4.0"), undefined);
+	assert.equal(installLinks(incompatible, "1.5.0"), undefined);
 	assert.equal(incompatible.renderInlineTokens, stock);
 });

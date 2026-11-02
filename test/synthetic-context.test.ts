@@ -9,10 +9,10 @@ type World = Awaited<ReturnType<typeof world>>;
 type Request = World["requests"][number];
 
 // Opus declares 1000000 tokens; the rule caps it at W = 500000, R = 50000. The threshold is 450000, the background summary starts at 325000.
-// The fake model counts about 0.35 tokens per character; the system prompt and the tools take about 30000 tokens.
+// The fake model counts one token per four characters of message text.
 const THRESHOLD = 450_000;
 const BACKGROUND_FROM = 325_000;
-const TURN = 450_000;
+const TURN = 650_000;
 
 /** Pi's summary request: its last message carries the conversation to summarize. */
 const isSummary = (request: Request) => {

@@ -1,13 +1,13 @@
 # RQW-session
 
-Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast `/resume` list for Pi 1.4.0. No tool, UI replacement or other-extension import. The selector and list use checked runtime patches with stock fallback.
+Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast `/resume` list for Pi 1.5.0. No tool, UI replacement or other-extension import. The selector and list use checked runtime patches with stock fallback.
 
 - `/copy-session`: copy the current ID and notify `Session ID copied: <id>`. Stock `/copy` still copies the last
   assistant message. Clipboard failures produce an error notification, not success.
 - `/remove`: works like Remove Session in the `/resume` picker. It asks `Delete this session?` in one Pi selection
   dialog: `1. No` first (selected by default), then `2. Yes`. Enter on the default, Escape or cancellation deletes
   nothing. After Yes, it switches to a fresh empty session using Pi's `/new` runtime path, then deletes the old JSONL
-  with a local copy of stock `deleteSessionFile` (Pi 1.4.0): `trash` first (`--` before a leading dash), else
+  with a local copy of stock `deleteSessionFile` (Pi 1.5.0): `trash` first (`--` before a leading dash), else
   `unlink`. Messages: `Session moved to trash`, `Session deleted`, `Failed to delete: <error>`. Cancelling the session
   switch deletes nothing. Without dialog-capable UI it refuses; RPC may select via its UI bridge. An empty/in-memory
   session simply becomes a new empty session. Only the JSONL is deleted: no `.children` tree, no artifacts.

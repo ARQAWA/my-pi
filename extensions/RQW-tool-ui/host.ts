@@ -104,7 +104,7 @@ function install(): Hub | undefined {
 	const proto = InteractiveMode.prototype as any;
 	const names = ["init", "renderSessionEntries", "addMessageToChat", "stop"] as const;
 	const descriptors = names.map((name) => Object.getOwnPropertyDescriptor(proto, name));
-	if (VERSION !== "1.4.0" || descriptors.some((d) => !d || typeof d.value !== "function" || !d.writable || !d.configurable)) return;
+	if (VERSION !== "1.5.0" || descriptors.some((d) => !d || typeof d.value !== "function" || !d.writable || !d.configurable)) return;
 	const hub: Hub = { owners: new WeakMap(), hosts: new WeakMap(), count: 0 };
 	hub.run = glue(hub);
 	const [init, render, add, stop] = descriptors.map((d) => d!.value);

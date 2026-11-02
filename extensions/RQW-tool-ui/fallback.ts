@@ -1,8 +1,8 @@
 // Pi's expanded fallback formatting, reproduced here because Pi does not export it (owner decision, UI port P3
 // amendment): a tool call without a renderCall, a result without a renderResult (or whose renderer throws), and a tool
-// Pi has no definition for are drawn exactly as Pi 1.4.0 draws them in the expanded (Ctrl+O) view.
+// Pi has no definition for use Pi's expanded (Ctrl+O) formatting.
 //
-// Source, pinned to @earendil-works/pi-coding-agent 1.4.0 (`PI_FALLBACK_VERSION`, checked by render.test.ts):
+// Source: @earendil-works/pi-coding-agent 1.5.0 (`PI_FALLBACK_VERSION`, checked by render.test.ts):
 // - dist/core/tools/render-utils.js:56 `getTextOutput`, :81 `formatToolCallWithArgs` (expanded branch only)
 // - dist/utils/ansi.js `stripAnsi` (ansi-regex/strip-ansi, MIT, Sindre Sorhus), dist/utils/shell.js:165
 //   `sanitizeBinaryOutput`, render-utils.js `replaceTabs`
@@ -13,7 +13,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, imageFallback } from "@earendil-works/pi-tui";
 
 /** The Pi version this formatting was copied from. */
-export const PI_FALLBACK_VERSION = "1.4.0";
+export const PI_FALLBACK_VERSION = "1.5.0";
 
 /** The parts of a tool result the fallbacks read. */
 export interface FallbackResult {
@@ -22,7 +22,7 @@ export interface FallbackResult {
 
 const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
 const OSC_START = "\\u001B\\]";
-const CSI_START = "[\\u001B\\u009B][[\\]()#;?]*(?:\\d{1,4}(?:[;:]\\d{0,4})*)?";
+const CSI_START = "(?:(?:\\u001B\\[|\\u009B)[<=>]|[\\u001B\\u009B][[\\]()#;?]*)(?:\\d{1,4}(?:[;:]\\d{0,4})*)?";
 const CSI_FINAL = "[\\dA-PR-TZcf-nq-uy=><~]";
 const ANSI = new RegExp(`(?:${OSC_START}[\\s\\S]*?${ST})|${CSI_START}${CSI_FINAL}`, "g");
 

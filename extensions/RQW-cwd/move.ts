@@ -1,9 +1,9 @@
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { isSystemFolder } from "./folders.ts";
 
-/** The part of Pi 1.4.0's AgentSessionRuntime the move uses. */
+/** The part of Pi 1.5.0's AgentSessionRuntime the move uses. */
 type Runtime = {
 	cwd: string;
 	services: { agentDir: string };
@@ -22,7 +22,7 @@ function isRuntime(value: any): value is Runtime {
 		&& typeof manager?.getSessionDir === "function" && typeof manager.isPersisted === "function";
 }
 
-/** Pi 1.4.0's default history folder for a cwd (session-manager.js `getDefaultSessionDirPath`). */
+/** Pi 1.5.0's default history folder for a cwd (session-manager.js `getDefaultSessionDirPath`). */
 function defaultSessionDir(cwd: string, agentDir: string): string {
 	const safePath = `--${resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 	return join(resolve(agentDir), "sessions", safePath);
@@ -32,7 +32,11 @@ function defaultSessionDir(cwd: string, agentDir: string): string {
 function tempSessionManager(old: SessionManager, from: string, target: string, agentDir: string): SessionManager {
 	if (!old.isPersisted()) return SessionManager.inMemory(target);
 	const dir = old.getSessionDir();
-	return SessionManager.create(target, dir === defaultSessionDir(from, agentDir) ? defaultSessionDir(target, agentDir) : dir);
+	const defaultDir = defaultSessionDir(from, agentDir);
+	const isDefault = process.platform === "win32"
+		? win32.resolve(dir).toLowerCase() === win32.resolve(defaultDir).toLowerCase()
+		: resolve(dir) === resolve(defaultDir);
+	return SessionManager.create(target, isDefault ? defaultSessionDir(target, agentDir) : dir);
 }
 
 function warning(from: string, reason: unknown): string {

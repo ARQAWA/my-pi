@@ -40,7 +40,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   images itself. Expanded rows show no summary line; Ctrl+O again folds back.
 - Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, or
   a tool without a definition, such as an unavailable tool in stored session history) is not exported by Pi, so
-  `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
+  `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.5.0 with its sources cited in
   its header. Maintenance: on a Pi upgrade, compare `fallback.ts` with the cited Pi sources and update the pin.
 - The original renderers are called where Pi calls this row's renderers: their call side from the start of execution
   (so the bash clock starts when Pi's would), their result side from the first expansion on, and from then on with
@@ -188,7 +188,7 @@ switching it on again the same way brings the compact display back for the whole
 
 ## Patches
 
-The tool rows use Pi extension and TUI APIs. The early history and worked-for hooks patch Pi 1.4.0 in memory,
+The tool rows use Pi extension and TUI APIs. The early history and worked-for hooks patch Pi 1.5.0 in memory,
 with shape checks and stock rendering on an incompatible host. There is no fork, installed-file edit or deep import.
 The one copy of Pi code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
 

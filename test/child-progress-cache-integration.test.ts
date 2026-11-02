@@ -53,6 +53,7 @@ test("agent tool delivers a child's 50-step progress through the Anthropic fork"
 		getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true,
 		getAuth: async () => ({ apiKey: "sk-ant-oat01-fake" }), checkAuth: async () => ({}), isUsingOAuth: () => true,
 		getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [],
+		stream: (selected: any, context: any, options: any) => overlay.streamSimple(selected, context, { ...options, apiKey: "sk-ant-oat01-fake", fetch: fakeFetch }),
 		streamSimple: (selected: any, context: any, options: any) => overlay.streamSimple(selected, context, { ...options, apiKey: "sk-ant-oat01-fake", fetch: fakeFetch }),
 	};
 	const parent = SessionManager.create(root, join(root, "parent"));

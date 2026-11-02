@@ -7,7 +7,7 @@ import { Container, stripTerminalSequences, Text, visibleWidth } from "@earendil
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
-import { PI_FALLBACK_VERSION } from "../../../extensions/RQW-tool-ui/fallback.ts";
+import { PI_FALLBACK_VERSION, textOutput } from "../../../extensions/RQW-tool-ui/fallback.ts";
 import { buildGroups } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { renderLive } from "../../../extensions/RQW-tool-ui/live.ts";
 import { collapsedRows, ToolUi } from "../../../extensions/RQW-tool-ui/render.ts";
@@ -26,6 +26,11 @@ const entries = (...messages: unknown[]) => messages.map((message, i) => ({
 
 it("pins the copied fallback to the installed Pi version", () => {
 	assert.equal(PI_FALLBACK_VERSION, VERSION);
+});
+
+it("strips private CSI reports without eating text after keypad escapes", () => {
+	const text = "a\x1b[<35;59;1Mb\x9b=1;2mc\x1b[>4;2md\x1b=123e\x1b>456f";
+	assert.equal(textOutput(ok(text), false), "abcd123e456f");
 });
 
 it("classifies calls and nonzero exits", () => {

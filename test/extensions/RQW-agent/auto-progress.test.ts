@@ -21,7 +21,7 @@ async function world(t: TestContext, responses: (gate: Promise<any>) => (() => u
 	core.setResponses([...responses(gate.promise), () => { entered.resolve(); return gate.promise; }] as never);
 	const runtime = { getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true,
 		getAuth: async () => ({ apiKey: "fake" }), checkAuth: async () => ({}), isUsingOAuth: () => false,
-		getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [], streamSimple: core.streamSimple };
+		getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [], stream: core.streamSimple, streamSimple: core.streamSimple };
 	const ctx: any = { cwd: root, sessionManager: manager, model, modelRegistry: { runtime, find: () => model, hasConfiguredAuth: () => true },
 		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "prompt", signal: new AbortController().signal, mode: "test", ui: { notify() {} } };
 	let definition: any;

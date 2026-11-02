@@ -38,7 +38,7 @@ Enter commits once. An unchanged model needs only the thinking setter. A changed
 and a synchronous, session-scoped pending-effort `model_select` handler, with fallback and cleanup. No settings
 or credentials are written; no request fences, aborts or scheduling changes are added.
 
-**Commit is not atomic.** Pi 1.4.0 applies its model-switch effort before emitting `model_select` and awaiting
+**Commit is not atomic.** Pi 1.5.0 applies its model-switch effort before emitting `model_select` and awaiting
 listeners. A listener before ours, or concurrent work, can observe/request that intermediate combination.
 The pending-effort handler reduces this window; it does not provide a global request lock. An already-prepared
 request may retain its previous model/effort snapshot. The guarantee is that draft navigation never changes the

@@ -1,6 +1,6 @@
 # my-pi
 
-A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
+A Pi package (`@earendil-works/pi-coding-agent` 1.5.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 Extensions may change or patch Pi in memory under `[D-SCOPE-RUNTIME-PATCH]`: lightweight and efficient on Windows including VDI through PCLI and macOS, with shape checks, stock fallback and checks on every Pi update; no installed-file edits, fork or rebuild.
 The repository coordinator and workflow are development-only, not part of the shipped harness; never port them into the product.
@@ -24,7 +24,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-tools/`: extension 3, the base tools. Our own `rqw_readfile`, `rqw_glob`, `rqw_rg` replace stock `read`, `find`, `grep` for the model, with Cursor-based descriptions and a search funnel appended to `rqw_rg`; `rqw_readfile` prefixes every tenth line like Cursor, e.g. `    10|` (stock tools stay as the fallback); stock `bash`, `edit`, `write` with our descriptions, multi-file edit and write, bounded Windows retry and counts. Bash refuses commands that search, list or read files. File tools use stock parallel execution, with an in-memory resolved-path lock serializing edit and write on the same file; different files stay parallel. Bash and codemode run independently. A call still running after 12 s returns `job#N`; `job` has `status` and `kill`, no wait; a finished job's result arrives automatically (`[D-AUTO-WAIT-EVERYWHERE]`). The `rqw:stop-background:v1` notice stops the main session's process jobs; file calls finish on their own. Tests: `test/extensions/RQW-tools/`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   physical window W = min(contextWindow, 500000) and compacts strictly above W - R, where R = round(W / 10).
-  Explicit settings and physical request scopes remain; Pi 1.4.0 summaries use native output limits, not R.
+  Explicit settings and physical request scopes remain; Pi 1.5.0 summaries use native output limits, not R.
   Background compaction: from 65% of W Pi's own summary runs unawaited on a projected snapshot. At the threshold Pi
   waits for a running summary and stores it if fresh; on failure, abort or staleness Pi compacts normally. Status channel
   `rqw-context:background-compaction` `{ sessionId, active }`; dispatch `rqw:background-summary:v1` (`[D-CONTEXT-BACKGROUND]`).

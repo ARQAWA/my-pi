@@ -25,7 +25,7 @@ export function installHost(): State | undefined {
 	const proto = InteractiveMode.prototype as any;
 	const renderDescriptor = Object.getOwnPropertyDescriptor(proto, "renderSessionEntries");
 	const stopDescriptor = Object.getOwnPropertyDescriptor(proto, "stop");
-	if (VERSION !== "1.4.0" || !renderDescriptor?.writable || typeof renderDescriptor.value !== "function" ||
+	if (VERSION !== "1.5.0" || !renderDescriptor?.writable || typeof renderDescriptor.value !== "function" ||
 		!stopDescriptor?.writable || typeof stopDescriptor.value !== "function") return undefined;
 	const render = renderDescriptor.value;
 	const stop = stopDescriptor.value;

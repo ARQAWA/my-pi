@@ -62,7 +62,7 @@ it("styles a history frame during real init before session_start", async t => {
 		clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
 	} as unknown as Terminal;
 	const sessionData: any = {
-		settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined }, autoCompactionEnabled: true,
+		settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined, messages: manager.buildSessionContext().messages }, autoCompactionEnabled: true,
 		getContextUsage: () => undefined,
 		modelRuntime: { getAvailableSnapshot: () => [], isUsingSubscription: () => false },
 		resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => loaded },

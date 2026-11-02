@@ -32,7 +32,7 @@ The default `fork_turns: "none"` preserves ordinary clean starts. Forking is ava
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
   such as AGENTS.md, skills and `<cwd>` when they are loaded), read through the public `ctx.getSystemPrompt()` of Pi
-  1.4.0, then the adapted Codex 0.165.0 subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts)), then the optional
+  1.5.0, then the adapted Codex 0.165.0 subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts)), then the optional
   `role` as `<role>...</role>`. A nested subagent gets the same main prompt (handed down, never its caller's prompt,
   so nothing repeats). `system` replaces the main prompt text; the subagent reminder is still appended after it
   (`system_file` too). There is no option to drop the reminder; a parent allows spawning by saying so in the task,
@@ -422,7 +422,7 @@ disabled by default and inherited on restart. It emits `long_turn` once for a na
 never stops a child and does not time a native-idle parent with running descendants. Turn end, logical run end and
 close cancel the alert timer; no alert timers remain running while idle.
 
-`schema_rejection_repeated` reports the second matching detectable Pi 1.4 argument parsing/schema rejection.
+`schema_rejection_repeated` reports the second matching detectable Pi 1.5 argument parsing/schema rejection.
 Detection requires an error event without `durationMs` and the exact Pi diagnostic prefix
 `Validation failed for tool "<name>":` or `Invalid arguments for tool "<name>": `.
 Schema diagnostics are compared before the `Received arguments` section, so different rejected arguments can share
@@ -577,7 +577,7 @@ ended while it was false and the file is absent, restore opens a new empty sessi
 `pending_sends`, so one task arrives. With `history` true a missing file stays a `recovery_error`. The other children are
 still recovered.
 
-Pi 1.4.0 exposes no `AgentSession.continue`. Resume reconstructs a child session, uses public `agent.continue()`
+Pi 1.5.0 exposes no `AgentSession.continue`. Resume reconstructs a child session, uses public `agent.continue()`
 and owns its core-run busy, abort, idle and settlement fences. Prompt/provider hooks still apply. This path does
 not inherit Session's post-run automatic retry and overflow-recovery loop; errors are delivered for an explicit
 retry instead. Persisted settings and ordinary threshold compaction remain available. Session files are appended
@@ -655,6 +655,6 @@ This counts producer adds no timer, card or second child registry.
 The waiting categories and idle distinction follow [D-STATUSBAR-WAITS](../../DECISIONS.md#status-bar).
 Reason: expose real background activity without coupling independently switchable extensions or changing
 execution/delivery. Carriers: `activity.ts`, `index.ts`, `coordinator.ts` and `counts.ts`.
-Public Pi 1.4.0 seams: root-exported `EventBus`/`createEventBus`, `pi.events.emit/on`,
+Public Pi 1.5.0 seams: root-exported `EventBus`/`createEventBus`, `pi.events.emit/on`,
 `AgentSession.subscribe`, `AgentSession.thinkingLevel`, and `session_start`/`session_shutdown`.
 No Pi patch, private-field access or method replacement is introduced by this producer work.

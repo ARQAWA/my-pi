@@ -27,7 +27,7 @@ export type Force = { taken: Steer[]; followUps: Steer[]; aborted: Promise<void>
 
 const none = { promote: (_identity: object, _idle: boolean, _defer: boolean, _failed: () => void) => false, followUps: (_identity: object) => undefined as number | undefined, start: (_identity: object, _text: string, _images: ImageContent[], _onStarted: () => void) => undefined as Promise<void> | undefined, session: (_identity: object) => undefined as Session | undefined, steering: (_identity: object) => undefined as { queued: number; inflight: number } | undefined, watch: (_identity: object, _listener: () => void) => () => {}, force: (_identity: object, _sink: (steer: Steer) => boolean) => undefined as Force | undefined, release() {} };
 
-/** Pi's steering or follow-up queues as arrays, or undefined when their shape is not the 1.4.0 one. */
+/** Pi's steering or follow-up queues as arrays, or undefined when their shape is not the 1.5.0 one. */
 function queuesOf(session: Session, kind: "steering" | "followUp" = "steering"): Queues | undefined {
 	const steering = kind === "steering";
 	const display = steering ? session._steeringMessages : session._followUpMessages;
@@ -133,10 +133,10 @@ function instrument(state: State, session: Session) {
 	state.instrumented.add(new WeakRef(session));
 }
 
-/** Lease the Pi 1.4.0 binding hook without retaining sessions. */
+/** Lease the Pi 1.5.0 binding hook without retaining sessions. */
 export function installQueue(SessionClass = AgentSession, version = VERSION) {
 	const prototype = SessionClass.prototype as unknown as Prototype;
-	if (version !== "1.4.0") return none;
+	if (version !== "1.5.0") return none;
 	let state = prototype[PATCH];
 	if (!state) {
 		const original = Object.getOwnPropertyDescriptor(prototype, "_bindExtensionCore");

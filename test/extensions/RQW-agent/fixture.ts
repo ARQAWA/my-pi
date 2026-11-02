@@ -75,7 +75,7 @@ export function runtime(cwd: string, root: string, thinking = "off", extraModels
 	const modelRuntime = {
 		getModel: () => model, getPhysicalModel: () => model, hasConfiguredAuth: () => true, getAuth: async () => ({ apiKey: "fake" }),
 		checkAuth: async () => ({}), isUsingOAuth: () => false, getAvailableSnapshot: () => [...models.values()], getRegisteredProviderIds: () => [],
-		streamSimple: core.streamSimple,
+		stream: core.streamSimple, streamSimple: core.streamSimple,
 	};
 	let definition: any;
 	const ctx: any = {

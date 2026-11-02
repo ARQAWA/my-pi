@@ -1,5 +1,5 @@
 /**
- * The synthetic world: the real Pi 1.4.0 with every extension of package.json `pi.extensions`, in this process,
+ * The synthetic world: the real Pi 1.5.0 with every extension of package.json `pi.extensions`, in this process,
  * with the outside faked: model, terminal, network, processes, clock, credentials, home and project folders.
  * Tests drive it like a page in a browser: press keys, wait, look at the screen, read the session file.
  * See the design in my-pi-evidence/designs/synthetic-harness/DESIGN.md.

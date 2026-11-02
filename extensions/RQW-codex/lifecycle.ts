@@ -1,11 +1,20 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { AgentSession, VERSION, type ExtensionAPI, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { isRetryOwnedDiagnostic } from "./retry.ts";
 
-/** Private handler name carried in Pi 1.4.0's native handler map; dispatched with the exact session being constructed. */
+/** Private handler name carried in Pi 1.5.0's native handler map; dispatched with the exact session being constructed. */
 export const SESSION_BIND = "rqw-codex:session-bind";
 
 const STATE = Symbol.for("rqw-codex/lifecycle");
+const SUMMARY_HOOKS = Symbol.for("rqw-codex/summary-runtime");
+/** The bound session whose summary is running; shared across reloads so an older runtime wrapper sees new scopes. */
+const SUMMARY_SCOPE = Symbol.for("rqw-codex/summary-scope");
+const SUMMARY_OWNERS = Symbol.for("rqw-codex/summary-owners");
+/** Layer marker shared with the capture extensions: a released covered layer is skipped when the layer above restores. */
+const REQUEST_LAYER = Symbol.for("rqw:request-stream-layer:v1");
+/** Pi's summary entry points; each sends its summary through the session's runtime stream. */
+const SUMMARY_METHODS = ["_runDefaultCompaction", "navigateTree", "summarizeForBugReport"] as const;
 /**
  * Shared method-lease contract `rqw:method-chain/v1` (self-contained copy in each RQW extension that wraps a Pi
  * prototype method). One chain per prototype and method: the stock descriptor plus the owner tokens of its layers.
@@ -56,13 +65,13 @@ function sessionClass(): { prototype: AgentSession } & Record<symbol, State | un
 	return AgentSession as unknown as { prototype: AgentSession } & Record<symbol, State | undefined>;
 }
 
-/** Exact Pi 1.4.0 seams, checked before anything is patched. */
+/** Exact Pi 1.5.0 seams, checked before anything is patched. */
 function assertPi(): void {
 	const prototype = AgentSession.prototype as unknown as Record<string, unknown>;
 	const bad = PATCHED.filter(name => typeof prototype[name] !== "function");
 	const descriptor = Object.getOwnPropertyDescriptor(prototype, "_bindExtensionCore");
-	if (VERSION !== "1.4.0" || bad.length || !descriptor?.configurable || typeof descriptor.value !== "function") {
-		throw new Error("RQW-codex: incompatible Pi lifecycle; requires Pi 1.4.0. Nothing was patched.");
+	if (VERSION !== "1.5.0" || bad.length || !descriptor?.configurable || typeof descriptor.value !== "function") {
+		throw new Error("RQW-codex: incompatible Pi lifecycle; requires Pi 1.5.0. Nothing was patched.");
 	}
 }
 
@@ -208,34 +217,129 @@ function isOwnedCodexDiagnostic(message: unknown): boolean {
 		&& Array.isArray(m.diagnostics) && m.diagnostics.some(item => isRetryOwnedDiagnostic(item));
 }
 
-/** Pi's standalone summary helper retries returned errors separately from AgentSession._isRetryableError. */
-export function suppressSummaryRetries(session: AgentSession): Cleanup {
-	const agent = session.agent;
-	const original = agent.streamFunction;
-	let active = true;
-	const wrapped: typeof original = async (model, context, options) => {
-		const stream = await original.call(agent, model, context, options);
-		if (!active || model.provider !== CODEX_PROVIDER || model.api !== CODEX_API || options?.cacheRetention !== "none"
-			|| options.sessionId === session.sessionId) return stream;
-		const result = stream.result.bind(stream);
-		stream.result = async () => {
-			const message = await result();
-			if (active && isOwnedCodexDiagnostic(message)) {
-				// Reject outside Pi's lazy provider streams, before retryAssistantCall can reuse its budget.
-				// Keep Pi 1.4.0's error label for both history and split-turn prefix summaries.
-				const content = context.messages.find(item => item.role === "user")?.content;
-				const text = typeof content === "string" ? content : content?.find(item => item.type === "text")?.text;
-				const label = text?.startsWith("# Conversation\n") ? "Turn prefix summarization" : "Summarization";
-				throw new Error(`${label} failed: ${message.errorMessage || "Unknown error"}`);
-			}
-			return message;
+/** One per session: its summary methods are wrapped once and scope their calls while `count` guards are held. */
+type SummaryOwner = { session: AgentSession; count: number; wrappers: Map<string, { wrapped: unknown; own?: PropertyDescriptor }> };
+
+function summaryOwners(): WeakMap<AgentSession, SummaryOwner> {
+	const registry = globalThis as unknown as Record<symbol, WeakMap<AgentSession, SummaryOwner> | undefined>;
+	return registry[SUMMARY_OWNERS] ??= new WeakMap();
+}
+
+/** True when every summary method is a function Pi lets us redefine on this session. */
+function summaryMethodsPatchable(session: AgentSession): boolean {
+	if (!Object.isExtensible(session)) return false;
+	return SUMMARY_METHODS.every(name => {
+		const own = Object.getOwnPropertyDescriptor(session, name);
+		return typeof (session as unknown as Record<string, unknown>)[name] === "function" && (!own || own.configurable === true);
+	});
+}
+
+/**
+ * Wrap the session's summary methods once; a later guard reuses the wrappers still in place, so overlapping guards
+ * never stack them. A method whose wrapper an earlier release removed is wrapped again.
+ */
+function ownerOf(session: AgentSession, scope: AsyncLocalStorage<SummaryOwner>): SummaryOwner {
+	const owners = summaryOwners();
+	const owner: SummaryOwner = owners.get(session) ?? { session, count: 0, wrappers: new Map() };
+	const target = session as unknown as Record<string, (...args: unknown[]) => unknown>;
+	for (const name of SUMMARY_METHODS) {
+		if (owner.wrappers.has(name)) continue;
+		const own = Object.getOwnPropertyDescriptor(session, name);
+		const original = target[name];
+		const wrapped = function(this: AgentSession, ...args: unknown[]) {
+			return owner.count > 0 ? scope.run(owner, () => original.apply(this, args)) : original.apply(this, args);
 		};
-		return stream;
-	};
-	agent.streamFunction = wrapped;
+		Object.defineProperty(session, name, { value: wrapped, configurable: true, writable: true, enumerable: false });
+		owner.wrappers.set(name, { wrapped, own });
+	}
+	owners.set(session, owner);
+	return owner;
+}
+
+/** Put back the session's own summary methods when ours are still on top; a covered wrapper stays and passes through. */
+function releaseOwner(owner: SummaryOwner): void {
+	for (const [name, { wrapped, own }] of owner.wrappers) {
+		if (Object.getOwnPropertyDescriptor(owner.session, name)?.value !== wrapped) continue;
+		if (own) Object.defineProperty(owner.session, name, own);
+		else delete (owner.session as unknown as Record<string, unknown>)[name];
+		owner.wrappers.delete(name);
+	}
+	if (!owner.wrappers.size) summaryOwners().delete(owner.session);
+}
+
+function summaryScope(): AsyncLocalStorage<SummaryOwner> {
+	const registry = globalThis as unknown as Record<symbol, AsyncLocalStorage<SummaryOwner> | undefined>;
+	return registry[SUMMARY_SCOPE] ??= new AsyncLocalStorage();
+}
+
+/**
+ * Pi's standalone summary helper retries returned errors separately from AgentSession._isRetryableError.
+ * Pi 1.5 recognizes the runtime stream function by identity, so the session's stream stays untouched: the runtime
+ * stream is wrapped instead, and only a summary that this bound session's own summary entry point started is handled.
+ */
+export function suppressSummaryRetries(session: AgentSession): Cleanup {
+	const runtime = session.modelRuntime;
+	if (!summaryMethodsPatchable(session)) {
+		console.warn("RQW-codex: incompatible Pi summary methods; using stock retry behavior.");
+		return () => {};
+	}
+	const scope = summaryScope();
+	const registry = globalThis as unknown as Record<symbol, WeakMap<ModelRuntime, { sessions: Set<SummaryOwner>; restore(): void }> | undefined>;
+	const hooks = registry[SUMMARY_HOOKS] ??= new WeakMap();
+	let hook = hooks.get(runtime);
+	if (!hook) {
+		const own = runtime && Object.getOwnPropertyDescriptor(runtime, "streamSimple");
+		const original = runtime?.streamSimple;
+		if (typeof original !== "function" || (own ? !own.configurable : !Object.isExtensible(runtime))) {
+			console.warn("RQW-codex: incompatible Pi summary runtime; using stock retry behavior.");
+			return () => {};
+		}
+		const sessions = new Set<SummaryOwner>();
+		const wrapped: typeof original = function(this: ModelRuntime, model, context, options) {
+			const stream = original.call(this, model, context, options);
+			const owner = scope.getStore();
+			if (model.provider !== CODEX_PROVIDER || model.api !== CODEX_API || options?.cacheRetention !== "none"
+				|| !owner || !sessions.has(owner) || options.sessionId === owner.session.sessionId) return stream;
+			const result = stream.result.bind(stream);
+			stream.result = async () => {
+				const message = await result();
+				if (sessions.has(owner) && isOwnedCodexDiagnostic(message)) {
+					const content = context.messages.find(item => item.role === "user")?.content;
+					const text = typeof content === "string" ? content : content?.find(item => item.type === "text")?.text;
+					const label = text?.startsWith("# Conversation\n") ? "Turn prefix summarization" : "Summarization";
+					throw new Error(`${label} failed: ${message.errorMessage || "Unknown error"}`);
+				}
+				return message;
+			};
+			return stream;
+		};
+		const layer = { active: true, descriptor: own };
+		Object.defineProperty(wrapped, REQUEST_LAYER, { value: layer });
+		Object.defineProperty(runtime, "streamSimple", { value: wrapped, configurable: true, writable: true });
+		hook = { sessions, restore() {
+			layer.active = false;
+			if (Object.getOwnPropertyDescriptor(runtime, "streamSimple")?.value !== wrapped) return;
+			let previous = layer.descriptor;
+			while (previous && typeof previous.value === "function" && previous.value[REQUEST_LAYER]?.active === false) {
+				previous = previous.value[REQUEST_LAYER].descriptor;
+			}
+			if (previous) Object.defineProperty(runtime, "streamSimple", previous);
+			else delete (runtime as unknown as { streamSimple?: unknown }).streamSimple;
+		} };
+		hooks.set(runtime, hook);
+	}
+	const held = hook;
+	const owner = ownerOf(session, scope);
+	owner.count++;
+	held.sessions.add(owner);
+	let active = true;
 	return () => {
+		if (!active) return;
 		active = false;
-		if (agent.streamFunction === wrapped) agent.streamFunction = original;
+		if (--owner.count > 0) return;
+		releaseOwner(owner);
+		held.sessions.delete(owner);
+		if (!held.sessions.size) { held.restore(); hooks.delete(runtime); }
 	};
 }
 
@@ -313,7 +417,7 @@ export function bindSession(session: AgentSession, policy: SessionPolicy): Clean
 	}
 }
 
-/** Install the Pi 1.4.0 binder for one loaded extension instance and bind its exact runtime's sessions. */
+/** Install the Pi 1.5.0 binder for one loaded extension instance and bind its exact runtime's sessions. */
 export function installLifecycle(pi: ExtensionAPI, policyFactory: PolicyFactory): Lifecycle {
 	const releaseAcquire = acquire();
 	const state = currentState();

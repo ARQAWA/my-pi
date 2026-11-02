@@ -163,9 +163,9 @@ function shared(): Shared {
 	return root[SHARED]!;
 }
 
-/** Exact Pi 1.4.0 check, before anything is patched or registered. */
+/** Exact Pi 1.5.0 check, before anything is patched or registered. */
 function assertPi(): void {
-	if (VERSION !== "1.4.0") throw new Error(`RQW-codex: incompatible Pi ${VERSION}; requires Pi 1.4.0. Nothing was patched.`);
+	if (VERSION !== "1.5.0") throw new Error(`RQW-codex: incompatible Pi ${VERSION}; requires Pi 1.5.0. Nothing was patched.`);
 }
 
 function isOwned(config: ProviderConfigInput | undefined): boolean {

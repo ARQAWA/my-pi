@@ -8,6 +8,7 @@ import { Writable } from "node:stream";
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
 import { createJobs } from "../../../extensions/RQW-tools/jobs.ts";
 import { createCountsProducer } from "../../../extensions/RQW-tools/counts.ts";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 
 const spec = { tool: "bash", command: "work", process: true };
 const result = (text: string) => ({ content: [{ type: "text", text }] });
@@ -52,7 +53,11 @@ test("a slow call hands off with a message that says its result arrives automati
 test("the job tool schema offers status and kill only", async (t) => {
 	const { tools } = await handedOff(t);
 	const schema = tools.get("job").parameters;
-	assert.deepEqual(schema.properties.action.enum, ["status", "kill"]);
+	assert.deepEqual(JSON.parse(JSON.stringify(schema)).properties.action.enum, ["status", "kill"]);
+	const tool = tools.get("job");
+	const parse = (args: unknown) => validateToolArguments(tool, { type: "toolCall", id: "id", name: "job", arguments: args } as any);
+	assert.deepEqual(parse({ action: "status", ids: "job#1", lines: "5", id: null }), { action: "status", ids: ["job#1"], lines: 5 });
+	assert.throws(() => parse({ action: "wait" }), /Validation failed/);
 	for (const removed of ["timeout_ms", "until"]) assert.equal(schema.properties[removed], undefined, `${removed} is gone`);
 	assert.ok(schema.properties.ids, "ids stays for status");
 	assert.doesNotMatch(tools.get("job").description, /\bwait|timeout_ms|\buntil\b/i);

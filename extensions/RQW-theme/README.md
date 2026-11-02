@@ -1,6 +1,6 @@
 # RQW-theme
 
-The `RQW-theme` colour theme for Pi 1.4.0, one asset: `theme.json`. It uses only Pi's native theme tokens.
+The `RQW-theme` colour theme for Pi 1.5.0, one asset: `theme.json`. It uses only Pi's native theme tokens.
 The owner's decisions are recorded in [Theme](../../DECISIONS.md#theme).
 
 **Registration.** `package.json` lists the theme in `pi.themes`. RQW-settings selects `RQW-theme` once on first start

@@ -8,7 +8,7 @@ type Owner = { handler: Function; enabled: () => boolean };
 type Binding = { owner?: Owner; restore: () => void; freeze: () => void };
 // `bind` is what the process-wide host hooks run; the newest module instance owns it, so /reload applies new code.
 type Registry = { owners: Set<Owner>; hosts: Map<Target, Binding>; undo: (() => void)[]; bind?: (host: Target, registry: Registry) => void };
-const KEY = Symbol.for("rqw-statusbar/early/1.4.0");
+const KEY = Symbol.for("rqw-statusbar/early/1.5.0");
 function cleanup(registry: Registry): void {
 	if (registry.owners.size || registry.hosts.size) return;
 	for (const restore of registry.undo.reverse()) restore();
@@ -71,7 +71,7 @@ export function installEarly(handler: Function, enabled: () => boolean) {
 	const global = globalThis as unknown as Record<symbol, Registry | undefined>;
 	let registry = global[KEY];
 	if (!registry) {
-		if (VERSION !== "1.4.0") return { freeze(_ui?: ExtensionUIContext, _factory?: unknown, _footer?: unknown) {}, disable(_ui?: ExtensionUIContext, _factory?: unknown, _footer?: unknown) {}, enable() {}, canInstallFooter(_footer?: unknown) { return true; }, dispose() {} };
+		if (VERSION !== "1.5.0") return { freeze(_ui?: ExtensionUIContext, _factory?: unknown, _footer?: unknown) {}, disable(_ui?: ExtensionUIContext, _factory?: unknown, _footer?: unknown) {}, enable() {}, canInstallFooter(_footer?: unknown) { return true; }, dispose() {} };
 		const state: Registry = { owners: new Set(), hosts: new Map(), undo: [], bind };
 		const proto = InteractiveMode.prototype as unknown as Target;
 		try {

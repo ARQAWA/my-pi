@@ -14,7 +14,7 @@ import type { ContextForkRequest } from "./context-fork.ts";
 import { createQuotaCache, QUOTA_EVENT, type QuotaRequest } from "./quota.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
-	if (VERSION !== "1.4.0") throw new Error("RQW-anthropic requires Pi 1.4.0; nothing was changed");
+	if (VERSION !== "1.5.0") throw new Error("RQW-anthropic requires Pi 1.5.0; nothing was changed");
 	const base = builtinProviders().find(provider => provider.id === "anthropic");
 	if (!base?.auth.oauth) throw new Error("RQW-anthropic: Pi's built-in Anthropic OAuth provider is missing");
 	const version = versionState();
@@ -61,7 +61,7 @@ export default function anthropic(pi: ExtensionAPI) {
 	try {
 		releaseRecovery = installRecoveryHooks();
 		lifecycle = installLifecycle(cleanup);
-		// Pi 1.4.0's native handler map carries this private exact-session binder.
+		// Pi 1.5.0's native handler map carries this private exact-session binder.
 		pi.on(SESSION_BIND as "session_start", (event, ctx) => {
 			if (!cleaned) {
 				const session = (event as unknown as { session: AgentSession }).session;

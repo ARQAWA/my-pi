@@ -10,7 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const folder = join(here, "../../../extensions/RQW-statusbar");
 const NAMES = ["init", "rebindCurrentSession", "renderSessionEntries", "stop"] as const;
 const THEME = Symbol.for("@earendil-works/pi-coding-agent:theme");
-const REGISTRY = Symbol.for("rqw-statusbar/early/1.4.0");
+const REGISTRY = Symbol.for("rqw-statusbar/early/1.5.0");
 
 // Stand-ins for Pi's own methods: the hooks wrap these, and the fake host below is not a real InteractiveMode.
 function stubPi() {

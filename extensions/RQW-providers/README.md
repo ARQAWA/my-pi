@@ -1,6 +1,6 @@
 # RQW-providers
 
-Provider visibility for stock Pi 1.4.0: only `anthropic` and `openai-codex` stay in `/login`, the model selector,
+Provider visibility for stock Pi 1.5.0: only `anthropic` and `openai-codex` stay in `/login`, the model selector,
 model autocomplete and cycling, `--list-models` and the scoped-model list. Every other builtin provider (including the
 new `openai`, "Sign in with ChatGPT") is hidden. It is the owner's rule, its record is [Providers](../../DECISIONS.md#providers).
 
@@ -10,11 +10,11 @@ registers no provider, tool or command and edits no credential store, setting or
 
 ## How it works
 
-Pi 1.4.0 has no hook that hides builtin providers: `pi.unregisterProvider()` only removes extension layers and the
+Pi 1.5.0 has no hook that hides builtin providers: `pi.unregisterProvider()` only removes extension layers and the
 builtins return. So `index.ts` installs a checked, reference-counted, reversible in-memory patch of Pi's exported classes:
 `ModelRuntime.getProviders`, `getModels`, `getAvailableSnapshot` and `getAvailable` filter by the allowed set
 (`ALLOWED`), and `AgentSession.scopedModels` filters the same way. Nothing in `node_modules` is touched. If a hook is
-missing or not configurable, the extension fails to load with `incompatible Pi internals; requires Pi 1.4.0. Nothing was patched.`,
+missing or not configurable, the extension fails to load with `incompatible Pi internals; requires Pi 1.5.0. Nothing was patched.`,
 never a partial policy.
 
 The policy applies only to a runtime that has an owning session of this extension. Pi's patched `_bindExtensionCore`
@@ -22,7 +22,7 @@ hands every loaded instance the session it was bound to, before the session emit
 `pi --list-models`, after `/reload` and for SDK hosts that never emit `session_start`. Loading the file alone, or a
 runtime nobody owns, keeps Pi's own lists. In-process subagents and reviewers share the main runtime, so they see the
 same lists; disposing such an unowned child changes nothing. An owner is dropped when its session shuts down, reloads
-or is disposed (Pi invalidates its extension API; the extension reads that). Pi 1.4.0 has no shutdown hook for an SDK
+or is disposed (Pi invalidates its extension API; the extension reads that). Pi 1.5.0 has no shutdown hook for an SDK
 `session.dispose()`, so the patch also wraps `AgentSession.dispose` and releases the instances bound to that session.
 Each owner releases only its own lifecycle layers; after the last cooperating owner leaves, Pi's exact methods are restored.
 

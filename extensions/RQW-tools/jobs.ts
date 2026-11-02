@@ -4,7 +4,6 @@ import { rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 export const BACKGROUND_AFTER_MS = 12_000;
@@ -111,7 +110,7 @@ export function createJobTool(jobs: Jobs, description: string): any {
 		label: "job",
 		description,
 		parameters: Type.Object({
-			action: StringEnum(["status", "kill"]),
+			action: Type.Unsafe<"status" | "kill">({ type: "string", enum: ["status", "kill"] }),
 			ids: Type.Optional(Type.Array(Type.String(), { description: "job#N ids; status without them lists all your jobs" })),
 			id: Type.Optional(Type.String({ description: "job#N; kill" })),
 			lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Output lines shown per job; default 20" })),

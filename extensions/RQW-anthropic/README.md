@@ -1,6 +1,6 @@
 # RQW-anthropic
 
-Subscription transport for stock Pi 1.4.0. `/login anthropic` still uses Pi's browser or copy-code login.
+Subscription transport for stock Pi 1.5.0. `/login anthropic` still uses Pi's browser or copy-code login.
 The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged,
 including native custom SDK clients. OAuth requests ignore `options.client` and use Pi's OAuth builder with the
 protected subscription fetch, so a custom client's origin or fetch cannot bypass signing, origin checks or recovery.
@@ -241,7 +241,7 @@ The registration guard (`registration.ts`) is a version-guarded, reversible in-m
 methods: it rejects a second Anthropic overlay in either order, binds the runtime credential store to this overlay,
 and checks the auth boundary before each request. No node_modules file is patched. It is limited to runtimes with this
 marked overlay. The hooks are reference-counted and removed on shutdown, reload or SDK
-dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.4.0 has no public SDK pre-dispose
+dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.5.0 has no public SDK pre-dispose
 event, and `_bindExtensionCore` to associate cleanup with the exact owning session, even without `session_start`.
 Recovery hooks preserve native `stream` versus `streamSimple` options and OAuth provenance. Only visible main-turn
 recovery is guarded; native summary retry is not wrapped. Unrelated SDK runtimes retain stock Pi behavior.

@@ -60,7 +60,7 @@ it("regression: the last release restores the native hook", () => {
 	const native = Object.getOwnPropertyDescriptor(prototype, "bindExtensions")!;
 	const releaseFirst = installSelectionIntent({ prototype });
 	const releaseLast = installSelectionIntent({ prototype });
-	const state = Object.getOwnPropertyDescriptor(prototype, Symbol.for("rqw/tool-selection-intent/1.4.0"))!.value as {
+	const state = Object.getOwnPropertyDescriptor(prototype, Symbol.for("rqw/tool-selection-intent/1.5.0"))!.value as {
 		registrations: Set<WeakRef<object>>;
 	};
 	assert.equal(state.registrations.size, 2);
@@ -74,7 +74,7 @@ it("regression: a collected registration restores the native hook on the next bi
 	const prototype = { bindExtensions() { return "native"; } };
 	const native = Object.getOwnPropertyDescriptor(prototype, "bindExtensions")!;
 	installSelectionIntent({ prototype });
-	const state = Object.getOwnPropertyDescriptor(prototype, Symbol.for("rqw/tool-selection-intent/1.4.0"))!.value as {
+	const state = Object.getOwnPropertyDescriptor(prototype, Symbol.for("rqw/tool-selection-intent/1.5.0"))!.value as {
 		registrations: Set<WeakRef<object>>;
 	};
 	for (const reference of state.registrations) Object.defineProperty(reference, "deref", { value: () => undefined });

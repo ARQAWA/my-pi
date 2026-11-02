@@ -23,6 +23,7 @@ jobs:
           node-version: "24"
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
 
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})

@@ -125,7 +125,7 @@ export interface SessionController {
 /** Pi's startup projection request, as RQW-prompt reads it (structural copy). */
 type ProjectionRequest = { options: NormalizedBuildSystemPromptOptions; model?: { provider: string; id: string }; error?: string };
 
-/** Private Pi fields read only through checked access (Pi 1.4.0). */
+/** Private Pi fields read only through checked access (Pi 1.5.0). */
 type PromptInternals = {
 	_baseSystemPromptOptions?: NormalizedBuildSystemPromptOptions;
 	_runSystemPromptOptions?: NormalizedBuildSystemPromptOptions;
@@ -640,7 +640,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	};
 
 	/**
-	 * Options the next run renders (Pi 1.4.0 _prepareRun, read-only): a clone of the base options through the startup projection
+	 * Options the next run renders (Pi 1.5.0 _prepareRun, read-only): a clone of the base options through the startup projection
 	 * channel, the active tools unless the projection edited them, and the hidden declarations of _preparePromptAndToolLoadout.
 	 */
 	const nextRunOptionsOf = (): NormalizedBuildSystemPromptOptions => {
@@ -667,7 +667,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	/**
 	 * Idle warm context of the physical session as of now (called after the setup's awaits), shaped as Pi's next normal request is:
 	 * an empty transcript carries the effective prompt as its leading system text (the first request's base developer item). Otherwise
-	 * the transient request-time message of the next run is appended (Pi 1.4.0 _prepareRun and declareToolChanges): the sections patch
+	 * the transient request-time message of the next run is appended (Pi 1.5.0 _prepareRun and declareToolChanges): the sections patch
 	 * and the tool delta against the replayed transcript, with hidden names dropped as Pi's request projection drops them. A leading
 	 * system message is used as it is; a transcript without one gets the active tools as its catalog. A forced startup prompt is
 	 * projected as Pi's _installAgentForcedPromptProjection does: one leading system message holding the exact forced text and the

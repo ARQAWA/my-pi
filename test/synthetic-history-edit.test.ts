@@ -60,7 +60,7 @@ it("Esc cancels the edit and leaves the history as it was", async (t) => {
 	assert.equal(w.requests.filter((request) => request.background === undefined).length, 1, "no new request");
 });
 
-// Pi 1.4.0 passes the whole tail after a compaction to push(...), which throws a RangeError at about 120000 entries.
+// Pi 1.5.0 passes the whole tail after a compaction to push(...), which throws a RangeError at about 120000 entries.
 const TAIL = 130_000;
 
 it("a session with a very long tail after a compaction opens and shows its tail without a stack overflow", async (t) => {

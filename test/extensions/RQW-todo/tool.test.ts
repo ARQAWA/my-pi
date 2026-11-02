@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import todo from "../../../extensions/RQW-todo/index.ts";
 
 it("updates several items atomically and restores the last state of the current branch", async () => {
@@ -15,6 +16,13 @@ it("updates several items atomically and restores the last state of the current 
 		getActiveTools: () => active, setActiveTools: (names: string[]) => { active = names; },
 		appendEntry: (customType: string, data: unknown) => { savedEntries.push({ type: "custom", customType, data }); },
 	} as unknown as ExtensionAPI);
+	const schema = JSON.parse(JSON.stringify(tool.parameters));
+	assert.deepEqual(schema.properties.items.items.properties.status.enum, ["pending", "active", "done", "dropped", "blocked"]);
+	assert.deepEqual(schema.properties.items.items.properties.steps.items.properties.status.enum, ["pending", "active", "done"]);
+	const parse = (args: unknown) => validateToolArguments(tool, { type: "toolCall", id: "id", name: "todo", arguments: args } as any);
+	assert.deepEqual(parse({ items: [{ id: "a", status: null }], new: "true" }), { items: [{ id: "a" }], new: true });
+	assert.deepEqual(parse({ items: { id: "a" } }), { items: [{ id: "a" }] });
+	assert.throws(() => parse({ items: [{ id: "a", status: "invalid" }] }), /Validation failed/);
 	let visible = false;
 	const ctx = { hasUI: true, ui: { setWidget: (_name: string, value: unknown) => { visible = !!value; } }, sessionManager: { getBranch: () => savedEntries } }; 
 	for (const handler of handlers.session_start) await handler({}, ctx);

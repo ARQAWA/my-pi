@@ -85,9 +85,11 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 	};
 	const main: Request[] = [];
 	const original = (model: Model<Api>, context: Context, options: Record<string, unknown>) => { main.push({ model, context, options }); return "main stream"; };
-	const agent = { streamFunction: original as unknown };
+	const runtime = { stream: original, streamSimple: original };
+	const agent = { streamFunction: (model: Model<Api>, context: Context, options: Record<string, unknown>) => runtime.streamSimple(model, context, options) };
+	const streamFunction = agent.streamFunction;
 	const session = Object.create(AgentSession.prototype) as AgentSession;
-	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent } });
+	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent }, _modelRuntime: { value: runtime }, _cacheWarmer: { value: { models: runtime } } });
 	if (resumed) {
 		Object.defineProperties(session, {
 			_baseSystemPromptOptions: { value: {} },
@@ -136,12 +138,12 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 	const fire = (name: string, event: unknown = {}) => { for (const handler of handlers.get(name) ?? []) handler(event, ctx); };
 	fire("session_start", { reason: "startup" });
 	const h = {
-		ctx, entries, main, forks, provider, notes, popup, agent, original, fire, state, tree,
+		ctx, entries, main, forks, provider, notes, popup, agent, original: streamFunction, fire, state, tree,
 		requests: () => [...forks.map(f => f.context), ...provider.map(p => p.context)],
 		setModel(model: Model<Api>) { ctx.model = model; },
 		switchTo(id: string) { fire("session_shutdown"); sessionId = id; fire("session_start", { reason: "new" }); },
 		request: (context: Context, options: Record<string, unknown> = { sessionId: "main", reasoning: "high" }) =>
-			(agent.streamFunction as typeof original)(ctx.model, context, options),
+			agent.streamFunction(ctx.model, context, options),
 		async btw(args: string) { await commands.get("btw")!.handler(args, ctx); await settle(); },
 		key(data: string) { popup.panel!.handleInput(data); },
 		async say(value: string) { for (const char of value) h.key(char); h.key("\r"); await settle(); },
@@ -202,7 +204,7 @@ describe("RQW-btw", () => {
 		const next = { messages: [SYSTEM, USER, text("Tests run.")] };
 		h.request(next, { sessionId: "main" });
 		assert.equal(h.main.at(-1)!.context, next);
-		assert.deepEqual(h.main.at(-1)!.options, { sessionId: "main" });
+		assert.deepEqual(JSON.parse(JSON.stringify(h.main.at(-1)!.options)), { sessionId: "main" });
 	});
 
 	it("opens a full-screen side chat that grows from a frozen mark; later main progress stays out, tool calls are noted and dropped", async () => {

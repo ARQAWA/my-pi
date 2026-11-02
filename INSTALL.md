@@ -24,7 +24,7 @@ A later PCLI version starts from its newly bundled package instead of an older m
 
 You are running inside Pi. Install the my-pi package into this Pi installation, then report the result in one short message.
 
-0. Run `pi --version`. The package is built and tested for Pi 1.4.0. If the version differs, tell the user and stop:
+0. Run `pi --version`. The package is built and tested for Pi 1.5.0. If the version differs, tell the user and stop:
    the tools wrap Pi's own tool code, which may change between versions.
 0.1. Run `pi list` and inspect enabled extensions in personal and project scope with `pi config`, plus any explicit
    `-e` arguments. If `git:github.com/edxeth/pi-claude-auth` is installed, run
@@ -63,7 +63,7 @@ Further ordinary or Shift arrows navigate the draft in the same directions. Ente
 Esc closes the chooser without changing the live selection. Opening and navigation also leave the live selection unchanged.
 The model order and clamps are in the
 [Models decision](DECISIONS.md#models), including the GPT 5.6 Luna addition. The keys
-need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.4.0
+need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.5.0
 binds none of them itself.
 
 ## Compact interface and theme
@@ -141,7 +141,7 @@ The local shell command is not globally installed. Full contract: [RQW-web READM
 
 ## Codex subscription transport
 
-RQW-codex targets stock Pi 1.4.0 and Codex CLI stable 0.163.0. Its native `generate:false` startup and automatic one-shot idle prewarm are the explicit Codex exception to the general no-cache-warming rule; no host event or extra setting is required, and no periodic keepalive is installed. Keep a valid existing `openai-codex` login; new `/login openai-codex` logins use device code only. Do not export tokens, import `~/.codex`, copy the different `openai` grant, or configure API-key billing. If another Codex adapter is enabled, stop and ask the owner to disable it in its installed scope before loading this overlay; preserve credentials and unrelated settings.
+RQW-codex targets stock Pi 1.5.0 and Codex CLI stable 0.163.0. Its native `generate:false` startup and automatic one-shot idle prewarm are the explicit Codex exception to the general no-cache-warming rule; no host event or extra setting is required, and no periodic keepalive is installed. Keep a valid existing `openai-codex` login; new `/login openai-codex` logins use device code only. Do not export tokens, import `~/.codex`, copy the different `openai` grant, or configure API-key billing. If another Codex adapter is enabled, stop and ask the owner to disable it in its installed scope before loading this overlay; preserve credentials and unrelated settings.
 
 Disable independently with `-extensions/RQW-codex/index.ts` using the package filter above; re-enable by removing that line, then reload/restart. Compaction is stock Pi summary compaction through the Codex transport, with no native `compaction_trigger`: every original entry stays in the session file, but the active context is Pi's summary plus the kept tail, also for other providers and with RQW-codex disabled. RQW-context still owns the W/R trigger. Provider hiding belongs to the independent [RQW-providers](extensions/RQW-providers/README.md), not to either subscription transport; it is not a dependency of this adapter. GPT Fast remains `/fast-gpt`, default off, owned by RQW-settings, with existing child inheritance.
 

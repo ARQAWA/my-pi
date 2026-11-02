@@ -86,10 +86,11 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	};
 	const main: { context: Context; options: Record<string, unknown> }[] = [];
 	const original = (_model: Model<Api>, context: Context, options: Record<string, unknown>) => { main.push({ context, options }); return "main stream"; };
-	const agent = { streamFunction: original as unknown, steeringQueue: { messages: [] as unknown[] }, followUpQueue: { messages: [] as unknown[] },
+	const runtime = { stream: original, streamSimple: original };
+	const agent = { streamFunction: (model: Model<Api>, context: Context, options: Record<string, unknown>) => runtime.streamSimple(model, context, options), steeringQueue: { messages: [] as unknown[] }, followUpQueue: { messages: [] as unknown[] },
 		steer(message: unknown) { this.steeringQueue.messages.push(message); } };
 	const session = Object.create(AgentSession.prototype) as AgentSession;
-	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent },
+	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent }, _modelRuntime: { value: runtime }, _cacheWarmer: { value: { models: runtime } },
 		_eventListeners: { value: [], writable: true }, _steeringMessages: { value: [], writable: true }, _followUpMessages: { value: [], writable: true } });
 	if (extraInstall) (session as any)._bindExtensionCore();
 	// Pi's isIdle getter reads this field; RQW-suggestions borrows the session through that getter.
@@ -175,7 +176,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		setFocus(component: unknown) { focus = component; },
 		/** A main request, as the agent loop makes it. */
 		request: (context: Context, options: Record<string, unknown> = { sessionId: "main" }) =>
-			(agent.streamFunction as typeof original)(ctx.model, context, options),
+			agent.streamFunction(ctx.model, context, options),
 		/** The main agent finished an answer: the message ends, then the turn ends. */
 		answer(message: AssistantMessage = text("Tests run."), outcome = "completed") {
 			h.request({ messages: [SYSTEM, USER] });

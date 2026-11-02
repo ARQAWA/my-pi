@@ -174,7 +174,7 @@ export default function autoWait(pi: ExtensionAPI) {
 		card.restore(current);
 		const idle = current.mode === "tui" || current.mode === "rpc";
 		if (!idle && current.mode !== "print" && current.mode !== "json") { ctx = undefined; return; }
-		restore = VERSION === "1.4.0" ? idle ? installIdle() : installHold() : undefined;
+		restore = VERSION === "1.5.0" ? idle ? installIdle() : installHold() : undefined;
 		if (!restore) {
 			current.ui.notify(`RQW-auto-wait: incompatible Pi ${idle ? "prompt" : "abort"}; automatic ${idle ? "wake" : "hold"} disabled.`, "warning");
 			ctx = undefined; return;

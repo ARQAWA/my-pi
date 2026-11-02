@@ -38,7 +38,7 @@ for (const mode of ["normal", "switch", "disabled", "error", "incompatible"] as 
 	} as unknown as Terminal;
 	let subscriber: ((event: unknown) => Promise<void>) | undefined;
 	const sessionData: any = {
-		settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined }, autoCompactionEnabled: true,
+		settingsManager: settings, sessionManager: manager, scopedModels: [], thinkingLevel: "off", state: { model: undefined, messages: manager.buildSessionContext().messages }, autoCompactionEnabled: true,
 		getContextUsage: () => undefined, modelRuntime: { getAvailableSnapshot: () => [], isUsingSubscription: () => false },
 		resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => loaded },
 		extensionRunner: { getMarkdownTransformers: () => [], getMessageRenderer: () => undefined, resolveToolRenderers: (_n: string, next: () => unknown) => next() },

@@ -75,15 +75,16 @@ function setup(sessionModel: Model<Api> = model) {
 	const store = new InMemoryCredentialStore();
 	let config: { streamSimple(model: Model<Api>, context: unknown, options: unknown): any } | undefined;
 	const noop = () => undefined;
+	let streamCalls = 0;
 	const runtime = {
-		getAuth: noop, prepareRequest: noop, stream: noop, streamSimple: noop, composeProvider: noop,
+		getAuth: noop, prepareRequest: noop, stream: noop,
+		streamSimple: () => { streamCalls++; return { result: async () => EXHAUSTED }; }, composeProvider: noop,
 		models: { getAuth: noop },
 		credentials: store,
 		getRegisteredProviderConfig: () => config,
 		registerProvider: (_id: string, value: typeof config) => { config = value; },
 		unregisterProvider: () => { config = undefined; },
 	} as unknown as ModelRuntime;
-	let streamCalls = 0;
 	const makeSession = (sessionId: string) => {
 		const entries: any[] = [];
 		const sessionManager = {
@@ -97,8 +98,10 @@ function setup(sessionModel: Model<Api> = model) {
 			},
 		};
 		return { sessionId, modelRuntime: runtime, model: sessionModel, sessionManager,
-			agent: { state: { tools: [] }, streamFunction: async () => { streamCalls++; return { result: async () => EXHAUSTED }; } }, _hiddenDeclarations: new Set(),
+			agent: { state: { tools: [] }, streamFunction: (model: Model<Api>, context: unknown, options: unknown) => runtime.streamSimple(model, context as never, options as never) }, _hiddenDeclarations: new Set(),
 			subscribe: () => () => undefined, dispose: noop, _isRetryableError: () => false,
+			// Pi's summary entry points; here each runs the summary it is given, the way Pi's own call reaches the runtime.
+			_runDefaultCompaction: (run: () => unknown) => run(), navigateTree: (run: () => unknown) => run(), summarizeForBugReport: (run: () => unknown) => run(),
 		} as unknown as AgentSession;
 	};
 	const session = makeSession("root");
@@ -183,10 +186,10 @@ it("ignores the background dispatch of a session that is not on a Codex model", 
 });
 
 const RETRY = { enabled: true, maxRetries: 2, baseDelayMs: 0 };
-const summarize = (session: AgentSession, signal: AbortSignal) => generateSummary(
+const summarize = (session: AgentSession, signal: AbortSignal) => (session as any)._runDefaultCompaction(() => generateSummary(
 	[{ role: "user", content: "hello", timestamp: 1 }], model, 0, "key", undefined, signal, undefined, undefined, undefined,
 	(streamModel, context, options) => session.agent.streamFunction(streamModel, context, options), undefined, RETRY,
-);
+));
 
 it("Pi's summary retries an exhausted Codex failure of a background summary no more than once", async () => {
 	const { session, streamCalls, dispatch } = setup();
@@ -200,8 +203,8 @@ it("a background summary's retry guard ends with its signal", async () => {
 	const { session, dispatch } = setup();
 	const controller = new AbortController();
 	dispatch(controller.signal);
-	const request = () => session.agent.streamFunction(model, { messages: [{ role: "user", content: "summarize", timestamp: 1 }] } as never, { cacheRetention: "none", sessionId: SUMMARY_ID, signal: controller.signal } as never);
-	await assert.rejects((await request()).result(), /Summarization failed: terminated/);
+	const request = () => (session as any)._runDefaultCompaction(async () => (await session.agent.streamFunction(model, { messages: [{ role: "user", content: "summarize", timestamp: 1 }] } as never, { cacheRetention: "none", sessionId: SUMMARY_ID, signal: controller.signal } as never)).result());
+	await assert.rejects(request(), /Summarization failed: terminated/);
 	controller.abort();
-	assert.equal(((await (await request()).result()) as { errorMessage?: string }).errorMessage, "terminated");
+	assert.equal(((await request()) as { errorMessage?: string }).errorMessage, "terminated");
 });

@@ -35,7 +35,7 @@ function fileUrl(href: string, cwd: string): string | undefined {
 export function installLinks(prototype: Prototype = Markdown.prototype as unknown as Prototype, version = VERSION, host: HostPrototype = InteractiveMode.prototype as unknown as HostPrototype): (() => void) | undefined {
 	const descriptor = Object.getOwnPropertyDescriptor(prototype, "renderInlineTokens");
 	const original = descriptor?.value as Render | undefined;
-	if (version !== "1.4.0" || typeof original !== "function" || !descriptor?.writable || !descriptor.configurable) return undefined;
+	if (version !== "1.5.0" || typeof original !== "function" || !descriptor?.writable || !descriptor.configurable) return undefined;
 	if (original[PATCHED]) {
 		const state = original[PATCHED];
 		state.owners++;
