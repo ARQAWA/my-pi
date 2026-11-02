@@ -1,5 +1,6 @@
 import { appendFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { continueNote, repairRequest } from "./history-repair.ts";
 import {
 	SessionManager,
 	type AgentSession,
@@ -35,8 +36,6 @@ function retainChild(parent: ReadonlySessionManager, kind: string, id: number, m
 	children.set(`${kind}#${id}`, manager);
 	return manager;
 }
-
-const INTERRUPTED = "Interrupted before a durable result was recorded. The tool may already have had side effects; inspect state before deciding what to do. This call was not replayed.";
 
 function childDirectory(parent: ReadonlySessionManager, kind: string, id: number): string | undefined {
 	if (kind !== "agent" || !Number.isSafeInteger(id) || id < 1) {
@@ -128,30 +127,10 @@ export function repairInterrupted(session: AgentSession): boolean {
 		hidden.push(last.id);
 		visible.pop();
 	}
-	const pending = new Map<string, { id: string; name: string }>();
-	for (const { message } of visible) {
-		if (message.role === "toolResult") {
-			pending.delete(message.toolCallId);
-			continue;
-		}
-		if (message.role === "system") continue;
-		if (pending.size) {
-			throw new Error("Unsafe recovery: an interrupted tool call precedes later conversation; inspect the session before resuming");
-		}
-		if (message.role === "assistant") {
-			for (const part of message.content) {
-				if (part.type === "toolCall") pending.set(part.id, { id: part.id, name: part.name });
-			}
-		}
-	}
 	for (const id of hidden) manager.appendContextEdit(id, null);
-	for (const call of pending.values()) {
-		manager.appendMessage({
-			role: "toolResult", toolCallId: call.id, toolName: call.name,
-			content: [{ type: "text", text: INTERRUPTED }], isError: true, timestamp: Date.now(),
-		});
-	}
-	const messages = manager.buildSessionProjection().messages;
+	// Broken pairs are repaired in the request only; the saved history stays as it is.
+	const history = manager.buildSessionProjection().messages;
+	const messages = repairRequest(history, continueNote());
 	session.agent.state.messages = messages;
 	return messages.some(message => message.role === "user") && messages.at(-1)?.role !== "assistant";
 }

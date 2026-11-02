@@ -33,6 +33,7 @@ import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-fi
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type AcceptRecord, type RuntimeHandle, deadlineTimer, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
+import { continueNote, repairRequest } from "./history-repair.ts";
 import { ACCEPT_ENTRY, BASE_ENTRY, CHILD_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, releaseChildManager, repairInterrupted } from "./persistence.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
@@ -1147,7 +1148,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						}
 						return message.role !== "toolResult" || !discarded.has(message.toolCallId);
 					});
-					context = { ...context, messages };
+					// Broken call/result pairs are repaired in the request; the saved history is never changed.
+					context = { ...context, messages: repairRequest(messages, continueNote()) };
 					progress!.capture(model, context);
 					const first = pendingPayload;
 					if (first && options?.sessionId !== manager.getSessionId()) return stream(model, context, options);

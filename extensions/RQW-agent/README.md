@@ -589,10 +589,14 @@ copied on fork. `/resume-agents` resumes unfinished children
 without calling the main model first. Their final results remain available through wait. Continuing a restored
 parent mechanically recovers its unfinished children; merely opening an old session does not start work.
 
-Recovery keeps completed tool results and fills missing results with an explicit interrupted/error result warning that
-side effects may already exist. It omits only a failed assistant attempt through append-only context edits.
-No old tool call is automatically executed again. The model decides whether another action is safe after seeing
-the interrupted result. Recovery is fail-closed: a missing or empty JSONL of an established or unknown history is a `recovery_error` of that
+Recovery keeps completed tool results. A broken history is repaired in the request, never in the file:
+`repairHistory` ([history-repair.ts](history-repair.ts)) drops results without a call, repeated results and results of
+another turn, cuts a call without a result out of its message (the other blocks and sound pairs stay) and drops a message left
+with no text and no call. It runs on every child request, so `resume` and `send`, live or restored, share it; a correct history
+passes unchanged. Two calls with the same id in one message are an error, not a guess. When the cut leaves an assistant
+message last, Pi cannot continue from it, so the request-only user line `continue; the removed call was not repeated`
+is added; it is never saved. `repairInterrupted` only omits a failed assistant attempt through append-only context edits.
+No old tool call is automatically executed again, and the cut call leaves no synthetic result. Recovery is fail-closed: a missing or empty JSONL of an established or unknown history is a `recovery_error` of that
 child alone, never a new history. Only a saved state of `idle`, `runNumber` 0 and no task, as a task-less `restart` writes
 it, may restore an empty retained or new session under the same id, with no task message. The saved task and configuration are provenance only and are never turned into a task
 message, a rebuilt history or an inferred transcript. Pi writes an ordinary child's file with its first user message; a persisted fork writes its copied branch at creation. A record

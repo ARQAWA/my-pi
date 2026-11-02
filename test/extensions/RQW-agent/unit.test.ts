@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
+import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentSession, createEventBus, SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { formatProgramStatus, ProcessTerminal } from "@earendil-works/pi-tui";
 import { registerHerdrActivity } from "../../../extensions/RQW-agent/herdr-state.ts";
@@ -486,18 +486,52 @@ test("child sessions persist below their parent and reopen", async t => {
 	assert.equal(reopened.getHeader()?.parentSession, parent.getSessionFile());
 });
 
-test("interrupted tool calls receive durable error results without replay", async t => {
+test("an interrupted tool call is cut from the request and nothing is added to the saved history", async t => {
 	const root = await temp(t);
 	const manager = SessionManager.inMemory(root);
 	manager.appendMessage({ role: "user", content: "task", timestamp: 1 });
 	manager.appendMessage(fauxAssistantMessage([fauxToolCall("write", { path: "a" }, { id: "call" })], { stopReason: "aborted" }));
+	const saved = manager.getEntries().length;
 	const agent = new Agent({ streamFn: () => { throw new Error("no model call"); } });
 	assert.equal(repairInterrupted({ agent, sessionManager: manager } as AgentSession), true);
-	const messages = manager.buildSessionContext().messages;
-	assert.deepEqual(messages.map(message => message.role), ["user", "assistant", "toolResult"]);
-	const result = messages.at(-1);
-	assert.ok(result?.role === "toolResult" && result.isError);
-	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
+	assert.deepEqual(agent.state.messages.map(message => message.role), ["user"]);
+	assert.equal(manager.getEntries().length, saved);
+});
+
+test("a cut call that leaves an assistant message last adds the continue line to the request only", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	manager.appendMessage({ role: "user", content: "task", timestamp: 1 });
+	manager.appendMessage(fauxAssistantMessage([fauxText("plan"), fauxToolCall("write", { path: "a" }, { id: "call" })], { stopReason: "toolUse" }));
+	const saved = manager.getEntries().length;
+	const agent = new Agent({ streamFn: () => { throw new Error("no model call"); } });
+	assert.equal(repairInterrupted({ agent, sessionManager: manager } as AgentSession), true);
+	const messages = agent.state.messages;
+	assert.deepEqual(messages.map(message => message.role), ["user", "assistant", "user"]);
+	assert.deepEqual((messages[1] as any).content.map((part: any) => part.type), ["text"]);
+	assert.deepEqual((messages[2] as any).content, [{ type: "text", text: "continue; the removed call was not repeated" }]);
+	assert.equal(manager.getEntries().length, saved);
+});
+
+test("a finished assistant message gets no continue line", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	manager.appendMessage({ role: "user", content: "task", timestamp: 1 });
+	manager.appendMessage(fauxAssistantMessage("done"));
+	const agent = new Agent({ streamFn: () => { throw new Error("no model call"); } });
+	assert.equal(repairInterrupted({ agent, sessionManager: manager } as AgentSession), false);
+	assert.deepEqual(agent.state.messages.map(message => message.role), ["user", "assistant"]);
+});
+
+test("an unanswered call before later conversation no longer blocks recovery", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	manager.appendMessage({ role: "user", content: "task", timestamp: 1 });
+	manager.appendMessage(fauxAssistantMessage([fauxToolCall("write", { path: "a" }, { id: "call" })], { stopReason: "toolUse" }));
+	manager.appendMessage({ role: "user", content: "next", timestamp: 2 });
+	const agent = new Agent({ streamFn: () => { throw new Error("no model call"); } });
+	assert.equal(repairInterrupted({ agent, sessionManager: manager } as AgentSession), true);
+	assert.deepEqual(agent.state.messages.map(message => message.role), ["user", "user"]);
 });
 
 function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<string | ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false, setup?: (events: ReturnType<typeof createEventBus>) => void) {
@@ -2018,6 +2052,7 @@ async function until(done: () => boolean) {
 	for (let i = 0; i < 200 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
 	assert.ok(done());
 }
+const roles = (messages: any[]) => messages.filter(message => message.role !== "system").map(message => message.role);
 const userTexts = (request: any) => request.messages.filter((message: any) => message.role === "user").map((message: any) => message.content[0].text);
 
 test("after a crash only the commands missing from the history are sent, once and in order", async t => {
@@ -2247,7 +2282,7 @@ test("a child that went to sleep leaves no live session manager behind", async t
 	live.runtime.close();
 });
 
-test("a tool call cut off by a crash gets an error result when the child is recovered, and is not run again", async t => {
+test("a tool call cut off by a crash is cut from the request when the child is recovered, and is not run again", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
@@ -2264,10 +2299,67 @@ test("a tool call cut off by a crash gets an error result when the child is reco
 	await restored.execute({ action: "status", ids: ["agent#1"] });
 	await restored.runtime.resume!(new AbortController().signal, true);
 	await restored.runtime.wait(new AbortController().signal);
-	const result = restored.requests.at(-1).messages.find((message: any) => message.role === "toolResult");
-	assert.equal(result.isError, true);
-	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
+	const messages = restored.requests.at(-1).messages;
+	assert.deepEqual(roles(messages), ["user"]);
 	assert.equal(runs, 1);
+	restored.runtime.close();
+});
+
+async function crashedChild(t: TestContext, history: (child: SessionManager) => void) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "task", tools: [] });
+	await until(() => first.requests.length === 1);
+	first.runtime.close();
+	const directory = `${parent.getSessionFile()}.children/agent-1`;
+	const [name] = await readdir(directory);
+	const file = join(directory, name);
+	history(SessionManager.open(file));
+	return { root, parent, file, saved: await readFile(file, "utf8") };
+}
+
+test("resume repairs a broken history in the request, keeps the file and asks the model once to continue", async t => {
+	const { root, parent, file, saved } = await crashedChild(t, child => {
+		child.appendMessage(fauxAssistantMessage([fauxText("plan"), fauxToolCall("read", {}, { id: "lost" }), fauxToolCall("read", {}, { id: "kept" })], { stopReason: "toolUse" }));
+		child.appendMessage({ role: "toolResult", toolCallId: "kept", toolName: "read", content: [{ type: "text", text: "ok" }], isError: false, timestamp: 2 });
+		child.appendMessage({ role: "toolResult", toolCallId: "kept", toolName: "read", content: [{ type: "text", text: "again" }], isError: false, timestamp: 3 });
+		child.appendMessage({ role: "toolResult", toolCallId: "stray", toolName: "read", content: [{ type: "text", text: "stray" }], isError: false, timestamp: 4 });
+		child.appendMessage(fauxAssistantMessage([fauxText("half"), fauxToolCall("read", {}, { id: "cut" })], { stopReason: "toolUse" }));
+	});
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	const messages = restored.requests.at(-1).messages.filter((message: any) => message.role !== "system");
+	assert.deepEqual(roles(messages), ["user", "assistant", "toolResult", "assistant", "user"]);
+	assert.deepEqual(messages[1].content.map((part: any) => part.id ?? part.type), ["text", "kept"]);
+	assert.deepEqual(messages[2].content, [{ type: "text", text: "ok" }]);
+	assert.deepEqual(messages[3].content.map((part: any) => part.type), ["text"]);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["task", "continue; the removed call was not repeated"]);
+	assert.equal(restored.requests.length, 1);
+	// The file only grew by the model's new answer; no broken line was removed and no continue line was written.
+	const after = await readFile(file, "utf8");
+	assert.ok(after.startsWith(saved));
+	assert.doesNotMatch(after, /removed call was not repeated/);
+	restored.runtime.close();
+});
+
+test("send to a restored child repairs the broken history in its request", async t => {
+	const { root, parent } = await crashedChild(t, child => {
+		child.appendMessage(fauxAssistantMessage("first answer"));
+		child.appendMessage({ role: "toolResult", toolCallId: "stray", toolName: "read", content: [{ type: "text", text: "stray" }], isError: false, timestamp: 2 });
+		child.appendMessage(fauxAssistantMessage([fauxToolCall("read", {}, { id: "lost" })], { stopReason: "toolUse" }));
+		child.appendMessage({ role: "user", content: [{ type: "text", text: "after" }], timestamp: 3 });
+		child.appendMessage(fauxAssistantMessage("second answer"));
+	});
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "send", id: "agent#1", task: "more" });
+	await restored.runtime.wait(new AbortController().signal);
+	const messages = restored.requests.at(-1).messages;
+	assert.deepEqual(roles(messages), ["user", "assistant", "user", "assistant", "user"]);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["task", "after", "more"]);
 	restored.runtime.close();
 });
 
