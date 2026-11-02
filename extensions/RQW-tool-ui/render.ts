@@ -28,7 +28,7 @@ interface RowState {
 	result?: { content: CallResult["content"]; details?: unknown };
 	/** The original renderers' view of the row, from the start of execution or the first expansion on. */
 	original?: Original;
-	cached?: { group: CallGroup | undefined; width: number; theme: Theme; cwd: string | undefined; pad: number; rows: string[] };
+	cached?: { group: CallGroup | undefined; revision: number | undefined; width: number; theme: Theme; cwd: string | undefined; pad: number; rows: string[] };
 }
 
 /** The original of a row: what the renderers after this resolver (or Pi's fallbacks) drew, in Pi's shell. */
@@ -46,10 +46,18 @@ interface Original {
 
 const EMPTY: Component = { render: () => [], invalidate: () => {} };
 
+/** Classified members by member object: a member changes only its streamed arguments in place, so a redraw while one
+ * call streams classifies that call alone. */
+const classified = new WeakMap<Member, { args: unknown; cwd: string | undefined; value: Classified | ChangeClassified }>();
+
 /** A classified member of a group, as the summary and the live block take it. */
 export function classifyMember(m: Member, cwd: string | undefined): Classified | ChangeClassified {
+	const hit = classified.get(m);
+	if (hit && hit.args === m.args && hit.cwd === cwd) return hit.value;
 	const context = { toolCallId: m.id, isPartial: m.isPartial, isError: m.isError === true, stopReason: m.stopReason, ...(cwd ? { cwd } : {}) };
-	return m.toolName === "edit" || m.toolName === "write" ? classifyChange(m.toolName, m.args, m.result, context) : classify(m.toolName, m.args, m.result, context);
+	const value = m.toolName === "edit" || m.toolName === "write" ? classifyChange(m.toolName, m.args, m.result, context) : classify(m.toolName, m.args, m.result, context);
+	classified.set(m, { args: m.args, cwd, value });
+	return value;
 }
 
 /** The collapsed rows of one call: nothing unless it leads its group; the leader shows the summary line and, while the
@@ -187,7 +195,25 @@ export class ToolUi {
 			if (present) this.textBreaks.add(event.contentIndex);
 			else this.textBreaks.delete(event.contentIndex);
 		} else if (!event.type.startsWith("toolcall_")) return;
+		else if (event.type === "toolcall_delta" && this.streamArgs(message, event.contentIndex)) return;
 		this.refresh(false);
+	}
+
+	/** An argument delta of a call already grouped changes only that call's arguments: update its member in place and
+	 * redraw its group's leader, without rebuilding the groups of the whole turn. False when the call is not grouped yet. */
+	private streamArgs(message: unknown, index: number | undefined): boolean {
+		const content = record(message).content;
+		const block = record(Array.isArray(content) && index !== undefined ? content[index] : undefined);
+		if (block.type !== "toolCall" || typeof block.id !== "string") return false;
+		const g = this.groups.get(block.id);
+		// The streaming call is normally the group's last member; any other place is still found.
+		const last = g?.members.at(-1);
+		const member = last?.id === block.id ? last : g?.members.find((m) => m.id === block.id);
+		if (!g || !member) return false;
+		member.args = block.arguments ?? {};
+		g.group.revision = (g.group.revision ?? 0) + 1;
+		this.rows.get(g.group.leaderId)?.deref()?.context?.invalidate();
+		return true;
 	}
 
 	messageEnd(message: unknown): void {
@@ -339,10 +365,11 @@ export class ToolUi {
 		const group = this.groups.get(context.toolCallId);
 		const cwd = this.cwd;
 		const pad = context.outputPad;
+		const revision = group?.group.revision;
 		const cache = own.cached;
-		if (cache && cache.group === group && cache.width === width && cache.theme === own.theme && cache.cwd === cwd && cache.pad === pad) return cache.rows;
+		if (cache && cache.group === group && cache.revision === revision && cache.width === width && cache.theme === own.theme && cache.cwd === cwd && cache.pad === pad) return cache.rows;
 		const rows = collapsedRows(group, width, own.theme, cwd, pad);
-		own.cached = { group, width, theme: own.theme, cwd, pad, rows };
+		own.cached = { group, revision, width, theme: own.theme, cwd, pad, rows };
 		return rows;
 	}
 
