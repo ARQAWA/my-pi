@@ -13,6 +13,7 @@
 - [scripts/](scripts/): CI watcher and status tools.
 - [pcli-vscode/](pcli-vscode/): bundled Windows VS Code terminal extension.
 - [.pi/](.pi/): repository-only agent profiles, review skills and development extensions.
+- [.agents/skills/](.agents/skills/): repository-only development skills: reports, planning, wish audit.
 - [.github/workflows/](.github/workflows/): CI workflows.
 - [INSTALL.md](INSTALL.md): installation.
 
