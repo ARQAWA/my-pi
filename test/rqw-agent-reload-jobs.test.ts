@@ -1,3 +1,4 @@
+import { descriptions } from "./extensions/RQW-tools/descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -92,7 +93,7 @@ async function world(t: TestContext) {
 			getThinkingLevel: () => "off", getActiveTools: () => ["job"], getAllTools: () => [],
 			sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 		};
-		installRqwTools(pi);
+		installRqwTools(pi, { descriptions });
 		registerAgent(pi);
 		const emit = async (name: string, event: any) => { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); };
 		return {

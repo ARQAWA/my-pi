@@ -1,3 +1,4 @@
+import { descriptions } from "./extensions/RQW-tools/descriptions.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
@@ -61,7 +62,7 @@ test("RQW-tools catalogue reaches RQW-codex lite request unchanged", async () =>
 		} };
 	const session: any = { sessionId: "root", sessionManager: manager, modelRuntime: runtime, model, agent: { state: { tools: [] } },
 		_hiddenDeclarations: new Set(), subscribe: () => () => {}, dispose: noop, _isRetryableError: () => false };
-	installRqwTools(pi);
+	installRqwTools(pi, { descriptions });
 	createCodexExtension({ installationId: "11111111-2222-4333-8444-555555555555",
 		dependencies: { connect: connect as any, clock: { now: () => 1000000 }, random: () => 0.5, sleep: async () => {} } })(pi);
 	try {
