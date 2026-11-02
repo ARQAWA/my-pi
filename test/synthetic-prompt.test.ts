@@ -26,7 +26,7 @@ it("the first request starts with SYSTEM.md and ends with the environment and da
 	assert.ok(sections.preamble.includes(`paths: absolute like ${w.dirs.home.replace(/\\/g, "/")}/... with forward slashes`), "the environment block names the home folder");
 	assert.ok(sections.preamble.endsWith("Today (UTC): 2026-11-02. Do not repeat this information in your reply."), "the date block is last");
 	// Pi still appends its own working directory section after the prefix.
-	assert.ok(sections.cwd.includes(w.dirs.project));
+	assert.ok(sections.cwd.replace(/\\/g, "/").includes(w.dirs.project.replace(/\\/g, "/")));
 });
 
 it("Pi's default prompt text is gone from the request", async (t) => {
