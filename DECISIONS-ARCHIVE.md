@@ -7588,3 +7588,38 @@ Introduced: `3430f322`. Source: `8a0cab5d:DECISIONS.md`, lines 475-476. Verbatim
 
 > omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
 >   tools
+
+## A-0445 · archived 2026-11-02 · Compact tool display · final marker writes
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `4d770408` (opening sentence), `0fcab111` (background condition and marker design). Source: `8bc85e26:DECISIONS.md`, lines 541-548. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles,
+>   unless agents or background processes are still running. ...
+>   The extension reads `rqw:running-counts:request/offer` and writes invisible `rqw-tool-ui-final` entries with
+>   `{ key, final: false }` for such answers. When the idle session remains quiet for 500 ms after background work
+>   ends, it writes `{ key, final: true }` if no message or card followed; a new run can close the span instead.
+>   Marks preserve the verdict in history; sessions without marks keep the earlier behavior. A pending mark is not
+>   restored after exit or session switch, so it can remain unclosed on resume.
+
+## A-0446 · archived 2026-11-02 · Compact tool display · real-final timer
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `0fcab111`. Source: `8bc85e26:DECISIONS.md`, lines 573-575. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> The real-final
+>   check uses the 500 ms timer described above.
+
+## A-0447 · archived 2026-11-02 · Compact tool display · old open arrow
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the live entry states the current rule.
+Introduced: `1a451132`. Source: `8bc85e26:DECISIONS.md`, lines 558-558. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   The earlier `˅` of the open state is superseded by this order.
+
+## A-0448 · archived 2026-11-02 · Compact tool display · repeated patch restriction
+
+Status: MERGED by [D-SCOPE-RUNTIME-PATCH] (DECISIONS.md#scope): the restriction is already addressed.
+Introduced: `a9873f64`. Source: `8bc85e26:DECISIONS.md`, line 516. Verbatim replaced text:
+
+> The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`;

@@ -62,7 +62,7 @@ Provenance:
   Owner: «да делай + к этому надо вырубить эти хоткеи шифт таб, ктрл л и ктрл п и шифт ктрл п».
   Owner: «Так, смотри у нас еще есть хоткейн и Ctrl+T это показать скрыть thinking надо его тоже удалить нахуй выключить».
   Owner: «три убирай».
-  Owner: «Пусть будет не курсивом, просто другим цветом шрифта и всё и да делай».
+  Owner source: [D-LIVE-TAIL].
   Design: `my-pi-evidence/designs/command-cleanup/DESIGN.md`.
   Reason: remove conflicting interactive command entrances without editing Pi.
   Carriers: `extensions/RQW-commands/`, `package.json`, `test/extensions/RQW-commands/`.
@@ -513,7 +513,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   All tool calls between assistant answers share a muted summary with confirmed edit/read/search/run/wait/other
   counts. Latest top-level call leads; current call shows its header, last four output rows and status. The next
   call folds the previous; answer text immediately folds the live block. Ctrl+O shows every original at its place
-  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`; `host.ts` patches Pi in memory and reads host internals with shape checks and stock fallback. Unsupported nested-result details remain omitted, not invented.
+  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. `host.ts` patches Pi in memory and reads host internals with shape checks and stock fallback. Unsupported nested-result details remain omitted, not invented.
   Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{host,index,groups,render,summary,live}.ts`,
   its README, `package.json` and `test/isolation.test.ts`.
   Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
@@ -538,14 +538,10 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Accepted clock recommendation: «часы идут от твоего сообщения. если тебя нет, от карточки агента. пауза перед ними не считается.»
   Accepted cut recommendation: «кусок после линии сжатия тоже сворачивать. сейчас он остаётся открытым.»
 
-  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles,
-  unless agents or background processes are still running. Owner: «они должны сворочиваться все в одну строку»
+  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles; background work cannot hold the fold open. Old `rqw-tool-ui-final` marks remain readable, but no new marks are written.
+  Owner: «они должны сворочиваться все в одну строку»
   when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).
-  The extension reads `rqw:running-counts:request/offer` and writes invisible `rqw-tool-ui-final` entries with
-  `{ key, final: false }` for such answers. When the idle session remains quiet for 500 ms after background work
-  ends, it writes `{ key, final: true }` if no message or card followed; a new run can close the span instead.
-  Marks preserve the verdict in history; sessions without marks keep the earlier behavior. A pending mark is not
-  restored after exit or session switch, so it can remain unclosed on resume.
+  Coordinator note: the earlier real-final condition in this quote was replaced by the settled-answer rule above.
   Earlier real final answers, including questions, stay outside later folds; later tools and notifications never remove them.
   User messages no longer split spans. The closed fold lifts every owner user message, in order, above one dim
   `worked for 42s ›` row and the final answer. Agent cards and tools fold. Open restores exactly the original
@@ -555,7 +551,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
   Owner approval and clarification of the mockup (`my-pi-evidence/designs/worked-for-placement/MOCKUP.md`), verbatim:
   «раскрытый блок, он типа встает под самое первое сообщение, а так же как он стоит под последним сообщением, ну, свернутом, в свернутом статусе, под последнее мое сообщение, только под первое мое сообщение из этого. чанка то есть если в чанке всего одно сообщение то значит он остается на месте если там несколько то он уходит под первое сообщение вот а визуально окей. да, вот. получается, что да, делаем два сторипоинта.»
-  The earlier `˅` of the open state is superseded by this order. Carrier: `extensions/RQW-tool-ui/fold.ts` (`Fold.at`).
+  Carrier: `extensions/RQW-tool-ui/fold.ts` (`Fold.at`).
   Time starts with the span's first message timestamp, or a delivered card's saved timestamp when it starts without
   an owner message; it ends with the final answer's saved entry timestamp. The preceding idle pause is excluded;
   waiting and closed Pi within the span count. Round whole seconds first: `42s`, `2m 03s`, `1h 05m`; no space before
@@ -571,15 +567,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Restart, reload, rebuild and reloaded history intervals start closed; redraw and resize preserve open state.
   Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: `InteractiveMode.prototype.addMessageToChat` records message
   bundles and finds the chat container; its O(1) render guard rebinds on a new transcript or settled run.
-  Components keep place, order and identity; hidden members return without original render. The real-final
-  check uses the 500 ms timer described above. An unexpected shape keeps today's view.
+  Components keep place, order and identity; hidden members return without original render. An unexpected shape keeps today's view.
   The header owner caches original user/skill bundle rows and their mouse transforms; source updates invalidate
   that cache. Closed messages appear once above the header, including a sole owner message after an agent card.
   Opening removes the projection and restores their original order without moving any components.
   Every loaded interval binds separately, including local suffixes after older cuts. Source-update wrappers and
   lifted-row references are released on unload. Own and inherited descriptors are checked before wrapping; an
   unsupported component leaves its entire span visible. Skill-dollar compatibility is tested without a product import.
-  Carriers: `extensions/RQW-tool-ui/{background,fold,groups,host,index}.ts`, its README,
+  Carriers: `extensions/RQW-tool-ui/{fold,groups,host,index}.ts`, its README,
   `test/extensions/RQW-tool-ui/{fold,real-final}.test.ts`, `test/lazy-folds.test.ts` and `test/worked-for-skills.test.ts`.
 
 ## Agent cards
@@ -1976,9 +1971,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); RQW-settings selects it once on first start (`[D-SETTINGS-SETUP]`); later choice stays native through `/settings` -> Theme.
 
 - **Wait mockup palette** `[D-THEME-WAIT-PALETTE]`. `userMessageBg` is directly `#36312c`, `muted` is `#b8b3aa`, and `dim` is `#96918a`. Shared variables `card`, `smoke`, and `steel` and all other colours stay unchanged. The approved mockup is `my-pi-evidence/designs/wait-card-colors/MOCKUP.md`, `MOCKUP.html`, and `MOCKUP.png`.
-  Owner, verbatim: «Давай делай как на макете, но с названиями аргентов
-
-По карточкам, короче, мне все нравится, кроме задника. Вот, задник пусть будет, короче, фиолетовый, так же, как у.. Это же туллинг агентов, соответственно. А, подожди, там не только туллинг, там еще могут быть эти. Там еще.. могут быть инструменты до какие-то блять ну ладно пусть такой остается макет похуй цветовая гамма оставляет какая на макете».
+  Owner source: [D-AUTO-WAIT-CARD].
   Reason: make user messages and secondary text clearer with the approved warm palette. Carriers: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`, `test/extensions/RQW-theme/schema.test.ts`.
 
 - **Gold accent kept** `[D-THEME-ACCENT-GOLD]`. `accent` in `RQW-theme` is `sourceGold` (`#c9a227`), unlike the empty `accent` of the owner's OMP theme. Owner answered «1» to the question "Оставить золотой accent в диалогах и списках?" (option 1: keep, record in `DECISIONS.md`), 2026-11-02. Dialog and list accents, the `/btw` label and the model picker use it.
