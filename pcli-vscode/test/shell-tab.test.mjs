@@ -108,8 +108,12 @@ test('shell tab is a login Git Bash with the bundled Pi on PATH and the New Tab 
   // The environment is applied after ~/.bashrc, so a startup script cannot undo it.
   const rc = fs.readFileSync(rcFile, 'utf8');
   assert.equal(rc.includes('secret'), false);
-  const steps = ['. ~/.bashrc', 'unset http_proxy https_proxy all_proxy no_proxy', ...['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY', 'NODE_TLS_REJECT_UNAUTHORIZED'].map((name) => `export ${name}="$PCLI_${name}"`),
-    'export PI_SKIP_VERSION_CHECK=1', `export PATH="$(cygpath -u '${piDir}'):$PATH"`].map((step) => rc.indexOf(step));
+  // Each step is a whole line of its own, so a comment or a disabled command cannot satisfy it.
+  const proxyNames = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY', 'NODE_TLS_REJECT_UNAUTHORIZED'];
+  const lines = rc.split('\n');
+  const steps = ['[ -f ~/.bashrc ] && . ~/.bashrc', 'unset http_proxy https_proxy all_proxy no_proxy',
+    ...proxyNames.map((name) => `[ -n "$PCLI_${name}" ] && export ${name}="$PCLI_${name}"`),
+    'export PI_SKIP_VERSION_CHECK=1', `export PATH="$(cygpath -u '${piDir}'):$PATH"`].map((step) => lines.indexOf(step));
   assert.ok(steps.every((position) => position >= 0), rc);
   assert.deepEqual(steps, [...steps].sort((a, b) => a - b));
   // The same settings New Tab writes: the bundled my-pi, nothing else.
