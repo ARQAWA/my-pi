@@ -361,6 +361,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Branches, squash and history** `[D-WORK-BRANCHES]`. Branch bases, task squash destination, release promotion
   and cleanup follow [PROCESS.md, Delivery](PROCESS.md#delivery); history belongs in Git. Owner (`13-49-40:204`):
   «Насчет документации. Да, тут тоже все верно. И в документации не должно быть никаких исторических данных. История хранится в гиде. По общению агент отвечает владельцу кратко на русском языке всегда, не на моем языке, а именно на русском. Он отвечает не больше трех абзацев по максимум две строки в абзаце.»
+  Coordinator note: the three-paragraph, two-line reply limit in this quote was replaced by [D-WORK-SHORT-REPLIES] and [D-DYSLEXIA-COMMUNICATION].
   Reason: current documents carry current facts; Git keeps the history ([D-WORK-ARCHIVE] is the one exception for
   decisions). Carriers: [PROCESS.md, Delivery](PROCESS.md#delivery). Since: `8f2ea64`.
 - **Workspace hygiene** `[D-WORK-HYGIENE]`. Preserve the user's changes and secrets; do not fix unrelated failures;
@@ -390,13 +391,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
 - **Bounded code-review profile** `[D-WORK-CODE-PROFILE]`. Owner, current code-review prompt task:
   «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко»
+  Coordinator note: the Sol 6.1 Low model in this quote was replaced by the reviewerProfiles table in [PROCESS.md](PROCESS.md#subagent-models).
   The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
   The project-native `code-reviewer` profile replaces the Markdown role. Its instructions carry the read-only,
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
   Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
-- **Independent review** `[D-WORK-FINAL-CHECK]`. Every task except records gets one independent review, short for small tasks.
-  Use `spotty` by default and `bossy` for an owner-requested high review. The `code-reviewer` and `test-reviewer`
+- **Independent review** `[D-WORK-FINAL-CHECK]`. Except for records, the executor launches a selfcheck fork after its own checks. The fork runs the self-check and the blind Spotty loop; Bossy is for an owner-requested high review ([D-AGENT-FORK-SELFCHECK], [PROCESS.md](PROCESS.md#independent-review), rule 19). The `code-reviewer` and `test-reviewer`
   profiles remain available. Findings need evidence and impact; missing evidence goes back to the same reviewer.
   Owner: «Ревьюеров циклических надо будет переработать, чтобы они работали так же, как слепые ревьюеры: чтобы они не по одной находке находили и цикл перезапускали, а чтобы они находили сразу все косяки и отдавали их пачкой, и потом заново перепроверяли.» `code-reviewer` and `test-reviewer` return every finding of a pass at once; a re-review checks the fixes and changed lines and returns all remaining findings at once.
   Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`,

@@ -7743,3 +7743,11 @@ Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): bac
 Introduced: `80732f36`. Source: `c8355adc:DECISIONS.md`, line 1984. Verbatim replaced text:
 
 > RQW-tool-ui 500 ms real-final timer (the active record above, «When the idle session remains quiet for 500 ms»);
+
+## A-0464 · archived 2026-11-02 · Work policy · review workflow
+
+Status: SUPERSEDED by [D-AGENT-FORK-SELFCHECK] (DECISIONS.md#agent): the selfcheck fork owns the blind loop.
+Introduced: `8413081c` (records exception), `a79812e4` (Spotty and Bossy selection). Source: `1c0c0b4e:DECISIONS.md`, lines 398-399. Verbatim replaced text:
+
+> - **Independent review** `[D-WORK-FINAL-CHECK]`. Every task except records gets one independent review, short for small tasks.
+>   Use `spotty` by default and `bossy` for an owner-requested high review.
