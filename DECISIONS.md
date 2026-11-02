@@ -171,6 +171,9 @@ Provenance:
 
 ## Work policy
 
+- **Queue cancellations and old-queue review** `[D-WORK-QUEUE-2026-11-02]`. The owner dropped RP3 and its ready fixes, task pages and computer control. Review the conserved old queue for completed work; keep the remaining items for a future review. The two deferred items on subagent mode and sunk-cost research remain unchanged. Owner, 2026-11-02, in chat (verbatim; session locator not machine-verified): «Так, мгновенная отправка ждет, когда ты снова увидишь задержку, это выбрасывай. Страницы задать в браузере выбрасывай. Отложенные управления компьютером новый режим агентов, ловушка, затрат. Короче, управление компьютером выбрасываем. новый режим агентов ловушка затрат надо объяснить что это такое разбор старой очереди тоже пока отложено нет в разборе старой очереди разберитесь что уже сделано и в старой очереди выброси А то, что останется, оставь на будущий разбор. Вот, выпуск PCI Live магазин, если есть что выпускать, то выпускай.»
+  Carrier: [BACKLOG.md](BACKLOG.md) and the cumulative wish list in `my-pi-evidence/designs/wish-audit/`.
+
 - **Only ordered work** `[D-WORK-ONLY-ORDERED]`. The scope and proposal rule is carried once in
   the owner's accepted task; review-brief construction is in
   [PROCESS.md, Independent review](PROCESS.md#independent-review) and the native
