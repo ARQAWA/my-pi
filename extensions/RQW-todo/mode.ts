@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { parseStreamingJson } from "@earendil-works/pi-ai/utils/json-parse";
+import { parseStreamingJson } from "@earendil-works/pi-ai";
 import type { Item, State } from "./index.ts";
 
 const ENTRY = "rqw-todo-mode";

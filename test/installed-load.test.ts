@@ -23,6 +23,8 @@ function checkImports(base: string, input: Manifest): void {
 		for (const name of ["pi-ai", "pi-agent-core", "pi-coding-agent", "pi-tui"]) allowed.add(`${scope}/${name}`);
 	}
 	allowed.add("@sinclair/typebox");
+	// Pi's loader aliases only these pi-ai subpaths; any other one fails to resolve when the extension loads.
+	const piAiSubpaths = new Set(["compat", "models", "oauth", "providers/all"]);
 	const visit = (file: string) => {
 		if (seen.has(file)) return;
 		seen.add(file);
@@ -33,6 +35,8 @@ function checkImports(base: string, input: Manifest): void {
 			if (specifier.startsWith(".")) { visit(resolve(dirname(file), specifier)); return; }
 			if (builtins.has(specifier)) return;
 			const name = specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0];
+			const piAi = /^@(?:earendil-works|mariozechner)\/pi-ai\/(.+)$/.exec(specifier);
+			if (piAi) assert.ok(piAiSubpaths.has(piAi[1]), `${file}: pi-ai subpath ${piAi[1]} is not aliased by Pi`);
 			assert.ok(allowed.has(name), `${file}: undeclared runtime dependency ${name}`);
 		};
 		const walk = (node: any): void => {
@@ -49,6 +53,8 @@ function checkImports(base: string, input: Manifest): void {
 			if (node.type === "ImportExpression") {
 				assert.equal(typeof node.source?.value, "string", `${file}: dynamic import must use a literal specifier`);
 				check(node.source.value);
+			} else if ((node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration") && /^(?:import|export)\s+type\b/.test(text.slice(node.start, node.end))) {
+				// Type-only declarations are erased before loading.
 			} else if ((node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") && typeof node.source?.value === "string") check(node.source.value);
 			if (node.type === "CallExpression" && node.callee?.type === "Identifier" && node.callee.name === "require") {
 				assert.equal(typeof node.arguments?.[0]?.value, "string", `${file}: require must use a literal specifier`);
@@ -84,6 +90,10 @@ it("rejects an undeclared runtime dependency and accepts it when declared", () =
 		writeFileSync(resolve(fixture, "nested.ts"), 'const name = "fake-runtime"; import(name);');
 		assert.throws(() => checkImports(fixture, input), /dynamic import must use a literal/);
 		writeFileSync(resolve(fixture, "nested.ts"), 'import("@earendil-works/pi-coding-agent");');
+		assert.doesNotThrow(() => checkImports(fixture, input));
+		writeFileSync(resolve(fixture, "nested.ts"), 'import "@earendil-works/pi-ai/utils/json-parse";');
+		assert.throws(() => checkImports(fixture, input), /pi-ai subpath utils\/json-parse is not aliased/);
+		writeFileSync(resolve(fixture, "nested.ts"), 'import "@earendil-works/pi-ai/oauth"; import type { X } from "@earendil-works/pi-ai/api/openai-responses-shared";');
 		assert.doesNotThrow(() => checkImports(fixture, input));
 		writeFileSync(resolve(fixture, "nested.ts"), 'page.evaluate(/* browser-context */ async () => import(path)); page.waitForFunction(/* browser-context */ async () => import(path));');
 		assert.doesNotThrow(() => checkImports(fixture, input));
