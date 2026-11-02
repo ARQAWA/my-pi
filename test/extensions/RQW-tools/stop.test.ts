@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,7 +12,7 @@ test("stop background notice reaches only the owning tools session", async () =>
 	const events = createEventBus();
 	const hooks = new Map<string, Function[]>();
 	const pi: any = { events, registerTool() {}, getActiveTools: () => [], getAllTools: () => [], getSettings: () => ({}), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi);
+	installRqwTools(pi, { descriptions });
 	const ctx = { mode: "tui", sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const replies: any[] = [];
@@ -34,7 +35,7 @@ test("main jobs offer finished results exactly once through the source", async t
 	fake.handler = () => ({ hang: true });
 	const events = createEventBus(), hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
 	const pi: any = { events, registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	t.after(async () => { for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx); });
@@ -68,7 +69,7 @@ test("stop kills a searched job; its killed result arrives once through the sour
 	const events = createEventBus(), hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
 	const messages: unknown[] = [];
 	const pi: any = { events, registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), sendMessage: (message: unknown) => messages.push(message), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
@@ -103,7 +104,7 @@ test("a job that exits is delivered through the source and sends no chat message
 	const hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
 	const messages: unknown[] = [];
 	const pi: any = { events: createEventBus(), registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), sendMessage: (message: unknown) => messages.push(message), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
-	installRqwTools(pi, { backgroundAfterMs: 12 });
+	installRqwTools(pi, { descriptions, backgroundAfterMs: 12 });
 	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);

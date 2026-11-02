@@ -1,3 +1,4 @@
+import { descriptions } from "./extensions/RQW-tools/descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -116,7 +117,7 @@ test("a real child receives the new skill hint in its request", async () => {
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details) };
 	try {
 		await parentRun.session.prompt("hello");
-		installRqwTools(pi);
+		installRqwTools(pi, { descriptions });
 		registerAgent(pi);
 		const call = (id: string, args: any) => tools.get("agent").execute(id, args, ctx.signal, undefined, ctx);
 		const source = await adoptSource(pi, hooks, ctx);
