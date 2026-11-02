@@ -83,7 +83,7 @@ it("a closed chat returns an open hint instead of receiving a message", async (t
 			address() { return { port: 40000 }; },
 			close() { return this; },
 		};
-	}) as typeof net.createServer;
+	}) as unknown as typeof net.createServer;
 	net.connect = (() => { connections++; throw new Error("unexpected network connection"); }) as typeof net.connect;
 	syncBuiltinESMExports();
 	let w: Awaited<ReturnType<typeof world>> | undefined;

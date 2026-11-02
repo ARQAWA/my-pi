@@ -558,6 +558,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 	};
 	let definition: any;
 	const notices: string[] = [];
+	const sent: { customType: string; triggerTurn: boolean | undefined }[] = [];
 	const ctx: any = {
 		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: (_provider: string, id: string) => id === "other" ? other : model, hasConfiguredAuth: () => true },
 		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt",
@@ -569,11 +570,14 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
 		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }),
 		getThinkingLevel: () => "off", getActiveTools: () => codemode ? ["codemode"] : [],
-		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
+		sendMessage: (message: any, options?: { triggerTurn?: boolean }) => {
+			sent.push({ customType: message.customType, triggerTurn: options?.triggerTurn });
+			parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
+		},
 	};
 	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, onRunning, undefined, "", undefined);
 	let started = false;
-	return { runtime, requests, requestModels, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
+	return { runtime, requests, requestModels, ctx, events, notices, sent, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
 		execute: (params: any, callId = "call", signal = new AbortController().signal) => definition.execute(callId, params, signal, undefined, ctx),
 		/** The results of this caller's children as the automatic consumer delivers them, see takeFrom. */
 		takeAnswers: async (save = true) => {
@@ -604,6 +608,31 @@ function offerCatalog(events: ReturnType<typeof createEventBus>) {
 		execute: async () => ({ content: [{ type: "text", text: name }], details: {} }),
 	})), catalog));
 }
+
+test("core settlement preserves whether a progress notification may start a turn", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	for (const aborted of [false, true]) {
+		const parent = SessionManager.inMemory(root);
+		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+		let steps = 0;
+		const gate = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+		const live = runtimeFixture(parent, root, () => ++steps <= 50
+			? fauxAssistantMessage([fauxToolCall("read", {}, { id: `read-${steps}` })], { stopReason: "toolUse" }) : gate.promise, 52, false, offerCatalog);
+		live.events.on("rqw:context-fork:v1", request => (request as ContextForkRequest).offer(async () => fauxAssistantMessage("progress")));
+		try {
+			await live.emit("session_start");
+			live.runtime.settle!(aborted);
+			await live.execute({ action: "start", task: "work", tools: ["read"] });
+			await until(() => live.sent.some(message => message.customType === "agent_progress"));
+			assert.equal(live.sent.find(message => message.customType === "agent_progress")?.triggerTurn, !aborted);
+		} finally {
+			gate.resolve(fauxAssistantMessage("done"));
+			live.runtime.close();
+			await settle();
+		}
+	}
+});
 
 test("only ordinary children send automatic progress after 50 tool responses", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -970,14 +999,16 @@ const waitingReply = (context: any) => JSON.stringify(context.messages).includes
 
 test("a child whose helper still runs gives its parent no final; the helper's answer wakes it once", async t => {
 	const { live, gate } = await outerWithHelper(t, waitingReply);
-	let waited: any;
-	void live.takeAnswers().then(result => { waited = result; });
+	let finished = false;
+	const waiting = live.takeAnswers();
+	void waiting.then(() => { finished = true; });
 	await settle();
-	assert.equal(waited, undefined, "the intermediate answer is not a final");
+	assert.equal(finished, false, "the intermediate answer is not a final");
 	assert.equal(outerRequests(live).length, 2, "waiting for the helper makes no model request");
 	assert.equal(live.runtime.runningCounts().agents, 2);
 	gate.resolve("nested answer");
-	await until(() => waited !== undefined);
+	await until(() => finished);
+	const waited = await waiting;
 	assert.equal(outerRequests(live).length, 3);
 	assert.deepEqual(waited.details.results.map(item => item.text.split("\n\n")[0]), ["all done"]);
 	const woken = outerRequests(live).at(-1).messages.filter((message: any) => JSON.stringify(message.content).includes("nested answer"));
@@ -990,11 +1021,13 @@ test("send wakes a waiting child at once and keeps its run open", async t => {
 		if (userTexts(context).includes("stop it") && results === 1) return fauxAssistantMessage([fauxToolCall("agent", { action: "stop", id: "agent#1" }, { id: "stop-nested" })], { stopReason: "toolUse" });
 		return userTexts(context).includes("stop it") ? "stopped it" : "started it, waiting";
 	});
-	let waited: any;
-	void live.takeAnswers().then(result => { waited = result; });
+	let finished = false;
+	const waiting = live.takeAnswers();
+	void waiting.then(() => { finished = true; });
 	await settle();
 	await live.execute({ action: "send", id: "agent#1", task: "stop it" });
-	await until(() => waited !== undefined);
+	await until(() => finished);
+	const waited = await waiting;
 	assert.equal(outerRequests(live).filter((request: any) => userTexts(request).includes("stop it")).length, 2, "one turn for the send, one after the stop");
 	assert.deepEqual(waited.details.results.map(item => item.text.split("\n\n")[0]), ["stopped it"]);
 	gate.resolve("nested answer");
@@ -1070,12 +1103,14 @@ test("interrupting a waiting child stops its helper and yields no answer", async
 test("a helper error turn is not a final while the helper runs; the last turn's text is the answer", async t => {
 	const { live, gate } = await outerWithHelper(t, (context, results) => JSON.stringify(context.messages).includes("nested answer") ? "recovered"
 		: fauxAssistantMessage("", { stopReason: "error", errorMessage: `boom ${results}` }));
-	let waited: any;
-	void live.takeAnswers().then(result => { waited = result; });
+	let finished = false;
+	const waiting = live.takeAnswers();
+	void waiting.then(() => { finished = true; });
 	await settle();
-	assert.equal(waited, undefined);
+	assert.equal(finished, false);
 	gate.resolve("nested answer");
-	await until(() => waited !== undefined);
+	await until(() => finished);
+	const waited = await waiting;
 	assert.equal(waited.details.results[0].outcome, "completed");
 	assert.match(waited.details.results[0].text, /^recovered/);
 });
@@ -1650,7 +1685,7 @@ test("an uncommitted answer blocks sleep until its wait result is saved", async 
 	const waiting = await live.takeAnswers();
 	assert.equal(released, false);
 	assert.match(waiting.details.results[0].text, /answer/);
-	parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: waiting.content, details: waiting.details, isError: false, timestamp: 1 });
+	parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: waiting.content.map(part => ({ ...part, type: "text" as const })), details: waiting.details, isError: false, timestamp: 1 });
 	await live.emit("turn_end");
 	now = 600000;
 	t.mock.timers.tick(300000);

@@ -1865,7 +1865,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		},
 		resume: resumeAll,
 		settle(aborted) {
-			if (main) coordinator.settleCore(main, aborted);
+			if (main) coordinator.settleCore(aborted);
 			mainAborted = aborted;
 		},
 		abortAll,
