@@ -527,7 +527,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Delivered results, not an agent board** `[D-UI-AGENT-CARDS]`. Owner: "Да с сабагентами +".
   Source: the `18-16-12` session file named above, USER entry `96231cbd`, line 243. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
-  Agent custom results show compact cards: ID, outcome, available actual
+  Delivered agent results (a current result is the `wait` result of `agent`; stored older `agent` messages and `child_wait` notifications keep their cards) show compact cards: ID, outcome, available actual
   model/effort/duration, then the tail of the answer: its last 400 characters as plain text on one line, no Markdown parsing,
   cut at the front with `…`, rows cached per card and width. Owner: «Вообще не надо отрисовывать. Что там агент пишет? Мне вообще поебать, что там написано. [...] Эти карточки, которые ты отрисовываешь, во-первых, должны занимать ноль CPU. И для их отрисовки тебе не надо весь текст, тебе надо только конец текста. Последние символы текста должны быть. Ты должен всё сделать супер просто, супер оптимально, супер легко.» Missing metadata stays omitted. Reviewer profiles
   use these same ordinary `agent#N` cards; there is no separate review delivery or review card.
@@ -537,13 +537,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
   collapsed wait cards. Stored content, execution and delivery do not change. A card shows one delivered
   result as finished or failed, never a live agent state. There is no agent list, board or child-log view.
-  T17 cards belong to agent-ui, T18 indicator to statusbar: actual running agent counts, including reviewers, come
-  from the existing activity producer, not a second registry in the cards. Ordinary busy letters shimmer silver;
-  compaction status and synchronized chrome shimmer gold; the title shimmers gold during compaction.
-  Title and activity placement follow [D-STATUSBAR-ACTIVITY](#status-bar).
-  The indicator's existing decision is [D-STATUSBAR-ACTIVITY](#status-bar).
+  Running agent counts, the activity indicator and its shimmer are RQW-statusbar's, not the cards' ([D-STATUSBAR-ACTIVITY](#status-bar)).
   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
+
+- **Cards of messages nothing creates are removed** `[D-UI-OLD-CARDS]`. Question to the owner in the RQW-agent-ui cumulative audit (`my-pi-evidence/cumulative/RQW-agent-ui.md`, question 1): what to do with the cards of old sessions, one answer per line: `review`, `code_writer` and `shell_runner`, `job`. Owner, verbatim, 2026-11-02: «да, карточку ревьюра, карточку старых воркеров надо удалять. карточка джоп, я не знаю, если она сейчас есть. если сейчас джоб у нас есть такая функция, то оставь вот то есть все должно быть консистентно с тем как это работает сейчас у нас. ну и это должно быть консистентно с кумулятивными требованиями, которые были накоплены»
+  Result: the `review` card, the `code_writer` and `shell_runner` card types and the `job` card are deleted from `RQW-agent-ui`; stored messages of these types show Pi's stock block. Live cards stay: `agent`, `child_wait` (old history, kept by the approved wait-as-tool design) and `agent_progress`.
+  Job verdict, checked in code: nothing creates a custom message `job`. `extensions/RQW-tools/` has no `sendMessage` or `customType`; `test/extensions/RQW-tools/jobs.test.ts` asserts that a wait, a timeout and an abort send no later notification; the only `customType` that `RQW-agent` sets is `agent_progress` (`progress.ts`), so it creates no `child_wait` or `job` message. The late job notification was annulled (audit item A11: «Не должно быть позднего job-уведомления», `my-pi-evidence/designs/wait-as-tool/DESIGN.md:196`, approved «1»). So the owner's condition «если сейчас ... есть такая функция, то оставь» is not met and the card goes. `RQW-agent/index.ts` still lists `"job"` among types the inbox ignores; it is `RQW-agent`'s code and is untouched here.
+  Reason: consistent with the live behaviour and the cumulative requirements. Carriers: `extensions/RQW-agent-ui/{index,card,notification}.ts`, `test/extensions/RQW-agent-ui/`, `INSTALL.md`.
 
 - **Skills as an attachment line** `[D-UI-SKILL-CARD]`. Owner: «Это какая-то хуябра со скиллами. Она должна быть супер стилёво запилена. И подобный блок синего цвета должен стилёво быть реализован в виде карточки и подшит визуально, как будто это аттачмент к сообщению моему. ... было так же компактно, как общий стиль интерфейса.» «При этом все должно быть супер легковесно, супер производительно, эффективно, без задроченных тяжеловесных хуёвин тупорылых». Choice: «по макету скила мне нравится вариант где скиллы внутри карточки вписаны под текстом» (variant 4, footer line).
   RQW-skill-dollar replaces Pi's internal class rendering at runtime (`SkillInvocationMessageComponent`, `UserMessageComponent`, `Container.addChild`; not a public API, the owner accepted the risk). Collapsed, Pi's blue skill block and its spacer render zero rows; the user card's bottom padding row becomes one line `└ skill  a · b` with the expand key at the right. Every skill is listed, wrapped onto more rows when it does not fit; further skill blocks that Pi leaves raw in the text are taken out of it. A message with skills and no text gets the same line as its own small card. Ctrl+O shows the text of every skill under the line, in the same card, not in a separate block. Owner: «По клику мыши скилл раскрывать не надо)))) в этом суть этой правки UI что я в рот ебал чет раскрывать, есть режим CTRL+O который показывает оригинал». The card has no click-to-expand. The patch is installed when the extension loads, because Pi rebuilds the restored history before `session_start`; switching the extension off puts back every spacer height and card text. The line is built from names only and cached per width; skill texts are parsed as Markdown only when expanded. Compatibility is checked before anything is changed; if Pi's classes do not have the expected shape, stock rendering stays, silently.
@@ -1204,8 +1205,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/*.toml`, `skills/reviewer/SKILL.md`,
   [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
 
-- **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
-  `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks.
+- **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message starts with `CLEAN` followed by concise concrete
+  `CHECKED:` evidence for the inspected object and criterion, or with `FINDINGS: N` alone on the first line, N being the
+  number of findings, followed by numbered finding blocks. The agent card reads N from that line and counts nothing.
+  Owner, verbatim: «для их отрисовки тебе не надо весь текст, тебе надо только конец текста» (`[D-UI-AGENT-CARDS]`); answer «1» to the audit question 2 (`my-pi-evidence/cumulative/RQW-agent-ui.md`) with the offer: «Ревьюер пишет первой строкой `FINDINGS: N`, как уже пишет code-reviewer, `.pi/agents/code-reviewer.toml:22`. Карточка берёт число из первой строки. Счётчик `review.ts:6-87` удаляется, только если ты удаляешь и карточку `review`. Иначе он остаётся для неё, но карточка agent его больше не зовёт. Старые ответы без числа покажут просто «findings», без нуля. Меняется и контракт RQW-review.»
+  Answers of older reviewers without a number show the red label `findings`, never `0 findings`.
   Every finding has `SEVERITY`, `TRIGGER` and `RESULT_IF_UNFIXED` under `[D-REVIEW-IMPACT]`. `CHECKED:`
   cites exact files, sections and source anchors without a long per-obligation checklist; a bare `CLEAN` is incomplete.
   `UNCHECKED:` names genuinely unavailable required evidence. Both reviewer profiles carry this format. The common

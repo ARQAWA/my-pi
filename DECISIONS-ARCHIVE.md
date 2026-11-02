@@ -7203,3 +7203,23 @@ Source: `e00dca9b:DECISIONS.md`. Verbatim replaced text:
 >   CI floor, accepted by the owner and relayed by the coordinator: `tests.yml` keeps Node 22.19.0 and resolves Node 24
 >   as `>=24.22.0 <25`; the matrix labels stay `22.19.0` and `24` for artifact names. Reason: require the shipped V8
 >   baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven.
+
+## A-0412 · archived 2026-11-02 · Agent cards · cards on the message path, indicator text
+
+Status: SUPERSEDED by `[D-UI-AGENT-CARDS]` (DECISIONS.md#agent-cards): a current result arrives as the `wait` result, and the indicator is only `[D-STATUSBAR-ACTIVITY]`'s.
+Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
+
+> Agent custom results show compact cards: ID, outcome, available actual
+>   T17 cards belong to agent-ui, T18 indicator to statusbar: actual running agent counts, including reviewers, come
+>   from the existing activity producer, not a second registry in the cards. Ordinary busy letters shimmer silver;
+>   compaction status and synchronized chrome shimmer gold; the title shimmers gold during compaction.
+>   Title and activity placement follow [D-STATUSBAR-ACTIVITY](#status-bar).
+>   The indicator's existing decision is [D-STATUSBAR-ACTIVITY](#status-bar).
+
+## A-0413 · archived 2026-11-02 · Review · verdict without a number
+
+Status: SUPERSEDED by `[D-REVIEW-VERDICT]` (DECISIONS.md#review): the first line is `FINDINGS: N`.
+Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
+
+> - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
+>   `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks.
