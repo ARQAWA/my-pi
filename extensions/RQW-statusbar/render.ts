@@ -10,6 +10,7 @@
 // Colors intentionally use stock Pi semantic roles, without tuning.
 import { stripVTControlCharacters } from "node:util";
 import { quotaText, type Quotas } from "./quota.ts";
+import type { AgentLine } from "./activity.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Nerd Font glyphs of omp's `nerd` symbol preset (`pi-tui/src/theme/symbols.ts`), the owner's `symbolPreset`. */
@@ -529,18 +530,35 @@ export interface ActivityChrome {
 /** Spaces between the status text and its key hint. */
 const HINT_GAP = 2;
 
-/**
- * The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty.
- * `paintHint` styles the key hint (dim italic); the caller caches it.
- */
-export function activityRows(width: number, chrome: ActivityChrome | undefined, paintHint: (hint: string) => string = (hint) => hint): string[] {
-	if (!chrome) return [];
-	if (width <= 0) return ["", ""];
+/** Agent rows are prepared separately so the shimmer never repaints them. */
+export function agentRows(width: number, list: AgentLine[], dim: boolean, paint: (role: "muted" | "dim" | "text", text: string) => string): string[] {
+	return list.map((agent) => {
+		const state = agent.state;
+		const id = singleLine(agent.id);
+		const title = singleLine(agent.title ?? "");
+		const suffix = width >= visibleWidth(` · ${state}`) ? ` · ${state}` : state;
+		let room = Math.max(0, width - visibleWidth(suffix));
+		const idWidth = visibleWidth(id);
+		const indent = " ".repeat(Math.min(3 + 2 * agent.depth, Math.max(0, room - idWidth)));
+		room -= indent.length;
+		const shownId = fitPlain(id, room);
+		room -= visibleWidth(shownId);
+		const shownTitle = title && room > 1 ? ` ${fitPlain(title, room - 1)}` : "";
+		if (dim || state === "idle" || state === "afk") return paint("dim", indent + shownId + shownTitle + suffix);
+		return indent + paint("muted", shownId) + (shownTitle ? " " + paint("dim", shownTitle.slice(1)) : "") + paint(state === "working" ? "text" : "dim", suffix);
+	});
+}
+
+/** Pi supplies one leading spacer; a visible widget ends with one empty row. */
+export function activityRows(width: number, chrome: ActivityChrome | undefined, paintHint: (hint: string) => string = (hint) => hint, agents: string[] = []): string[] {
+	if (!chrome && agents.length === 0) return [];
+	if (!chrome) return [...agents, ""];
+	if (width <= 0) return ["", ...agents, ""];
 	const text = fitPlain(singleLine(chrome.text), width - 1);
 	const label = " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER));
 	const hint = singleLine(chrome.hint ?? "");
 	const fits = hint !== "" && width - 1 - visibleWidth(text) - HINT_GAP >= visibleWidth(hint);
-	return [fits ? label + " ".repeat(HINT_GAP) + paintHint(hint) : label, ""];
+	return [fits ? label + " ".repeat(HINT_GAP) + paintHint(hint) : label, ...agents, ""];
 }
 
 /** A run of the top border: a rule, the hint, the title or the session ID. */

@@ -592,7 +592,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
   id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
   collapsed wait cards. Stored content, execution and delivery do not change. A card shows one delivered
-  result as finished or failed, never a live agent state. There is no agent list, board or child-log view.
+  result as finished or failed, never a live agent state. The cards hold no agent list, board or child-log view; the agent list is the status bar's ([D-STATUSBAR-WAITS](#status-bar)).
   Running agent counts, the activity indicator and its shimmer are RQW-statusbar's, not the cards' ([D-STATUSBAR-ACTIVITY](#status-bar)).
   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
@@ -1629,23 +1629,36 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Layout acceptance and spacing are in the task's included owner messages. Reason: the owner's requested title and status placement.
   Carrier: `extensions/RQW-statusbar/{index,editor,render}.ts`.
 - **Accurate waiting categories** `[D-STATUSBAR-WAITS]`. After Main's full answer and run completion,
-  keep real pending work visible, for example `Waiting for 2 agents, 1 background process`. While Main is active,
-  preserve its existing thinking or tool text and agent suffix. RQW-agent counts an active logical assignment
-  (`a.run`), pending sends or native activity once per agent, recursively. A native-idle child waiting for its
-  jobs or children counts; a waiting parent and its active descendant each count. Completed undelivered results
-  count zero, and genuine idle or AFK with no pending work removes the line.
+  keep real pending work visible as `Waiting for 2 agents, 1 background process`; there is no explicit wait call
+  ([D-AGENT-STATUS](#agent)), so Main waits by ending its turn. While Main is active,
+  its thinking or tool text shows the agents and the background processes too: `Planning next moves · 2 agents, 1 background process`.
+  RQW-agent gives every agent of the tree one state. `working`: Pi runs the child or a queued send is about to.
+  `waiting`: its assignment (`a.run`) stays open for its jobs or children. `afk`: paused or interrupted, no assignment.
+  `idle`: the rest, including a finished child kept in memory or asleep. The count is only `working` plus `waiting`,
+  recursively; a waiting parent and its working descendant each count. Completed undelivered results count zero,
+  and genuine idle or AFK with no pending work counts nothing.
+  Background processes of children count too, summed over the tree, also when the child's turn ended: the child's job
+  registry offers its running count and its change events, so the count follows each change.
   RQW-tools independently offers only Main's actual background jobs as `{ agents: 0, backgroundProcesses: number }`
-  over the existing public `pi.events` v1 source protocol. Child jobs are not duplicated in that category.
-  The consumer accepts optional `backgroundProcesses`, treating its absence in older v1 sources as zero.
-  Reviewers remain ordinary agents, with no worker or separate review category. This authorizes only the statusbar
-  portion of AGENT-STATES-UI, not agent lists or cards, and changes no visuals, timing, colours, settings or dependencies.
+  over the existing public `pi.events` v1 source protocol; the child counts come from RQW-agent's own source, so no job is counted twice.
+  The source's optional `agentList` holds one line `{ id, title?, state, depth }` per agent, nested agents right after their parent
+  (a nested id is its path, `agent#1/agent#2`). The status bar draws it under the status text, `agent#3 Title · working`,
+  indented two spaces per level, all agents, never cut to a few; id `muted`, title `dim`, `working` `text`, `waiting` `dim`,
+  `idle` and `afk` rows wholly `dim`. When everything is idle the list stays, dim, with no status text. Narrow width cuts the
+  title, then the indent, then the id; the state stays. The rows are cached and redrawn only when the list changes; no timer.
+  The consumer accepts optional `backgroundProcesses` and `agentList`, treating their absence in older v1 sources as zero and empty.
+  Reviewers remain ordinary agents, with no worker or separate review category. Changes no timing, settings or dependencies.
+  Owner answers to the plan `my-pi-evidence/designs/agent-states-ui/PLAN.md` (verbatim): word for waiting: «1» = Waiting for, как записано в решении;
+  agent list when everything is idle: «1» = показывать тусклым; list length: «1» = все агенты.
+  Owner (verbatim, `16-27-59:6305`): «Если агент think-ает основной, что-то делает, то это отражается в статусе. Если же он ничего не делает, но он ожидает саб-агентов какие-то, background процессы, это тоже должно отражаться. Есть саб-агенты, а есть background процессы. Worker там быть не должно, мы вообще worker удалили.»
+  Principles (verbatim): «Интерфейс должен летать всегда»; «У нас всё должно быть суперминималистично, суперлегковесно, супертопорно и прямолинейно».
   Owner requirements and exact sources: [BACKLOG AGENT-STATES-UI](BACKLOG.md#agent-states-ui), owner entries
   `16-27-59:5085` (`04f64a5e`), `5087`, `6301` (`a8793e4c`) and `6305` (`217beed6`), in the session named in Provenance.
   Coordinator record: the current forwarded owner correction resumes only the statusbar portion of the hold at
   `6313` (`f148804a`); no new authenticated owner-session locator was supplied. No new verbatim quote is asserted here.
   Reason: native turn completion is not logical assignment completion; real waits must remain visible without
   retaining idle agents or spending model turns just to wait. Carriers: `extensions/RQW-agent/{index,counts}.ts`,
-  `extensions/RQW-tools/{index,jobs,counts}.ts`, `extensions/RQW-statusbar/activity.ts`; protocol:
+  `extensions/RQW-tools/{index,jobs,counts}.ts`, `extensions/RQW-statusbar/{activity,index,render}.ts`; protocol:
   [RQW-agent README](extensions/RQW-agent/README.md#contract-for-p6). Since: statusbar-wait-after-answer.
 - **GPT Fast lightning** `[D-STATUSBAR-FAST]`. The main chat's GPT Fast state ([Settings](#settings), "GPT Fast") shows as
   a bright yellow lightning after the model name, before the thinking level, when it is on and the model's provider is

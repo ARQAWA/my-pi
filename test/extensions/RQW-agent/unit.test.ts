@@ -535,7 +535,7 @@ test("an unanswered call before later conversation no longer blocks recovery", a
 	assert.deepEqual(agent.state.messages.map(message => message.role), ["user", "user"]);
 });
 
-function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<string | ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false, setup?: (events: ReturnType<typeof createEventBus>) => void) {
+function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<string | ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false, setup?: (events: ReturnType<typeof createEventBus>) => void, onRunning?: () => void) {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const events = createEventBus();
 	setup?.(events);
@@ -571,7 +571,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		getThinkingLevel: () => "off", getActiveTools: () => codemode ? ["codemode"] : [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
+	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, onRunning, undefined, "", undefined);
 	let started = false;
 	return { runtime, requests, requestModels, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
 		execute: (params: any, callId = "call", signal = new AbortController().signal) => definition.execute(callId, params, signal, undefined, ctx),
@@ -1083,6 +1083,7 @@ test("a helper error turn is not a final while the helper runs; the last turn's 
 /** What RQW-tools' job registry offers a child: a source of job results, a running count and hasJobs. */
 function fakeJobs(initiallyRunning = 1) {
 	const listeners = new Set<(value: true | null) => void>();
+	const activity = new Set<() => void>();
 	const committed: string[] = [];
 	let running = initiallyRunning;
 	let ready: { id: string; outcome: string; text: string } | undefined;
@@ -1095,8 +1096,8 @@ function fakeJobs(initiallyRunning = 1) {
 		release() {},
 	};
 	return { committed, hasJobs: () => running > 0 || !!ready,
-		control: { abortAll() {}, dispose() {}, hasJobs: () => running > 0 || !!ready, backgroundCount: () => running, autoSource: () => ({ source, close() {} }) },
-		finish(text: string) { running = 0; ready = { id: "job#1", outcome: "exited", text }; for (const listener of [...listeners]) listener(true); } };
+		control: { abortAll() {}, dispose() {}, hasJobs: () => running > 0 || !!ready, backgroundCount: () => running, subscribeActivity: (listener: () => void) => { activity.add(listener); return () => activity.delete(listener); }, autoSource: () => ({ source, close() {} }) },
+		finish(text: string) { running = 0; ready = { id: "job#1", outcome: "exited", text }; for (const listener of [...listeners]) listener(true); for (const listener of [...activity]) listener(); } };
 }
 
 /** Offers a child the `bash` that "starts a job" and the `job` tool of this registry, as RQW-tools would. */
@@ -2610,4 +2611,82 @@ test("a job result that an explicit wait returned before the crash is not report
 	assert.equal(restored.requests.length, 0, "nothing is lost, so the child is not woken");
 	restored.runtime.close(); live.runtime.close();
 	await settle();
+});
+
+test("the agent list shows a waiting child and its working helper after it, one line each", async t => {
+	const { live, gate } = await outerWithHelper(t, waitingReply);
+	await settle();
+	const counts = live.runtime.runningCounts();
+	assert.equal(counts.agents, 2);
+	assert.deepEqual(counts.agentList, [{ id: "agent#1", state: "waiting", depth: 0 }, { id: "agent#1/agent#1", state: "working", depth: 1 }]);
+	gate.resolve("nested answer");
+	await live.takeAnswers();
+	const done = live.runtime.runningCounts();
+	assert.equal(done.agents, 0);
+	assert.deepEqual(done.agentList?.map(line => `${line.id} ${line.state} ${line.depth}`), ["agent#1 idle 0", "agent#1/agent#1 idle 1"]);
+});
+
+test("the agent list shows an interrupted waiting child as afk", async t => {
+	const { live, gate } = await outerWithHelper(t, waitingReply);
+	await live.execute({ action: "interrupt", id: "agent#1" });
+	await live.runtime.wait(new AbortController().signal);
+	await until(() => live.runtime.runningCounts().agents === 0);
+	assert.deepEqual(live.runtime.runningCounts().agentList, [{ id: "agent#1", state: "afk", depth: 0 }]);
+	gate.resolve("nested answer");
+});
+
+test("the agent list names a finished child by its title", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "one", title: "Audit", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	assert.deepEqual(live.runtime.runningCounts().agentList, [{ id: "agent#1", title: "Audit", state: "idle", depth: 0 }]);
+	live.runtime.close();
+});
+
+test("a child's background process counts, its change reaches the counts and a finished one drops out", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const jobs = fakeJobs();
+	let changes = 0;
+	const live = runtimeFixture(parent, root, context => context.messages.some((message: any) => message.role === "toolResult") ? "started the job, waiting"
+		: fauxAssistantMessage([fauxToolCall("bash", {}, { id: "slow" })], { stopReason: "toolUse" }), 8, false, undefined, () => { changes++; });
+	offerJobs(live, jobs);
+	await live.execute({ action: "start", task: "outer", tools: ["bash"] });
+	await until(() => live.requests.length === 2);
+	await settle();
+	try {
+		assert.equal(live.runtime.runningCounts().backgroundProcesses, 1);
+		assert.equal(live.runtime.runningCounts().agentList?.[0].state, "waiting");
+		changes = 0;
+		jobs.finish("done");
+		assert.ok(changes > 0, "a job change reaches the counts producer");
+		assert.equal(live.runtime.runningCounts().backgroundProcesses, undefined);
+	} finally {
+		live.runtime.close();
+		await settle();
+	}
+});
+
+test("stopping a sleeping child drops its line from the agent list at once", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root);
+	await first.execute({ action: "start", task: "one", title: "Old", tools: [] });
+	await first.runtime.wait(new AbortController().signal);
+	first.runtime.close();
+	let changes = 0;
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, undefined, 8, false, undefined, () => { changes++; });
+	t.after(() => restored.runtime.close());
+	await commitWait(restored, restored.ctx.sessionManager);
+	assert.deepEqual(restored.runtime.runningCounts().agentList, [{ id: "agent#1", title: "Old", state: "idle", depth: 0 }]);
+	changes = 0;
+	await restored.execute({ action: "stop", id: "agent#1" });
+	assert.ok(changes > 0, "the stop reaches the counts producer");
+	assert.equal(restored.runtime.runningCounts().agentList, undefined);
 });

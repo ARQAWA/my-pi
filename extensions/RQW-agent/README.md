@@ -620,14 +620,18 @@ needed. The consumer is RQW-statusbar (`activity.ts`, `CountsWatch`), which spel
 channel names itself. Each enabled producer offers one **source object per session
 lifetime**. RQW-agent owns agent counts, including nested agents and reviewer-profile agents.
 RQW-review produces no separate review counts. RQW-tools independently offers Main's actual background jobs
-as `backgroundProcesses`; child jobs are represented by their owning agent, not counted again as Main jobs.
+as `backgroundProcesses`; RQW-agent adds the running jobs of its children, summed over the tree, so no job is counted twice.
 
 - Listen on `rqw:running-counts:offer` for `{ version: 1, source }` **before** requesting existing sources.
 - Emit `rqw:running-counts:request` with `{ version: 1, reply(source) }`. Every live producer replies
   synchronously. This handshake supports either extension load order.
 - Deduplicate sources by object identity. Each source has `version: 1`, `snapshot()`,
   `subscribe(listener)` and `dispose()`.
-- RQW-agent's `snapshot()` returns a fresh `{ agents: number, reviews: number }`, with `reviews: 0`.
+- RQW-agent's `snapshot()` returns a fresh `{ agents, reviews, backgroundProcesses?, agentList? }`, with `reviews: 0`.
+  `agentList` is one `{ id, title?, state, depth }` per agent of the tree, a nested agent right after its parent with its
+  path as id (`agent#1/agent#2`). `state` is `working` (Pi runs the child or a queued send is about to), `waiting`
+  (its assignment stays open for its jobs or children), `afk` (paused or interrupted, no assignment) or `idle` (the rest,
+  including saved and sleeping children). `agents` counts `working` and `waiting` only.
   RQW-tools offers `{ agents: 0, backgroundProcesses: number }` through an independent v1 source.
   Sum snapshots of distinct live sources by kind. The consumer accepts optional `backgroundProcesses`,
   treating its absence in older v1 sources as zero. Missing/disabled producers contribute zero.

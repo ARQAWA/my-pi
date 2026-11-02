@@ -18,11 +18,38 @@ it("names the file of a multi-file write", () => {
 	assert.match(actionPhrase("edit", { edits: [{ path: "src/a.ts" }] }), /a\.ts/);
 });
 
-it("shows running background counts without implying an idle wait", () => {
+it("shows all background counts during work and while waiting", () => {
+	assert.equal(statusText({ compacting: false, running: true, counts: { agents: 2, backgroundProcesses: 1 } })?.text,
+		"Planning next moves · 2 agents, 1 background process");
 	assert.equal(statusText({ compacting: false, running: false, counts: { agents: 2, backgroundProcesses: 3 } })?.text,
-		"Background: 2 agents, 3 background processes");
+		"Waiting for 2 agents, 3 background processes");
 	assert.equal(statusText({ compacting: false, running: false, counts: { agents: 0, backgroundProcesses: 1 } })?.text,
-		"Background: 1 background process");
+		"Waiting for 1 background process");
+});
+
+it("combines source lists and notifies for every changed agent field", () => {
+	const handlers = new Map<string, (data: any) => void>();
+	const events = {
+		on(channel: string, handler: (data: any) => void) { handlers.set(channel, handler); return () => handlers.delete(channel); },
+		emit(channel: string, data: unknown) { handlers.get(channel)?.(data); },
+	};
+	let first = { agents: 1, agentList: [{ id: "agent#1", title: "One", state: "working", depth: 0 }] };
+	let notify: (value: unknown) => void = () => {};
+	const source = { version: 1, snapshot: () => first, subscribe(listener: typeof notify) { notify = listener; return () => {}; } };
+	const other = { version: 1, snapshot: () => ({ agents: 0, agentList: [{ id: "agent#2", state: "idle", depth: 1 }] }), subscribe() { return () => {}; } };
+	let changes = 0;
+	const watch = new CountsWatch(events as never, () => changes++);
+	watch.start();
+	events.emit("rqw:running-counts:offer", { version: 1, source });
+	events.emit("rqw:running-counts:offer", { version: 1, source: other });
+	assert.deepEqual(watch.get().agentList, [...first.agentList, ...other.snapshot().agentList]);
+	for (const patch of [{ id: "agent#3" }, { title: "New" }, { state: "waiting" }, { depth: 2 }]) {
+		const before = changes;
+		first = { ...first, agentList: [{ ...first.agentList[0], ...patch }] };
+		notify(first);
+		assert.equal(changes, before + 1);
+	}
+	watch.stop();
 });
 
 it("consumes a count source and drops it on stop", () => {

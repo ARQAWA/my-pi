@@ -60,22 +60,20 @@ The picker, theme palette, animation and other footer colours do not change.
 
 ## Activity and waits
 
-While Main is active, retain its existing thinking or tool activity text and agent-count suffix.
-After Main's full answer and run completion, running background work remains visible, for example
-`Background: 2 agents, 1 background process`. This is a count, not an open wait. The two categories are agents and background processes;
-reviewer profiles are ordinary agents, with no worker or separate review category.
+While Main is active, its thinking or tool text includes active agents and background processes.
+After Main finishes, running background work remains visible, for example
+`Waiting for 2 agents, 1 background process`. Reviewer profiles are ordinary agents.
 
-RQW-agent counts active logical assignments, pending sends or native activity recursively. A native-idle
-child waiting for its jobs or children still counts, and its active descendant counts separately.
-Completed undelivered results count zero. RQW-tools independently counts only Main's actual background jobs,
-not child jobs again. Both producers use public `pi.events` v1 running-count sources; the consumer accepts
-missing `backgroundProcesses` from older v1 sources as zero. Either producer may be disabled alone.
+RQW-agent supplies the agent tree and counts active agents and child processes. RQW-tools counts Main's
+background processes. Both use public `pi.events` v1 running-count sources, with optional process counts and agent lists.
+Every agent is listed below the activity text with its title and state. Nested agents are indented.
+Idle and AFK agents are dim and excluded from the active count. At full idle the dim list stays visible
+without an activity line. Agent rows are cached by width, list and theme.
 
 RQW-send-now's Esc key hint (for example `esc esc to stop background`) is drawn dim italic two spaces right of the
 activity text, taken from its `rqw:activity-hint:offer` source on `pi.events`; nothing is imported. It is left out when
 it does not fit whole and beside Pi's own retry and summary text (they carry their key).
 Without RQW-send-now or with the status bar off no hint is drawn. The painted hint is cached per text and theme.
 
-At genuine idle there is no activity line. This changes no visuals, timing, colours, agent lists, cards,
-settings or dependencies. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
+At genuine idle there is no activity line. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
 Source protocol: [Running-count contract](../RQW-agent/README.md#contract-for-p6).
