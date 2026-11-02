@@ -80,6 +80,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Busy letters shimmer silver; compaction shimmers gold over the title.
   `early.ts` decorates Pi's stock editor and footer before the first paint and across session switches; no paint is held. Incompatible shapes fall back to stock (`[D-STATUSBAR-STARTUP]`).
   Tests: `test/extensions/RQW-statusbar/`.
+- `extensions/RQW-todo/`: independent main-chat todo tool and skill. `$todo` enables the mode for the session; a request to switch it off calls `todo` with `off: true`. An open list supplies request-only working memory and a three-line panel above the editor. `/todo` shows current and closed lists with steps and reasons. Blocked items stay open; one reminder per user message covers pending or active items before a completed turn. State follows the session branch and survives compaction. Registered after RQW-statusbar. Contract: [README](extensions/RQW-todo/README.md), `DECISIONS.md` `[D-TODO-PANEL]`. Tests: `test/extensions/RQW-todo/`, `test/synthetic-todo.test.ts`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
   Right/Left effort up/down. Plain or Shift arrows navigate; Enter commits once, Esc closes without setters.
