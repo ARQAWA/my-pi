@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const { createUpdater } = require('../update-my-pi.js');
 
 // Tiny ustar bytes: no archive tools, subprocesses or external files.
-function archive(dependencies = { ws: '1', other: '2' }, code = 'new code', piVersion = '1.4.0') {
+function archive(dependencies = { ws: '1', other: '2' }, code = 'new code', piVersion = '1.5.0') {
   const files = {
     'package.json': JSON.stringify({
       name: 'my-pi', type: 'module', dependencies, devDependencies: { typebox: '3' },
@@ -49,7 +49,7 @@ function fixture(t, options = {}) {
   fs.writeFileSync(path.join(root, 'pi', 'pi.exe'), 'fake Pi');
   fs.writeFileSync(path.join(bundled, 'package.json'), JSON.stringify({
     name: 'my-pi', dependencies: { other: '2', ws: '1' },
-    peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
+    peerDependencies: { '@earendil-works/pi-coding-agent': '1.5.0', typebox: '*' },
   }));
   fs.writeFileSync(path.join(bundled, '.revision'), 'a'.repeat(40));
   fs.writeFileSync(path.join(bundled, 'extensions', 'demo', 'index.ts'), 'original code');
@@ -217,9 +217,9 @@ test('changed Pi requirement retains selected code and asks to update the extens
   await f.update();
   const previous = f.selected();
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(previous, 'package.json'))).peerDependencies, {
-    '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*',
+    '@earendil-works/pi-coding-agent': '1.5.0', typebox: '*',
   });
-  f.next('c'.repeat(40), archive(undefined, 'incompatible code', '1.5.0'));
+  f.next('c'.repeat(40), archive(undefined, 'incompatible code', '1.6.0'));
   await f.update();
   assert.equal(f.selected(), previous);
   assert.equal(fs.readFileSync(path.join(previous, 'extensions/demo/index.ts'), 'utf8'), 'new code');

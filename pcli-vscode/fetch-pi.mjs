@@ -8,10 +8,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const VERSION = '1.4.0';
-const URL = 'https://github.com/earendil-works/pi/releases/download/v1.4.0/pi-windows-x64.zip';
+const VERSION = '1.5.0';
+const URL = 'https://github.com/earendil-works/pi/releases/download/v1.5.0/pi-windows-x64.zip';
 // Хэш из SHA256SUMS этого релиза, зашит как якорь доверия
-const SHA256 = '0f7256ea8bdac3af20012b94fdc1252a31cc6dc0d2f9b9eb539555d22e3e321b';
+const SHA256 = '12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(root, 'pi');

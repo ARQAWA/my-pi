@@ -100,7 +100,7 @@ test('materialization writes product resources, manifest and exact revision', as
     name: 'my-pi', type: 'module', scripts: { test: 'development only' },
     pi: { extensions: ['./extensions/RQW-demo/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
     dependencies: { ws: '8.22.0' }, devDependencies: { typebox: '1.3.27', typescript: '7.0.2' },
-    peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
+    peerDependencies: { '@earendil-works/pi-coding-agent': '1.5.0', typebox: '*' },
   }));
   const bundle = materializeMyPi(source, path.join(root, 'my-pi'), sha);
   assert.equal(fs.readFileSync(path.join(bundle, '.revision'), 'utf8'), sha + '\n');
@@ -112,7 +112,7 @@ test('materialization writes product resources, manifest and exact revision', as
     name: 'my-pi', private: true, type: 'module',
     pi: { extensions: ['./extensions/RQW-demo/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
     dependencies: { ws: '8.22.0' },
-    peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
+    peerDependencies: { '@earendil-works/pi-coding-agent': '1.5.0', typebox: '*' },
   });
   const manifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url)));
   assert.match(manifest.scripts['vscode:prepublish'], /bundle-my-pi\.mjs/);
