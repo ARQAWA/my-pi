@@ -7,14 +7,14 @@ No Pi patches, method replacement or wrapping, private fields, component-tree sp
 are allowed. Only public extension and TUI APIs are used.
 
 Current state: agent cards (`card.ts`, `fit.ts`) for ordinary children, including the `spotty` and `bossy`
-reviewer profiles. A current result arrives as the result of an `agent` `wait` call. The cards for `agent` messages and
+reviewer profiles. A current result arrives as one hidden automatic message with no card; the `wait` result cards below draw only older stored sessions. The cards for `agent` messages and
 `child_wait` notifications stay only for results stored by older versions. Stored `review`, `job`, `code_writer` and
 `shell_runner` messages of older sessions have no card and show Pi's stock block (`[D-UI-OLD-CARDS]`). The package registers agent-ui in `pi.extensions`
 before RQW-tool-ui. The upper-input activity indicator is not here (RQW-statusbar).
 
 ## Wiring (`index.ts`, `wait.ts`, `self.ts`)
 
-A current subagent result reaches the transcript as the `wait` result of the `agent` tool (second item below). The
+A current subagent result reaches the transcript as a hidden automatic message; the `wait` result of the `agent` tool (second item below) exists only in older sessions. The
 other two paths below show only results that older versions stored, and each gets the ordinary agent card.
 Reviewer profiles use the same cards. Everything is display
 only: stored messages, tool results, their details and what the model sees are never changed.
@@ -24,7 +24,7 @@ only: stored messages, tool results, their details and what the model sees are n
   (`id`, `outcome`, `model`, `thinking`, `seconds`, optional `title`, `prompt_file` and `profile`, beside `delivery`
   and `run`). Profile provenance is `{ name, path, sha256 }`; all three fields stay in stored details, not card text. `prompt_file` provenance (`kind`, absolute `path`, `sha256`) and delivery
   tokens also stay stored but are not card text.
-- **`wait` result** of the `agent` tool: `index.ts` registers one
+- **`wait` result** of the `agent` tool, stored history only: `index.ts` registers one
   `pi.registerToolRenderer` resolver. For this tool it returns the renderers of whatever comes after it
   (`next()`: another extension's, else the tool's). Without a self shell, only `renderResult` is replaced (`wait.ts`):
   a finished, collapsed call with `action: "wait"` shows one card per delivered result of `details.results[i]`, with that item's
@@ -33,7 +33,7 @@ only: stored messages, tool results, their details and what the model sees are n
   items, so each delivered answer gets a card. The call row, the tool shell and every other call (`start`, `status`,
   `send`, timeouts and receipts without results, errors, partial updates) are left to the next renderer. A wait that returns no
   answer (`interrupted`, `timeout`, `alert`, `target_changed`, receipt) is one short text line and stays stock; wait
-  details carry no `statuses` (`[D-AGENT-WAIT-LEAN]`).
+  details carry no `statuses` (`[D-AGENT-STATUS]`).
 - **`child_wait` notification, stored history only** (`child-wait.ts`): an older `wait` ended through a notification, and RQW-agent
   delivered the result as a custom message `child_wait` whose `details` are the wait result and whose content is the same object as
   JSON text. `index.ts` registers `createChildWaitCard` for it. With `reason: "result"` and at least one

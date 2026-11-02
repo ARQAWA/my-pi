@@ -6,6 +6,7 @@ import test from "node:test";
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
 import registerAgent from "../extensions/RQW-agent/index.ts";
+import { adoptSource, takeFrom } from "./extensions/RQW-agent/consumer.ts";
 import { createJobs, createJobTool } from "../extensions/RQW-tools/jobs.ts";
 
 const until = async (done: () => boolean) => {
@@ -65,11 +66,12 @@ test("a child waits for a job of the real job registry without a request; the jo
 	registerAgent(pi);
 	t.after(async () => { for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx); });
 	const call = (id: string, params: any) => tools.get("agent").execute(id, params, ctx.signal, undefined, ctx);
+	const source = await adoptSource(pi, hooks, ctx);
 	await call("start", { action: "start", task: "outer", tools: ["bash"] });
 	await until(() => started);
 	t.mock.timers.tick(12);
 	let waited: any;
-	void call("wait", { action: "wait", ids: ["agent#1"] }).then(result => { waited = result; });
+	void takeFrom(source, message => { parent.appendCustomMessageEntry("rqw-auto-wait-results", message.content, false, message.details); }).then(result => { waited = result; });
 	await until(() => requests.length === 2);
 	for (let i = 0; i < 40; i++) await new Promise(resolve => setImmediate(resolve));
 	assert.equal(waited, undefined, "a running job keeps the run open");

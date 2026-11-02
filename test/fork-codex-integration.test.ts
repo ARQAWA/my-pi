@@ -64,7 +64,7 @@ test("Codex fork sends the caller's prepared prefix with isolated tool execution
 	let definition: any;
 	events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => ["bash", "z_tool"].map(name => ({ name, label: name, description: name, parameters: Type.Object({}), execute: async () => { executed.push(name); return { content: [{ type: "text", text: `${name} executed` }], details: {} }; } })), { names: ["bash", "z_tool"], aliases: {} }));
 	const pi: any = { events, on: (name: string, hook: any) => hooks.set(name, [...hooks.get(name) ?? [], hook]), registerTool: (tool: any) => { definition = tool; }, appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data), getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }), getThinkingLevel: () => "low", getActiveTools: () => ["bash"], sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details) };
-	const live = registerSessionRuntime(pi, events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const live = registerSessionRuntime(pi, events, false, undefined, undefined, undefined, undefined, "", undefined);
 	try {
 		for (const hook of hooks.get("session_start") ?? []) await hook({}, ctx);
 		const execute = (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx);

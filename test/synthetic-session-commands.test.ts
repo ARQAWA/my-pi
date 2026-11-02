@@ -5,6 +5,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { after, it, type TestContext } from "node:test";
 import { call, isTask, keys, reportTimings, text, world } from "./synthetic/world.ts";
+import { untilWake } from "./synthetic/wake.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -66,8 +67,9 @@ it("/remove asks first and answering No keeps the session file and the chat", as
 it("/cleanup removes a child tree whose session file is gone and keeps live trees and the current one", async (t) => {
 	const w = await world(t);
 	w.model.when(isTask("count files"), text("three"));
-	w.model.script(call("agent", { action: "start", task: "count files" }, "a1"), call("agent", { action: "wait", ids: ["agent#1"] }, "a2"), text("done"));
+	w.model.script(call("agent", { action: "start", task: "count files" }, "a1"), text("waiting"), text("done"));
 	await w.submit("go");
+	await untilWake(w);
 	const [childFile] = w.childFiles(1);
 	assert.ok(childFile, "the current session has a child tree");
 

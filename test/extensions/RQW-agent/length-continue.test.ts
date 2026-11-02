@@ -7,6 +7,7 @@ import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-wo
 import { AssistantMessageComponent, createAgentSession, createEventBus, DefaultResourceLoader, initTheme, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import agentExtension, { registerSessionRuntime } from "../../../extensions/RQW-agent/index.ts";
 import { installCutLine } from "../../../extensions/RQW-agent/cut-line.ts";
+import { takeFrom } from "./consumer.ts";
 import { LENGTH_CONTINUE_LIMIT, LENGTH_CONTINUE_TYPE } from "../../../extensions/RQW-agent/length-continue.ts";
 
 type Reply = ReturnType<typeof fauxAssistantMessage>;
@@ -61,17 +62,18 @@ async function childRun(t: TestContext, replies: Reply[]) {
 		getThinkingLevel: () => "off", getActiveTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
 	t.after(() => runtime.close());
 	const execute = (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx);
+	const take = () => takeFrom(runtime.autoSource!()!, message => { parent.appendCustomMessageEntry("rqw-auto-wait-results", message.content, false, message.details); });
 	return {
 		requests: faux.requests,
 		async run(task: string) {
 			await execute({ action: "start", task });
-			return (await execute({ action: "wait", ids: ["agent#1"] })).details.results[0];
+			return (await take()).details.results[0];
 		},
 		async alerts() { return (await execute({ action: "status", ids: ["agent#1"] })).details.statuses[0].alerts as { kind: string }[]; },
-		send: async (id: string, task: string) => { await execute({ action: "send", id, task }); return (await execute({ action: "wait", ids: [id] })).details.results[0]; },
+		send: async (id: string, task: string) => { await execute({ action: "send", id, task }); return (await take()).details.results[0]; },
 	};
 }
 

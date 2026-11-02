@@ -44,8 +44,10 @@ function fixture(randomInt: (max: number) => number, callerModel?: { provider: s
 		end(made.toolCallId, `agent#${++agents} started`);
 		return made.args.model as string;
 	};
-	// A wait that delivers the final results of these agents.
-	const delivered = (...ids: string[]) => end(`wait-${++calls}`, "wait", { results: ids.map((id) => ({ id, outcome: "completed" })) });
+	// The automatic message that delivers the final results of these agents.
+	const delivered = (...ids: string[]) => handlers.get("message_end")!({
+		message: { role: "custom", customType: "rqw-auto-wait-results", details: { results: ids.map((id) => ({ id, outcome: "completed" })) } },
+	});
 	return Object.assign(call, { end, started, delivered });
 }
 
@@ -141,7 +143,7 @@ test("a slot is freed when the agent's final result is delivered, failure includ
 	call.delivered("agent#2");
 	assert.equal(call.started(analysis), SOL);
 	assert.equal(call(analysis).result.block, true);
-	call.end("wait-failed", "wait", { results: [{ id: "agent#7", outcome: "error" }] });
+	call.delivered("agent#7");
 	assert.equal(call.started(analysis), OPUS);
 });
 

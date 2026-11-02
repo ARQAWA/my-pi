@@ -18,7 +18,7 @@ import { interrupted, RESUME_NOTE, RESUME_TYPE } from "./resume.ts";
 export const ENTRY = "rqw-send-now";
 /** Only Codex has the second Ctrl+Enter that forces; other providers force with Escape (and an empty Enter, as before). */
 const CODEX = "openai-codex";
-/** The wait tools' channel: `{ sessionId, call, open }` when a wait opens or closes (RQW-agent, RQW-tools). */
+/** The wait tools' channel: `{ sessionId, call, open }` when a wait opens or closes (RQW-tabs-link's `wait_answer`). */
 const WAITING = "rqw:waiting:v1";
 /** Two Escape presses within this time are one gesture. */
 const DOUBLE_ESCAPE_MS = 500;

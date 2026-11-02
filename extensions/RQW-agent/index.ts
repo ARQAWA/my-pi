@@ -21,7 +21,6 @@ import { SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt
 import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
-import { steeringWait } from "./steering-wait.ts";
 import { AUTO_RESULTS, type AutoSource, backgroundIds, backgroundLive, backgroundReady, takeBackground, untilBackgroundChange } from "./background.ts";
 import { INBOX_ENTRY, LOST_TEXT, lostIds, markedIds, WAITING_ENTRY } from "./waiting.ts";
 import { continueOnLength, isContinuedCut } from "./length-continue.ts";
@@ -34,7 +33,7 @@ import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
-import { Coordinator, type AcceptRecord, type RuntimeHandle, deadlineTimer, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
+import { Coordinator, type AcceptRecord, type RuntimeHandle, deadlineTimer, targetIds, messageCount, statusDepth, jsonResult } from "./coordinator.ts";
 import { continueNote, repairRequest } from "./history-repair.ts";
 import { ACCEPT_ENTRY, BASE_ENTRY, CHILD_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, releaseChildManager, parentHoldsEntry, repairInterrupted, savedHistoryMatches } from "./persistence.ts";
 
@@ -48,9 +47,9 @@ export const DESCRIPTION = [
 	"Tool for spawning and managing sub-agents.",
 	"Spawns an agent to work on the specified task with action start. It returns the agent id agent#N.",
 	"The spawned agent will have the base tools or the `tools` subset, job and web when they are offered, codemode and tool_search when you have them, and always the ability to spawn its own subagents.",
-	"Call wait to receive its final answer.",
+	"Need a result of your agents or jobs? End your turn. Their final results arrive automatically in one message, and you continue. A subagent's own final answer reaches its parent only when nothing it started is still running; stop or kill what you no longer need.",
 	"By default the spawned agent gets no surrounding context beyond its task; `include: [\"user_messages\"]` adds your user's messages. On start, `fork_turns: \"all\"` instead copies the current branch with the caller's prompt, model and tools; it is durable when the parent has a session file.",
-	"Do not poll; use status only for a check you need. If you need a result, call wait directly in a wait-only batch; do not call wait inside codemode. A nested wait returns direct_wait_required and a mixed batch returns work_pending; neither consumes results. Never fabricate or predict a pending agent's results. The user may not have opened the agent's report: relay what matters.",
+	"Do not poll; use status only for a check you need. Never fabricate or predict a pending agent's results. The user may not have opened the agent's report: relay what matters.",
 	"Treat its result as finished work; don't redo its searches, reads or runs. When you hand its work to another agent or cite it, use source links or verbatim quotes, never a bare retelling, and cite only what you have seen in a source, opening just that spot if you have not. Check a claim only when it has no path and line, contradicts what you have seen, shows an obvious failure or misses a significant edge case, comes from a failed or incomplete run, or is a significant behavioral change no one has verified by a test or run; then check just that claim or send the same agent a short follow-up, and still run any check the user or a skill asks for.",
 	"",
 	"All agents share the same directory. In detail:",
@@ -63,12 +62,11 @@ export const DESCRIPTION = [
 	"Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.",
 	"",
 	"send: Send a follow-up task to an existing agent and trigger a turn if it is idle. If the target is already running, deliver the task after its current tool call completes.",
-	"wait: Wait for agents to reach a final status. A wait is a signal and costs no model tokens while it is open. It returns only real final answers (id, title, outcome, text). On user steering, a changed target or the timeout it returns one short line such as \"interrupted; still running: agent#1, agent#2\", with no per-agent detail; use status for detail. Timeout and abort stop only the wait. Each result arrives once through wait.",
 	"interrupt: Interrupt an agent's current turn, if any, and return its previous status. The agent remains available for messages and follow-up tasks. Cancellation can stay pending; inspect it with status.",
 	"status: List the status of the listed direct agents: last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control.",
 	"stop: Close an agent and any open descendants when they are no longer needed. Completed agents remain open and keep their history until closed. Don't keep agents open for too long if they are not needed anymore.",
 	"resume: Resume a previously interrupted or failed agent by id so it retries its last request from saved history, without a new message. Child sessions survive Pi restarts with the same caller-local id.",
-	"start/restart: system_file or role_file loads exact UTF-8 text relative to the caller cwd instead of matching inline text; system and role choices are mutually exclusive. Restart inherits the file choice and re-reads it before replacing the child. Result details record prompt_file {kind, path (absolute), sha256 (file bytes)} under results[].display on wait.",
+	"start/restart: system_file or role_file loads exact UTF-8 text relative to the caller cwd instead of matching inline text; system and role choices are mutually exclusive. Restart inherits the file choice and re-reads it before replacing the child. Result details record prompt_file {kind, path (absolute), sha256 (file bytes)} in the result display details.",
 	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
 	"agent_type on start/restart selects a named Codex TOML profile from the catalogue below. Its developer_instructions are a role after the root prompt and reminder, not a sandbox. Profile model, effort and instructions are defaults; explicit model, thinking, role, role_file, system and system_file use ordinary API semantics. Unset fields use ordinary defaults. Profiles keep the same tools and recursive delegation as generic agents.",
 	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session; a selected agent_type is inherited and re-read unless changed.",
@@ -77,14 +75,11 @@ export const DESCRIPTION = [
 ].join("\n");
 
 const PARAMETERS = Type.Object({
-	action: StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"]),
+	action: StringEnum(["start", "status", "send", "resume", "interrupt", "stop", "restart"]),
 	fork_turns: Type.Optional(StringEnum(["none", "all"], { description: "start only: copy the current branch with all; default none. all refuses model, thinking, agent_type, system, system_file, role, role_file and include." })),
 	id: Type.Optional(Type.String({ description: "Agent id to send a follow-up task to, resume, interrupt, stop or restart (from start): agent#N or N." })),
-	ids: Type.Optional(Type.Array(Type.String(), { description: "Agent ids to wait on or to inspect with status: full direct child IDs agent#N. Pass multiple ids to wait for whichever finishes first." })),
-	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Timeout in milliseconds. Defaults to 300000, min 1, no max. Prefer longer waits (minutes) to avoid busy polling." })),
+	ids: Type.Optional(Type.Array(Type.String(), { description: "Agent ids to inspect with status: full direct child IDs agent#N." })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
-	until: Type.Optional(StringEnum(["first", "all"], { description: "wait: first terminal result (default), or hold results until all selected targets are terminal" })),
-	wake_on_alert: Type.Optional(Type.Boolean({ description: "wait: return one short line on a new structured alert without consuming a result; default false, alerts never wake a wait" })),
 	depth: Type.Optional(Type.Integer({ minimum: 0, description: "status: descendant generations to include, read-only; default 0" })),
 	alert_after_ms: Type.Optional(Type.Integer({ minimum: 1, description: "start/restart: long-turn alert threshold in milliseconds, positive safe integer; disabled by default, inherited on restart" })),
 	system: Type.Optional(Type.String({ description: "Whole system prompt, replacing the default (your prompt and role); the subagent reminder is still appended after it; start, restart" })),
@@ -188,8 +183,6 @@ class NotificationBridge {
 		for (const listener of [...this.listeners]) listener();
 	}
 }
-/** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
-type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile; profile?: ProfileRef };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean; backgroundCount?(): number; autoSource?(): { source: AutoSource; close(): void } };
 type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
@@ -226,25 +219,6 @@ type Agent = Child & {
 
 /** The run's own record (startRun), from its assistant message_end events: last executed model and last stop reason. */
 export type RunMeta = { model?: string; stop?: string };
-
-/**
- * The display details of a run that ended: its executed model (only an actually executed one, if any), the session's
- * selected thinking (if any), monotonic seconds rounded to 0.1. A final aborted or length stop counts as failed.
- */
-export function resultDisplay(id: string, outcome: "completed" | "error", activity: Activity, meta: RunMeta, thinking?: string, title?: string): Display {
-	const model = meta.model;
-	// A final aborted or length stop that was delivered counts as failed; a successful retry ends with stop.
-	const stop = meta.stop;
-	const failed = outcome === "error" || stop === "aborted" || stop === "length";
-	return {
-		id,
-		outcome: failed ? "failed" : "finished",
-		...(model ? { model } : {}),
-		...(thinking ? { thinking } : {}),
-		seconds: Math.round(activity.runElapsedMs() / 100) / 10,
-		...(title ? { title } : {}),
-	};
-}
 
 /** Records one assistant message_end into its run's record: the stop reason, and the executed model when given. The last one wins. */
 export function recordRunMessage(meta: RunMeta, message: Pick<AssistantMessage, "provider" | "model" | "stopReason">): void {
@@ -421,16 +395,14 @@ export default function agent(pi: ExtensionAPI) {
  * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
  */
 function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
-	const coordinator = new Coordinator(pi, host?.send, (type, data) => pi.appendEntry(type, data));
+	const coordinator = new Coordinator(pi, host?.send);
 	continueOnLength(pi);
 	// The main screen only; a child has none.
 	if (top) pi.on("session_shutdown", installCutLine(isContinuedCut));
-	// Display details of delivered results, by run, until shutdown (see publishRun).
-	const displays = new Map<string, Display>();
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
 	const counts = top ? createCountsProducer(() => runtime.runningCounts(), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt, labelPrefix, host);
+	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, notify, basePrompt, labelPrefix, host);
 	if (top) pi.registerCommand("resume-agents", {
 		description: "Resume unfinished children without sending a message to the main model",
 		handler: async (_args, ctx) => { const count = await runtime.resume?.(ctx.signal ?? new AbortController().signal) ?? 0; ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
@@ -477,7 +449,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 }
 
 /** Caller-local state. Nested callers and their children settle independently. */
-export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, _backgroundCaller = false, coordinator = new Coordinator(pi, undefined, (type, data) => pi.appendEntry(type, data)), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, _backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
 	const name = "agent";
 	const payloads = forkPayloads();
 	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/agent#2". */
@@ -500,8 +472,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	const callerIdle = () => host ? !host.busy() : main?.isIdle() !== false;
 	let mainAborted = false;
 	const unansweredProgress = new Set<string>();
-	/** Runs whose display details this runtime stored in `displays`; removed at shutdown. */
-	const ownRuns = new Set<string>();
 	const catalogue = new ProfileCatalogue();
 
 	async function refreshProfiles(ctx: ExtensionContext) {
@@ -513,12 +483,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const effort = profile.model_reasoning_effort === "none" ? "off" : profile.model_reasoning_effort ?? pi.getThinkingLevel();
 			return `${profile.name}: ${profile.description}; model=${model}; effort=${effort}; source=${profile.path}${profile.not_applied ? `; not applied: ${profile.not_applied.join(", ")}` : ""}${profile.error ? "; invalid profile" : ""}`;
 		});
-		let automatic = false;
-		if (!_backgroundCaller) toolEvents.emit("rqw:auto-wait:capability:v1", { sessionId: ctx.sessionManager.getSessionId(), offer: () => { automatic = true; } });
-		const base = automatic ? DESCRIPTION
-			.replace("Call wait to receive its final answer.", "Final answers arrive automatically when the main chat is idle; end your turn while work continues.")
-			.replace("If you need a result, call wait directly in a wait-only batch;", "For an explicit wait, call it directly in a wait-only batch;") : DESCRIPTION;
-		const description = `${base}\n\nAvailable roles:\n${lines.join("\n") || "No profiles discovered."}`;
+		const description = `${DESCRIPTION}\n\nAvailable roles:\n${lines.join("\n") || "No profiles discovered."}`;
 		const names = offeredFactory()?.catalogue?.names ?? [...TOOLS];
 		definition.description = description;
 		definition.parameters = toolParameters(names);
@@ -526,37 +491,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	}
 
 	/**
-	 * Stores display details before publishing the result, so an open wait can claim it synchronously.
+	 * Publishes the result to the coordinator, where the automatic source claims it.
 	 */
 	function publishRun(a: Agent, identity: { id: string; run: string }, text: string, outcome: "completed" | "error", meta: RunMeta) {
 		a.state = "completed";
 		const delivery = randomUUID();
 		a.result = { run: identity.run, text, outcome, meta: { ...meta }, delivery };
 		persist(a);
-		displays.set(identity.run, displayOf(a, identity.id, outcome, meta));
-		ownRuns.add(identity.run);
 		coordinator.publish(identity.id, identity.run, text, outcome, delivery, a.title);
-	}
-
-	/** The display details of a run that ended, from its activity and this session's selected thinking. */
-	function displayOf(a: Agent, id: string, outcome: "completed" | "error", meta: RunMeta): Display {
-		return { ...resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel, a.title),
-			...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}),
-			...(a.config.profile ? { profile: a.config.profile } : {}) };
-	}
-
-	/**
-	 * Adds each result's display details to a copy of the wait details. The content text and the original body are
-	 * kept byte for byte: the model never sees the display fields.
-	 */
-	function withDisplays<T extends { content: unknown; details: unknown }>(result: T): T {
-		const details = result.details as { results?: Record<string, unknown>[] };
-		if (!details.results?.length) return result;
-		const results = details.results.map(r => {
-			const display = displays.get(String(r.run));
-			return display ? { ...r, display } : { ...r };
-		});
-		return { ...result, details: { ...details, results } };
 	}
 
 	/** Active assignments and nested callers; completed results count zero. */
@@ -582,7 +524,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			recovers: a.recovers,
 			active: () => !!a.run || !!a.next?.length || recoveryPending.has(a.id),
 			title: () => a.title,
-			alertVersion: () => a.activity.alertVersion(),
 			snapshot: (messages?: number, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}), ...a.activity.snapshot(messages),
 				...(a.state === "paused" && !a.run ? { state: "paused" } : {}),
 				...(recoveryErrors.has(a.id) ? { recovery_error: recoveryErrors.get(a.id)!.error } : {}),
@@ -991,12 +932,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const results = savedAnswers.get(a.id) ?? new Map<string, SavedResult>();
 			if (a.result) results.set(a.result.run, a.result);
 			for (const result of results.values()) if (!delivered.has(result.run)) {
-				displays.set(result.run, "session" in a ? displayOf(a, `${name}#${a.id}`, result.outcome, result.meta) : {
-					id: `${name}#${a.id}`, outcome: result.outcome === "error" || ["aborted", "length"].includes(result.meta.stop ?? "") ? "failed" : "finished",
-					seconds: 0, thinking: a.config.thinking, ...(result.meta.model ? { model: result.meta.model } : {}),
-					...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}),
-					...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}) });
-				ownRuns.add(result.run);
 				answers.push({ id: `${name}#${a.id}`, run: result.run, text: result.text, outcome: result.outcome, delivery: result.delivery, title: a.title });
 			}
 		}
@@ -1489,7 +1424,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		recoveryPending.delete(a.id);
 		a.children?.abortAll();
 		a.jobs?.abortAll();
-		coordinator.change(`${name}#${a.id}`, "interrupt");
+		coordinator.change(`${name}#${a.id}`);
 		run.quiet = true;
 		a.state = "paused";
 		a.sends = [];
@@ -1603,20 +1538,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				if (!fork.payload || fork.payload.model.id !== fork.model.id || fork.payload.model.provider !== fork.model.provider || fork.payload.model.api !== fork.model.api || !Array.isArray(fork.payload.payload[anthropic ? "messages" : "input"]))
 					throw new Error(`Cannot fork ${anthropic ? "Anthropic" : "Codex"}: caller's last provider payload is unavailable`);
 			}
-			// Queue only registration/snapshot, never the waiting Promise or a tool that ignores abort.
-			if (params.action === "wait") {
-				const steering = steeringWait(ctx, toolEvents, toolCallId);
-				const registration = coordinator.queue.then(async () => {
-					signal.throwIfAborted();
-					await hydrate(ctx, signal);
-					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
-					touch(ids);
-					const options = { until: params.until as "first" | "all" | undefined, wake_on_alert: params.wake_on_alert };
-					return { waiting: coordinator.wait(ids, timeout, signal, toolCallId, options, steering) };
-				});
-				coordinator.queue = registration.catch(() => {});
-				return registration.then(({ waiting }) => waiting).then(withDisplays).finally(() => steering.close());
-			}
 			const next = coordinator.queue.then(() => { signal.throwIfAborted(); return act(params, ctx, signal, fork); });
 			coordinator.queue = next.catch(() => {});
 			return untilAborted(next, signal);
@@ -1639,7 +1560,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				const depth = statusDepth(params.depth);
 				if (depth > 0) await agents.get(number)?.children?.prepareStatus?.(depth - 1, signal);
 			}
-		} else if (!["start", "wait", "stop"].includes(params.action)) {
+		} else if (!["start", "stop"].includes(params.action)) {
 			const id = localNumber(params.id);
 			if (id !== undefined && savedSlots.has(id) && !lostFork) await hydrate(ctx, signal, id);
 		}
@@ -1649,7 +1570,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const task = params.include?.includes("user_messages") && params.task !== undefined
 			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
 		switch (params.action) {
-			case "status": touch(targetIds(params.ids)); return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), statusDepth(params.depth)) });
+			case "status": touch(targetIds(params.ids)); return jsonResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), statusDepth(params.depth)) });
 			case "start": {
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
@@ -1683,7 +1604,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(id, a);
 					onRunning();
-				} catch (error) { agents.delete(id); a.state = "stopped"; a.sends = []; persist(a); coordinator.change(`${name}#${id}`, "canceled_start"); close(a); throw error; }
+				} catch (error) { agents.delete(id); a.state = "stopped"; a.sends = []; persist(a); coordinator.change(`${name}#${id}`); close(a); throw error; }
 				return ok(`${name}#${id} started`);
 			}
 			case "resume": {
@@ -1716,7 +1637,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					try {
 						if (a.core.on) {
 							a.session.agent.steer({ role: "user", content: [{ type: "text", text: params.task }], timestamp: Date.now() });
-							toolEvents.emit("rqw:wait-steer:v1", { sessionId: a.session.sessionManager.getSessionId() });
 						} else await untilAborted(a.session.steer(params.task), signal);
 					} catch (error) { a.sends = a.sends.filter(item => item !== batch); persist(a); throw error; }
 					a.nudge?.();
@@ -1739,12 +1659,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				if (!run) {
 					if (recoveryPending.delete(a.id)) {
 						// A child waiting for recovery is paused by hand and is not resumed.
-						coordinator.change(`${name}#${a.id}`, "interrupt");
+						coordinator.change(`${name}#${a.id}`);
 						a.state = "paused"; persist(a); coordinator.add(target(a));
 					} else if (pending) persist(a);
 					a.children?.abortAll(); a.jobs?.abortAll(); touch([`${name}#${a.id}`]); return ok(`${name}#${a.id} is idle`); }
 				requestInterrupt(a, run);
-				return waitResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
+				return jsonResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
 			}
 			case "stop": {
 				const id = localNumber(params.id);
@@ -1755,7 +1675,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					branchIndex?.saved.set(id, data);
 					savedSlots.delete(id);
 					recoveryErrors.delete(id); recoveryPending.delete(id);
-					coordinator.change(`${name}#${id}`, "stop");
+					coordinator.change(`${name}#${id}`);
 					return ok(`${name}#${id} stopped`);
 				}
 				const a = find(params.id);
@@ -1763,7 +1683,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				a.state = "stopped"; a.sends = []; persist(a);
 				agents.delete(a.id);
 				onRunning();
-				coordinator.change(`${name}#${a.id}`, "stop");
+				coordinator.change(`${name}#${a.id}`);
 				close(a, false, async () => {
 					const manager = a.session.sessionManager;
 					const file = manager.getSessionFile();
@@ -1791,7 +1711,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					savedSlots.delete(id); recoveryErrors.delete(id); recoveryPending.delete(id);
 				}
 				onRunning();
-				coordinator.change(`${name}#${id}`, "restart");
+				coordinator.change(`${name}#${id}`);
 				if (old) close(old);
 				const fast = { on: params.fast_gpt ?? old?.fast.on ?? lostFork!.fast };
 				config.settings = childSettings(pi.getSettings());
@@ -1811,7 +1731,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(a.id, a);
 					onRunning();
-				} catch (error) { agents.delete(a.id); a.state = "stopped"; a.sends = []; persist(a); coordinator.change(`${name}#${a.id}`, "canceled_restart"); close(a); throw error; }
+				} catch (error) { agents.delete(a.id); a.state = "stopped"; a.sends = []; persist(a); coordinator.change(`${name}#${a.id}`); close(a); throw error; }
 				return ok(`${name}#${a.id} restarted${params.task ? "" : ", idle"}`);
 			}
 			default: throw new Error(`Unknown action: ${params.action}`);
@@ -1834,8 +1754,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		payloads.clear();
 		generation.abort(new Error("The caller changed its session branch"));
 		generation = new AbortController();
-		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "branch_changed"); close(a); }
-		for (const id of [...savedSlots.keys(), ...recoveryErrors.keys()]) coordinator.change(`${name}#${id}`, "branch_changed");
+		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`); close(a); }
+		for (const id of [...savedSlots.keys(), ...recoveryErrors.keys()]) coordinator.change(`${name}#${id}`);
 		agents.clear(); savedSlots.clear(); restoring.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; branchIndex = undefined; bases = undefined; main = ctx;
 		unansweredProgress.clear();
 	});
@@ -1853,9 +1773,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		for (const a of agents.values()) {
 			if (a.state !== "paused" && (a.run || a.state === "running")) a.state = "interrupted";
 			persist(a);
-			coordinator.change(`${name}#${a.id}`, "shutdown"); close(a);
+			coordinator.change(`${name}#${a.id}`); close(a);
 		}
-		for (const id of savedSlots.keys()) coordinator.change(`${name}#${id}`, "shutdown");
+		for (const id of savedSlots.keys()) coordinator.change(`${name}#${id}`);
 		agents.clear();
 		savedSlots.clear(); restoring.clear();
 		hydrated = false;
@@ -1868,8 +1788,6 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		lifetime.abort(new Error("The caller session is shutting down"));
 		abortAll();
 		auto?.close(); auto = undefined;
-		for (const run of ownRuns) displays.delete(run);
-		ownRuns.clear();
 	};
 	pi.on("session_shutdown", shutdown);
 	// Pi's switch (/new, /resume) and /fork run session_shutdown, which would abort the running children: refuse until they end.

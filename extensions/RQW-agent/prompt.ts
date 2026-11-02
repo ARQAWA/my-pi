@@ -28,7 +28,7 @@ export const LEGACY_SUBAGENT_REMINDER = [
 	"</subagent>",
 ].join("\n");
 
-/** Cursor's completion follow-up, appended to every delivered final result (push, wait, child_wait). */
+/** Cursor's completion follow-up, appended to every delivered final result (automatic result; older sessions: push, wait, child_wait). */
 export const FOLLOW_UP = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
 
 /** The default subagent prompt: the main agent's prompt, the reminder, then the role when given. */

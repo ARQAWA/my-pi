@@ -62,7 +62,7 @@ export class Slots {
 	}
 
 	/**
-	 * Reads the finished call. A wait result lists the agents that ended. A failed call changes nothing, except that
+	 * Reads the finished call. A failed call changes nothing, except that
 	 * a failed stop means the agent is gone. A failed restart keeps the slot: it may fail before or after RQW-agent closes
 	 * the old agent, and the `stop` that follows frees the slot either way.
 	 */
@@ -72,9 +72,6 @@ export class Slots {
 		if (isError) {
 			if (call?.id && call.action === "stop") this.forget(call.id);
 			return;
-		}
-		for (const item of Array.isArray(result?.details?.results) ? result.details.results : []) {
-			if (typeof item?.id === "string") this.finish(item.id);
 		}
 		if (!call) return;
 		if (call.action === "start") {
@@ -87,6 +84,13 @@ export class Slots {
 			if (call.id && call.model && !this.live.has(call.id)) this.take(call.id, call.model);
 		} else if (call.id) {
 			this.forget(call.id);
+		}
+	}
+
+	/** The automatic result message lists the agents whose final results it delivers; their slots are free. */
+	delivered(details: any): void {
+		for (const item of Array.isArray(details?.results) ? details.results : []) {
+			if (typeof item?.id === "string") this.finish(item.id);
 		}
 	}
 

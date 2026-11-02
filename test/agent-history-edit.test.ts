@@ -38,7 +38,7 @@ function agentRuntime(parent: SessionManager, cwd: string) {
 		getThinkingLevel: () => "off", getActiveTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
 	return { runtime, requests, execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx) };
 }
 

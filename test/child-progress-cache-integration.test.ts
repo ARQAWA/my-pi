@@ -70,7 +70,7 @@ test("agent tool delivers a child's 50-step progress through the Anthropic fork"
 		modelRegistry: { runtime, find: () => model, hasConfiguredAuth: () => true }, isIdle: () => true,
 		isProjectTrusted: () => true, getSystemPrompt: () => "original prompt", signal: new AbortController().signal,
 		mode: "tui", ui: { notify() {} } };
-	const handle = registerSessionRuntime(pi, events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const handle = registerSessionRuntime(pi, events, false, undefined, undefined, undefined, undefined, "", undefined);
 	events.on("rqw-codex:session-policy", (request: any) => overlay.forks.registerSource(request.session.sessionId));
 	events.on("rqw:context-fork:v1", (request: any) => overlay.forks.offer(request));
 	events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => [{

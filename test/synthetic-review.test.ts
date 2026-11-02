@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
 import { call, isTask, reportTimings, text, world } from "./synthetic/world.ts";
+import { untilWake } from "./synthetic/wake.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -11,10 +12,11 @@ async function review(t: Parameters<typeof world>[0], profile: "spotty" | "bossy
 	w.model.when(isTask("check it"), text("CLEAN"));
 	w.model.script(
 		call("agent", { action: "start", agent_type: profile, task: "check it", title: "Check" }, "r1"),
-		call("agent", { action: "wait", ids: ["agent#1"] }, "r2"),
+		text("waiting"),
 		text("reviewed"),
 	);
 	await w.submit("go");
+	await untilWake(w);
 	return w;
 }
 
@@ -32,7 +34,7 @@ it("a spotty start gives the child the profile's model, effort and reviewer role
 	assert.equal(main.model.id, "claude-opus-5-5");
 	assert.ok(!JSON.stringify(main.context.messages[0]).includes(ROLE), "the role does not leak into the main prompt");
 	assert.ok(JSON.stringify(main.context.messages[0]).includes("spotty: Blind reviewer"), "the catalogue offers the profile");
-	w.see("Waited for 1 agent");
+	w.see("reviewed");
 	assert.deepEqual(w.errors, []);
 });
 

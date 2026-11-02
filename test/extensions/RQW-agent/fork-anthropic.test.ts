@@ -78,7 +78,7 @@ for (const compact of [false, true]) test(`Anthropic fork preserves payload and 
 		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: compact, keepRecentTokens: 10 } }), getThinkingLevel: () => "low", getActiveTools: () => ["bash"],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
+	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
 	try {
 		for (const hook of hooks.get("session_start") ?? []) await hook({}, ctx);
 		await assert.rejects(async () => definition.execute("missing", { action: "start", fork_turns: "all", task: "fork task" }, new AbortController().signal, undefined, ctx), /last provider payload is unavailable/);

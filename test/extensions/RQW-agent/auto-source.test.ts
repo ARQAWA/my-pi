@@ -20,7 +20,7 @@ test("auto source exposes titles only for live targets", () => {
 	close();
 });
 
-test("main source shares results with explicit wait and releases reservations", async t => {
+test("main source delivers a result once and releases reservations", async t => {
 	const root = await mkdtemp(join(tmpdir(), "auto-wait-agent-"));
 	t.after(() => rm(root, { recursive: true, force: true }));
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
@@ -59,8 +59,6 @@ test("main source shares results with explicit wait and releases reservations", 
 	unsubscribe();
 	const claim = source.claim();
 	assert.match(claim.results[0].text, /answer/);
-	const wait = await definition.execute("wait", { action: "wait", ids: ["agent#1"] }, new AbortController().signal, undefined, ctx);
-	assert.equal(wait.details.reason, "receipt");
 	source.release(claim.token);
 	const next = source.claim();
 	assert.equal(next.results[0].delivery, claim.results[0].delivery);
