@@ -68,3 +68,27 @@ it("reports release and pcli push runs from main, notifies once and shows full s
 	assert.match(notices[0][0], /GREEN pcli: success #2 attempt 1 https:\/\/x\/2/);
 	assert.equal(notices[0][1], "info");
 });
+
+it("sends the whole snapshot's red and green counts, with only the new red lines as content", async () => {
+	const at = "2026-10-23T02:00:00.000Z";
+	const item = (id: string, level: string) => ({ id, level, text: `item ${id}`, url: `https://x/${id}` });
+	const first = { ok: true, at, items: [item("r1", "red"), item("g1", "green")] };
+	const second = { ok: true, at, items: [item("r1", "red"), item("r2", "red"), item("g1", "green"), item("g2", "green"), item("g3", "green")] };
+	const allGreen = { ok: true, at, items: [item("g1", "green"), item("g2", "green")] };
+	const sent: any[] = [];
+	let state: any = first;
+	const pi = { on() {}, registerCommand() {}, sendMessage(...args: any[]) { sent.push(args); } };
+	const api = createQaStatus({ pi, getSnapshot: async () => state, now: () => Date.parse(at) });
+
+	await api.refresh(dir);
+	state = second;
+	await api.refresh(dir);
+	assert.equal(sent.length, 2);
+	assert.deepEqual(sent[0][0].details, { red: 1, green: 1 });
+	assert.equal(sent[1][0].content, "RED item r2 https://x/r2");
+	assert.deepEqual(sent[1][0].details, { red: 2, green: 3 });
+
+	state = allGreen;
+	await api.refresh(dir);
+	assert.equal(sent.length, 2);
+});
