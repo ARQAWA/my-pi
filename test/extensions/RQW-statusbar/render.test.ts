@@ -3,7 +3,7 @@ import { stripVTControlCharacters as strip } from "node:util";
 import { it } from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { themePaint } from "../../../extensions/RQW-statusbar/index.ts";
-import { activityRows, type BarState, effortText, fastMark, ICON, mix, modelRow, parsePorcelain,
+import { activityRows, type BarState, effortText, fastMark, gitText, ICON, mix, modelRow, parsePorcelain,
 	RateMeter, renderBar, SHIMMER, SHIMMER_CELLS_PER_FRAME, shimmerPhase, shimmerText, SILVER, silverGlintPosition
 } from "../../../extensions/RQW-statusbar/render.ts";
 
@@ -20,6 +20,14 @@ it("renders the context, model and repository rows", () => {
 		` ${ICON.model} Sonnet 5.5 hi             cmp 2 · ${ICON.throughput}52.4 tok/s`,
 		` ${ICON.worktree} my-pi/statusbar      ${ICON.branch} rqw-statusbar *1 +2 ?3`,
 	]);
+});
+
+it("keeps one branch colour whatever the file counts; only the marks carry state", () => {
+	const paint = (role: string, text: string) => `<${role}>${text}</${role}>`;
+	const branch = `<gitBranch>${ICON.branch} main</gitBranch>`;
+	assert.equal(gitText({ branch: "main", staged: 0, unstaged: 0, untracked: 0 }, paint), branch);
+	assert.equal(gitText({ branch: "main", staged: 2, unstaged: 1, untracked: 3 }, paint),
+		`${branch} <unstaged>*1</unstaged> <staged>+2</staged> <untracked>?3</untracked>`);
 });
 
 it("keeps both background statuses before moving git to another row", () => {

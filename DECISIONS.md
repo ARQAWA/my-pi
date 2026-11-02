@@ -1722,7 +1722,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
   asynchronous git refresh, not Pi's cached `getGitBranch()`, which caches absent metadata when a session starts outside
   git. Engineering choice. Carrier: `extensions/RQW-statusbar/{git,index}.ts`.
-  Since: `6b9b0b9`.
+  Since: `6b9b0b9`. The branch name keeps one colour and only the `*`, `+`, `?` marks carry state; a refresh that changes nothing asks for no repaint (owner: «он цвет ветки прям цвет ветки меняет», «Интерфейс должен летать всегда»; carriers `render.ts` `gitText`, `index.ts` `refreshGit`, `quota.ts` `update`).
 - **Context bar as bottom border** `[D-STATUSBAR-BOTTOM]`. The context bar is the input editor's bottom border, not a
   separate footer row; the footer keeps the model and place rows. Mechanism: `ctx.ui.setEditorComponent` with a
   `CustomEditor` subclass (`ContextEditor`) that overrides `renderTopBorder` and `renderBottomBorder`; Pi carries over

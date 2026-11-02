@@ -35,7 +35,7 @@ interface HintSource { snapshot(): string | undefined; subscribe(listener: () =>
 type SessionManager = ExtensionContext["sessionManager"] & { getEntryCount(): number };
 const COLORS: Record<Exclude<Role, "effort" | "predictionAbort">, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
-	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning", warning: "warning",
+	gitBranch: "success", staged: "success", unstaged: "warning", warning: "warning",
 	untracked: "muted", sep: "dim", info: "muted",
 };
 export const themePaint = (theme: Theme): Paint => (role, text, level) => role === "effort"
@@ -319,10 +319,12 @@ export default function statusbar(pi: ExtensionAPI) {
 				redraw = () => tui.requestRender();
 				syncShimmer();
 
+				const gitKey = () => JSON.stringify([cwd, repo, counts, branch]);
 				async function refreshGit(): Promise<void> {
 					if (disposed) return;
 					if (busy) { again = true; return; }
 					busy = true;
+					const before = gitKey();
 					try {
 						do {
 							again = false;
@@ -339,7 +341,7 @@ export default function statusbar(pi: ExtensionAPI) {
 							}
 						} while (again && !disposed);
 					} finally { busy = false; }
-					if (!disposed) tui.requestRender();
+					if (!disposed && gitKey() !== before) tui.requestRender();
 				}
 				refresh = () => { void refreshGit(); };
 				const stopBranch = footer.onBranchChange(refresh);

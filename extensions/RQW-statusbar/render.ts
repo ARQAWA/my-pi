@@ -32,8 +32,7 @@ export type Role =
 	| "label"
 	| "model"
 	| "path"
-	| "gitClean"
-	| "gitDirty"
+	| "gitBranch"
 	| "staged"
 	| "unstaged"
 	| "untracked"
@@ -221,14 +220,13 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 /** The git part: branch and the counts of unstaged `*`, staged `+` and untracked `?` files. */
 export function gitText(git: BarState["git"], paint: Paint = plain): string {
 	if (!git) return "";
-	const dirty = git.staged + git.unstaged + git.untracked > 0;
 	const marks: string[] = [];
 	if (git.unstaged > 0) marks.push(paint("unstaged", `*${git.unstaged}`));
 	if (git.staged > 0) marks.push(paint("staged", `+${git.staged}`));
 	if (git.untracked > 0) marks.push(paint("untracked", `?${git.untracked}`));
 	if (!git.branch && marks.length === 0) return "";
 	const head = git.branch ? `${ICON.branch} ${singleLine(git.branch)}` : "";
-	return paint(dirty ? "gitDirty" : "gitClean", head) + (marks.length > 0 ? `${head ? " " : ""}${marks.join(" ")}` : "");
+	return paint("gitBranch", head) + (marks.length > 0 ? `${head ? " " : ""}${marks.join(" ")}` : "");
 }
 
 /** Row 3: the working place and background states on the left, git on the right. */

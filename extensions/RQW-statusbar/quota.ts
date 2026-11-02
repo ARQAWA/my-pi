@@ -171,7 +171,7 @@ export class QuotaConsumer {
 				const provider = id === "CX" ? "openai-codex" : "anthropic";
 				const credential = this.deps.readCredential(provider);
 				if (!credential) {
-					if (current()) { this.forget(id); delete this.accounts[id]; this.changed(); }
+					if (current()) this.update(() => { this.forget(id); delete this.accounts[id]; });
 					return;
 				}
 				const key = accountKey(credential);
@@ -180,13 +180,14 @@ export class QuotaConsumer {
 				const file = join(tmpdir(), "rqw-quota", `${CACHE_NAME[id]}-${key}.json`);
 				const show = (record: Reading) => {
 					if (!current()) return;
-					if (record.percent !== undefined) {
-						const star = isStale(record) ? "*" : "";
-						this.values[id] = `${star}${record.percent}%`;
-						if (id === "CX" && record.credits) this.values.CXC = `${star}${creditsText(record.credits)}`;
-						else if (id === "CX") delete this.values.CXC;
-					} else this.values[id] ??= "???";
-					this.changed();
+					this.update(() => {
+						if (record.percent !== undefined) {
+							const star = isStale(record) ? "*" : "";
+							this.values[id] = `${star}${record.percent}%`;
+							if (id === "CX" && record.credits) this.values.CXC = `${star}${creditsText(record.credits)}`;
+							else if (id === "CX") delete this.values.CXC;
+						} else this.values[id] ??= "???";
+					});
 				};
 				const fresh = (record: Reading) => record.checkedAt !== undefined && Date.now() - record.checkedAt < QUOTA_CHECK_MS;
 				let record = await readCache(file);
@@ -217,8 +218,14 @@ export class QuotaConsumer {
 					await writeCache(file, record);
 					show(record);
 				} finally { await unlink(`${file}.lock`).catch(() => {}); }
-			} catch { if (current()) { this.values[id] ??= "???"; this.changed(); } }
+			} catch { if (current()) this.update(() => { this.values[id] ??= "???"; }); }
 		}));
+	}
+	/** Asks for a repaint only when the shown values really changed. */
+	private update(change: () => void): void {
+		const before = JSON.stringify(this.values);
+		change();
+		if (JSON.stringify(this.values) !== before) this.changed();
 	}
 	/** CXC comes from the same response as CX, so they go together. */
 	private forget(id: keyof Quotas): void {

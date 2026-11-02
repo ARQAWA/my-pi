@@ -97,13 +97,14 @@ function setup(t: TestContext) {
 		};
 		type Footer = { render(width: number): string[]; dispose(): void };
 		let footer: Footer;
+		let repaints = 0;
 		const theme = { fg: (_role: string, text: string) => text };
 		const ctx = {
 			mode: "tui", cwd: "project", model: undefined, isIdle: () => true, getContextUsage: () => undefined,
 			sessionManager: { getSessionId: () => "quota-test", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [] },
 			ui: { theme, getEditorComponent: () => ({}), setEditorComponent() {}, setWidget() {}, setWorkingIndicator() {},
 				setFooter(factory: (tui: unknown, theme: unknown, data: unknown) => Footer) {
-					footer = factory({ requestRender() {} }, theme, {
+					footer = factory({ requestRender() { repaints++; } }, theme, {
 						onBranchChange: () => () => {}, getExtensionStatuses: () => new Map(),
 					});
 				} },
@@ -114,7 +115,7 @@ function setup(t: TestContext) {
 		const stop = () => handlers.get("session_shutdown")!({}, ctx);
 		shutdown.push(stop);
 		return Object.assign(() => footer.render(160).map(strip).join("\n"), {
-			raw: (width: number) => footer.render(width), stop,
+			raw: (width: number) => footer.render(width), stop, repaints: () => repaints,
 			tick: async () => { await ticks[tickIndex](); },
 		});
 	}
@@ -264,6 +265,20 @@ it("a fresh value removes the star", async (t) => {
 	t.mock.timers.tick(3 * MINUTE);
 	await until(() => shown().includes("CX 64%") && shown().includes("CC 64%") && cache.idle());
 	assert.ok(!shown().includes("*"));
+});
+
+it("a quota refresh that changes nothing does not repaint the footer", async (t) => {
+	const cache = setup(t);
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CX 77%") && shown().includes("CC 77%") && cache.idle());
+	const repaints = shown.repaints();
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => cache.reads.CX === 2 && cache.reads.CC === 2 && cache.idle());
+	assert.equal(shown.repaints(), repaints);
+	cache.response.percent = 64;
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => shown().includes("CX 64%") && cache.idle());
+	assert.ok(shown.repaints() > repaints);
 });
 
 const CREDIT_CASES: [string, unknown, string | undefined][] = [

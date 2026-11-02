@@ -14,6 +14,8 @@ CXC, shown before CX, is the Codex credits balance as Codex shows it: whole cred
 (`10.000`), or `Unlimited`. It comes from the same CX request. No credits means no CXC block;
 stale data gets the same `*` star as the percent.
 Providers without stored login credentials are hidden. Unknown values show `???`.
+The git branch keeps one colour; only the marks `*`, `+` and `?` after it carry the state colours.
+A git or quota refresh that changes nothing asks for no repaint.
 The active footer checks the shared cache immediately and once a minute, independently of model responses.
 Files in the system temporary directory under `rqw-quota/` are separate per provider and account.
 Codex credentials supply `accountId`; Pi's Anthropic credentials have no account ID, so the refresh token
