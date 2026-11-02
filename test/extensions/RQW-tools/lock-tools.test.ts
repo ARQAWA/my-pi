@@ -148,6 +148,14 @@ test("batch ancestor targets are rejected when the directory appears during vali
 		files: [{ path: parent, content: "one" }, { path: child, content: "two" }],
 	}, undefined, undefined, { cwd }, cwd), /one inside the other/);
 	assert.equal(writes, 0);
+	fs.realpath = original;
+	const result = await executeWrite(async () => ({ content: [] }), "w", {
+		files: [{ path: parent, content: "one" }, { path: `${parent}-other`, content: "two" }],
+	}, undefined, undefined, { cwd }, cwd);
+	assert.deepEqual(result.details.files, [
+		{ path: parent, ok: true },
+		{ path: `${parent}-other`, ok: true },
+	]);
 });
 
 test("filesystem identity lookup does not block unrelated work", async (t) => {
