@@ -627,11 +627,10 @@ as `backgroundProcesses`; RQW-agent adds the running jobs of its children, summe
   synchronously. This handshake supports either extension load order.
 - Deduplicate sources by object identity. Each source has `version: 1`, `snapshot()`,
   `subscribe(listener)` and `dispose()`.
-- RQW-agent's `snapshot()` returns a fresh `{ agents, reviews, backgroundProcesses?, agentList? }`, with `reviews: 0`.
-  `agentList` is one `{ id, title?, state, depth }` per agent of the tree, a nested agent right after its parent with its
-  path as id (`agent#1/agent#2`). `state` is `working` (Pi runs the child or a queued send is about to), `waiting`
-  (its assignment stays open for its jobs or children), `afk` (paused or interrupted, no assignment) or `idle` (the rest,
-  including saved and sleeping children). `agents` counts `working` and `waiting` only.
+- RQW-agent's `snapshot()` returns a fresh `{ agents, reviews, backgroundProcesses?, idleAgents? }`, with `reviews: 0`.
+  `agents` counts the active agents of the tree: Pi runs the child or a queued send is about to (working), or its assignment
+  stays open for its jobs or children (waiting). `idleAgents` is the number of the other agents of the tree (finished, saved and
+  sleeping, paused or interrupted), omitted at zero.
   RQW-tools offers `{ agents: 0, backgroundProcesses: number }` through an independent v1 source.
   Sum snapshots of distinct live sources by kind. The consumer accepts optional `backgroundProcesses`,
   treating its absence in older v1 sources as zero. Missing/disabled producers contribute zero.
@@ -649,7 +648,7 @@ as `backgroundProcesses`; RQW-agent adds the running jobs of its children, summe
 An agent counts once when it has an active logical assignment (`a.run`), pending sends or native activity.
 A native-idle child waiting for its own jobs or children still counts. Counts recurse through the existing
 runtime ownership tree, so a waiting parent and its active descendant each count once. Completed undelivered
-results count zero; genuinely idle or AFK agents with no pending assignment do not linger.
+results count zero; agents with no pending assignment are not in `agents`, only in `idleAgents`.
 Reviewer profiles count as ordinary agents; the compatibility `reviews` field is zero for this producer.
 This counts producer adds no timer, card or second child registry.
 The waiting categories and idle distinction follow [D-STATUSBAR-WAITS](../../DECISIONS.md#status-bar).

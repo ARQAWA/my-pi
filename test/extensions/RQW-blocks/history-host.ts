@@ -29,7 +29,7 @@ export interface Host {
 	chatContainer: Container;
 	sessionManager: SessionManager;
 	programStatus: unknown;
-	runtimeHost: { session: { sessionManager: unknown } };
+	runtimeHost: { session: { sessionManager: unknown; settingsManager: object } };
 	renderInitialMessages(): void;
 	rebuildChatFromMessages(): void;
 	handleEvent(event: unknown): Promise<void>;

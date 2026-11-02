@@ -593,7 +593,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
   id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
   collapsed wait cards. Stored content, execution and delivery do not change. A card shows one delivered
-  result as finished or failed, never a live agent state. The cards hold no agent list, board or child-log view; the agent list is the status bar's ([D-STATUSBAR-WAITS](#status-bar)).
+  result as finished or failed, never a live agent state. The cards hold no agent list, board or child-log view; the status bar shows only the idle-agent count ([D-STATUSBAR-WAITS](#status-bar)).
   Running agent counts, the activity indicator and its shimmer are RQW-statusbar's, not the cards' ([D-STATUSBAR-ACTIVITY](#status-bar)).
   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
@@ -1627,24 +1627,21 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   keep real pending work visible as `Waiting for 2 agents, 1 background process`; there is no explicit wait call
   ([D-AGENT-STATUS](#agent)), so Main waits by ending its turn. While Main is active,
   its thinking or tool text shows the agents and the background processes too: `Planning next moves · 2 agents, 1 background process`.
-  RQW-agent gives every agent of the tree one state. `working`: Pi runs the child or a queued send is about to.
-  `waiting`: its assignment (`a.run`) stays open for its jobs or children. `afk`: paused or interrupted, no assignment.
-  `idle`: the rest, including a finished child kept in memory or asleep. The count is only `working` plus `waiting`,
-  recursively; a waiting parent and its working descendant each count. Completed undelivered results count zero,
-  and genuine idle or AFK with no pending work counts nothing.
+  RQW-agent counts two kinds of active agents over the whole tree. `working`: Pi runs the child or a queued send is about to.
+  `waiting`: its assignment (`a.run`) stays open for its jobs or children. The count is only `working` plus `waiting`,
+  recursively; a waiting parent and its working descendant each count. Completed undelivered results count zero.
+  Every other agent of the tree is idle: a finished child kept in memory or asleep, paused or interrupted. Their number is offered as `idleAgents`.
   Background processes of children count too, summed over the tree, also when the child's turn ended: the child's job
   registry offers its running count and its change events, so the count follows each change.
   RQW-tools independently offers only Main's actual background jobs as `{ agents: 0, backgroundProcesses: number }`
   over the existing public `pi.events` v1 source protocol; the child counts come from RQW-agent's own source, so no job is counted twice.
-  The source's optional `agentList` holds one line `{ id, title?, state, depth }` per agent, nested agents right after their parent
-  (a nested id is its path, `agent#1/agent#2`). The status bar draws it under the status text, `agent#3 Title · working`,
-  indented two spaces per level, all agents, never cut to a few; id `muted`, title `dim`, `working` `text`, `waiting` `dim`,
-  `idle` and `afk` rows wholly `dim`. When everything is idle the list stays, dim, with no status text. Narrow width cuts the
-  title, then the indent, then the id; the state stays. The rows are cached and redrawn only when the list changes; no timer.
-  The consumer accepts optional `backgroundProcesses` and `agentList`, treating their absence in older v1 sources as zero and empty.
+  The source's optional `idleAgents` is that number, omitted at zero. The status bar draws no per-agent list: under the status text it shows one dim line,
+  `12 idle agents` (`1 idle agent`), only when the number is above zero, also when everything is idle (then with no status text). Working and
+  waiting agents are counted only in the status text. The line is cached and redrawn only when the width, the number or the theme changes; no timer.
+  The consumer accepts optional `backgroundProcesses` and `idleAgents`, treating their absence in older v1 sources as zero.
   Reviewers remain ordinary agents, with no worker or separate review category. Changes no timing, settings or dependencies.
-  Owner answers to the plan `my-pi-evidence/designs/agent-states-ui/PLAN.md` (verbatim): word for waiting: «1» = Waiting for, как записано в решении;
-  agent list when everything is idle: «1» = показывать тусклым; list length: «1» = все агенты.
+  Owner answers to the plan `my-pi-evidence/designs/agent-states-ui/PLAN.md` (verbatim): word for waiting: «1» = Waiting for, как записано в решении. Its other two answers are superseded (see below).
+  Owner (verbatim, 2026-11-02, seeing the per-agent list live; forwarded by the coordinator, no session locator supplied; supersedes the «все агенты» answer above): «Бля это ужасно» … «такого списка быть не должно, просто выведи список idle суб гаентов с цифрой». Next, when the list filled the whole screen: «Это полный пиздец, просто кринж прям щас супер крит первым делом исправь на 1 SP я вообще экран не вижу».
   Owner (verbatim, `16-27-59:6305`): «Если агент think-ает основной, что-то делает, то это отражается в статусе. Если же он ничего не делает, но он ожидает саб-агентов какие-то, background процессы, это тоже должно отражаться. Есть саб-агенты, а есть background процессы. Worker там быть не должно, мы вообще worker удалили.»
   Principles (verbatim): «Интерфейс должен летать всегда»; «У нас всё должно быть суперминималистично, суперлегковесно, супертопорно и прямолинейно».
   Owner requirements and exact sources: [BACKLOG AGENT-STATES-UI](BACKLOG.md#agent-states-ui), owner entries

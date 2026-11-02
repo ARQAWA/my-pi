@@ -2613,36 +2613,36 @@ test("a job result that an explicit wait returned before the crash is not report
 	await settle();
 });
 
-test("the agent list shows a waiting child and its working helper after it, one line each", async t => {
+test("a waiting child and its working helper count as agents, finished ones as idle", async t => {
 	const { live, gate } = await outerWithHelper(t, waitingReply);
 	await settle();
 	const counts = live.runtime.runningCounts();
 	assert.equal(counts.agents, 2);
-	assert.deepEqual(counts.agentList, [{ id: "agent#1", state: "waiting", depth: 0 }, { id: "agent#1/agent#1", state: "working", depth: 1 }]);
+	assert.equal(counts.idleAgents, undefined);
 	gate.resolve("nested answer");
 	await live.takeAnswers();
 	const done = live.runtime.runningCounts();
 	assert.equal(done.agents, 0);
-	assert.deepEqual(done.agentList?.map(line => `${line.id} ${line.state} ${line.depth}`), ["agent#1 idle 0", "agent#1/agent#1 idle 1"]);
+	assert.equal(done.idleAgents, 2);
 });
 
-test("the agent list shows an interrupted waiting child as afk", async t => {
+test("an interrupted waiting child counts as idle", async t => {
 	const { live, gate } = await outerWithHelper(t, waitingReply);
 	await live.execute({ action: "interrupt", id: "agent#1" });
 	await live.runtime.wait(new AbortController().signal);
 	await until(() => live.runtime.runningCounts().agents === 0);
-	assert.deepEqual(live.runtime.runningCounts().agentList, [{ id: "agent#1", state: "afk", depth: 0 }]);
+	assert.equal(live.runtime.runningCounts().idleAgents, 1);
 	gate.resolve("nested answer");
 });
 
-test("the agent list names a finished child by its title", async t => {
+test("a finished child counts as one idle agent", async t => {
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
 	const live = runtimeFixture(parent, root);
 	await live.execute({ action: "start", task: "one", title: "Audit", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
-	assert.deepEqual(live.runtime.runningCounts().agentList, [{ id: "agent#1", title: "Audit", state: "idle", depth: 0 }]);
+	assert.equal(live.runtime.runningCounts().idleAgents, 1);
 	live.runtime.close();
 });
 
@@ -2660,7 +2660,7 @@ test("a child's background process counts, its change reaches the counts and a f
 	await settle();
 	try {
 		assert.equal(live.runtime.runningCounts().backgroundProcesses, 1);
-		assert.equal(live.runtime.runningCounts().agentList?.[0].state, "waiting");
+		assert.equal(live.runtime.runningCounts().agents, 1);
 		changes = 0;
 		jobs.finish("done");
 		assert.ok(changes > 0, "a job change reaches the counts producer");
@@ -2671,7 +2671,7 @@ test("a child's background process counts, its change reaches the counts and a f
 	}
 });
 
-test("stopping a sleeping child drops its line from the agent list at once", async t => {
+test("stopping a sleeping child drops it from the idle count at once", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
@@ -2684,9 +2684,9 @@ test("stopping a sleeping child drops its line from the agent list at once", asy
 	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, undefined, 8, false, undefined, () => { changes++; });
 	t.after(() => restored.runtime.close());
 	await commitWait(restored, restored.ctx.sessionManager);
-	assert.deepEqual(restored.runtime.runningCounts().agentList, [{ id: "agent#1", title: "Old", state: "idle", depth: 0 }]);
+	assert.equal(restored.runtime.runningCounts().idleAgents, 1);
 	changes = 0;
 	await restored.execute({ action: "stop", id: "agent#1" });
 	assert.ok(changes > 0, "the stop reaches the counts producer");
-	assert.equal(restored.runtime.runningCounts().agentList, undefined);
+	assert.equal(restored.runtime.runningCounts().idleAgents, undefined);
 });

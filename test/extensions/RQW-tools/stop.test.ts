@@ -16,7 +16,7 @@ test("stop background notice reaches only the owning tools session", async () =>
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const replies: any[] = [];
 	events.emit("rqw:stop-background:v1", { sessionId: "other", reply: (part: any) => replies.push(part) });
-	assert.deepEqual(replies, []);
+	assert.deepEqual(replies, [] as unknown[]);
 	events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (part: any) => replies.push(part) });
 	assert.deepEqual(replies, [{ backgroundProcesses: 0, unstoppable: 0 }]);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
