@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { createCoordinatorGuard } from "../.pi/extensions/coordinator-guard/index.ts";
 import { firstUserText } from "./synthetic/model.ts";
 import { call, isTask, text, world } from "./synthetic/world.ts";
@@ -47,7 +48,7 @@ it("keeps todo available to nested children when the coordinator is disabled", a
 	const saved = globals[key];
 	globals[key] = { role: "coordinator" };
 	t.after(() => { if (saved === undefined) delete globals[key]; else globals[key] = saved; });
-	const guard = { name: "coordinator-guard", factory: createCoordinatorGuard({ root: "/not-a-git-repository", processFile: new URL("../PROCESS.md", import.meta.url).pathname, randomInt: () => 1 }) };
+	const guard = { name: "coordinator-guard", factory: createCoordinatorGuard({ root: "/not-a-git-repository", processFile: fileURLToPath(new URL("../PROCESS.md", import.meta.url)), randomInt: () => 1 }) };
 	const w = await world(t, { beforeExtensions: [guard] });
 	await w.session.extensionRunner!.emitInput("/skill:todo work", undefined, "interactive");
 	assert.ok(!w.session.extensionRunner!.getActiveTools().includes("todo"));
