@@ -122,8 +122,8 @@ of the full Codex config schema). Pi has no equal of
 six Codex overrides: `model_reasoning_summary`, `model_verbosity`, `personality`, `service_tier`, `features` and
 `skills`. They are read and type checked by the Codex schema (enum values, strings, booleans, the known keys of `skills`; unknown keys are accepted as Codex serde does), so a
 bad value makes the role unavailable, but they are not applied, and the catalogue line of the role names them after
-`not applied:`. They wait for
-a public Pi API; no sandbox or tool filtering stands in for them. Malformed TOML and invalid supported role fields
+`not applied:`. They stay not applied,
+owner cancelled (2026-10-29); no sandbox or tool filtering stands in for them. Malformed TOML and invalid supported role fields
 remain errors.
 
 A bare GPT ID, such as `gpt-6.1-sol`, resolves to `openai-codex/gpt-6.1-sol`. Other bare IDs require one exact,

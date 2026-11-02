@@ -174,8 +174,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Forks the main model's context like `/btw` (`rqw:context-fork:v1`); the prompt comes from Codex's own endpoint with the saved `openai-codex` login read-only and a 300000 ms cache (`codex-prompt.ts`).
   In memory it frees Ctrl+E and Ctrl+R from Pi's own actions (`keybindings.ts`); Ctrl+E works in every chat state and cancels a running request, Ctrl+R is left to RQW-send-now's restart; the editor instance is decorated in place. It paints the dim italic `ctrl+e to suggest` in the empty editor, never over a ready prediction (`[D-KEYS-HINTS]`). Status channel `rqw-predictions:activity`.
   Contract and limits: [README](extensions/RQW-predictions/README.md). Tests: `test/extensions/RQW-predictions/`.
-- `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs today; no Pi source edit. Full parity is not implemented yet and,
-  under `[D-SCOPE-RUNTIME-PATCH]`, no longer waits for a public Pi API. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
+- `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs today; no Pi source edit. The six Codex role overrides Pi has no equal of are cancelled by the owner;
+  their fields stay named `not applied` in the RQW-agent catalogue. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
   `~/.agents/skills`, `/etc/codex/skills` where the system has it (no other administrative config is read), project `.agents/skills` and, for trusted projects
   (`projects.*.trust_level`), `.codex/skills`, bounded by `project_root_markers`. Applies `skills.config`, `skills.bundled.enabled`, `skills.include_instructions` and
   `skills.max_context_tokens` to the model skill catalog, and filters skills for RQW-skill-dollar on
