@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
+import { forkBranch } from "../../../extensions/RQW-agent/fork.ts";
 import { retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
 import { countSyncSessionReads, runtime, world } from "./fixture.ts";
 
@@ -104,4 +105,38 @@ test("fork start writes the branch without reading any session file back", async
 	const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean);
 	assert.equal(lines.length, fork.getEntries().length + 1);
 	assert.deepEqual(SessionManager.open(file, dirname(file), w.cwd).getEntries(), fork.getEntries());
+});
+
+test("fork start does not walk the branch before it returns", async t => {
+	const w = await world(t);
+	const run = runtime(w.cwd, w.base);
+	for (let i = 0; i < 40; i++) run.parent.appendMessage({ role: "user", content: `history ${i}`, timestamp: i });
+	const getBranch = t.mock.method(run.parent, "getBranch");
+	const started = run.execute({ action: "start", fork_turns: "all", task: "fork task", tools: [] });
+	try {
+		// The synchronous part of the call must not copy a long branch.
+		assert.equal(getBranch.mock.callCount(), 0);
+	} finally {
+		await started;
+		await run.live.wait(new AbortController().signal);
+		run.live.close();
+	}
+	assert.ok(retainedChildManager(run.parent, "agent", 1)!.getEntries().filter(entry => entry.type === "message").length >= 40);
+});
+
+test("copying a long branch yields to the event loop between slices", async t => {
+	const w = await world(t);
+	const run = runtime(w.cwd, w.base);
+	for (let i = 0; i < 200; i++) run.parent.appendMessage({ role: "user", content: `history ${i}`, timestamp: i });
+	// Every clock read costs more than a slice, so each work item ends its slice.
+	let now = 0;
+	t.mock.method(performance, "now", () => (now += 5));
+	let turns = 0;
+	let copying = true;
+	const spin = () => { if (!copying) return; turns++; setImmediate(spin); };
+	setImmediate(spin);
+	const seed = await forkBranch(run.parent, run.parent.getLeafEntry()).finally(() => { copying = false; });
+	assert.equal(seed.length, 200);
+	assert.ok(turns >= 200, `only ${turns} event loop turns`);
+	for (let i = 0; i < seed.length; i++) assert.equal(seed[i].parentId, seed[i - 1]?.id ?? null);
 });
