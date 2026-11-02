@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, it } from "node:test";
-import { buildSessionProjection, type AgentSession, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { buildSessionProjection, convertToLlm, SessionManager, type AgentSession, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { SessionWireState } from "../../../extensions/RQW-codex/session-history.ts";
 import { buildRequest, type WireItem, type WireModelInfo } from "../../../extensions/RQW-codex/wire.ts";
@@ -178,7 +178,7 @@ it("the raw-response filter of a request reads Pi's projection once, however man
 	assert.equal(accepted.size, 29);
 });
 
-it("a long tail after a compaction is projected through the offered safe projection, not Pi's own call", () => {
+it("a long tail works without history-edit for both wire and manager projection", () => {
 	const { session, state } = recorded("long-tail", 2);
 	const answer = session.appendMessage(answered("resp-0", "text"));
 	const stamp = "2026-01-01T00:00:00.000Z";
@@ -192,18 +192,50 @@ it("a long tail after a compaction is projected through the offered safe project
 	const previous = shared[key];
 	try {
 		delete shared[key];
-		assert.throws(() => state.rawHistory.acceptRawResponses!(["resp-0"], CONTEXT), RangeError);
-		const seen: unknown[] = [];
-		// An answer that the offered projection shows as removed gets no raw replay.
-		shared[key] = (entries: SessionEntry[], leafId: string | null) => {
-			seen.push([entries.length, leafId]);
-			return { entries: [{ sourceEntry: answer, messages: [] }], messages: [] };
-		};
+		assert.equal(state.rawHistory.acceptRawResponses!(["resp-0"], CONTEXT).has("resp-0"), true);
+		push({ type: "context_edit", id: "delete-answer", targetId: answer.id, replacement: null });
 		assert.equal(state.rawHistory.acceptRawResponses!(["resp-0"], CONTEXT).has("resp-0"), false);
-		assert.deepEqual(seen, [[session.entries.length, session.getLeafId()]]);
+		session.getLeafId = () => answer.id;
+		assert.equal(state.rawHistory.acceptRawResponses!(["resp-0"], CONTEXT).has("resp-0"), true);
 	} finally {
 		if (previous === undefined) delete shared[key]; else shared[key] = previous;
 	}
+});
+
+it("real Pi manager preserves the wire input after a long compacted tail", () => {
+	const manager = SessionManager.inMemory();
+	const first = manager.appendMessage(USER as never);
+	manager.appendCompaction("summary", first, 10);
+	const threadId = manager.getSessionId();
+	const session = { sessionId: threadId, sessionManager: manager } as unknown as AgentSession;
+	const state = new SessionWireState({ session, ownerId: "acct", modelHash: "caps-1" });
+	const initial = { ...CONTEXT, messages: convertToLlm(manager.buildSessionProjection().messages) } as Context;
+	const args = { context: initial, model: MODEL, capabilities: CAPS };
+	assert.equal(state.nativeInput(args), undefined);
+	const identity = { installationId: "inst", windowId: "win", rootSessionId: threadId, threadId } as never;
+	state.rawHistory.preparedRequest!({ model: CAPS.slug, input: buildRequest({ model: MODEL, context: initial, options: {}, capabilities: CAPS, identity }).input });
+
+	const entries = [manager.getHeader()!, ...manager.getEntries()] as any[];
+	let parentId = manager.getLeafId();
+	for (let i = 0; i < 130_000; i++) {
+		const entry = { type: "custom", id: `tail-${i}`, parentId, timestamp: "2026-01-01T00:00:00.000Z", customType: "test", data: null };
+		entries.push(entry);
+		parentId = entry.id;
+	}
+	const late = { role: "user", content: [{ type: "text", text: "after compaction" }], timestamp: 7 };
+	entries.push({ type: "message", id: "late", parentId, timestamp: "2026-01-01T00:00:00.000Z", message: late });
+	const resumed = SessionManager.inMemory(process.cwd(), undefined, entries);
+	const longState = new SessionWireState({ session: { sessionId: threadId, sessionManager: resumed } as unknown as AgentSession, ownerId: "acct", modelHash: "caps-1" });
+	const context = { ...initial, messages: [...initial.messages, late] } as Context;
+	const actual = longState.previewNativeInput({ context, model: MODEL, capabilities: CAPS }, []);
+	const expected = buildRequest({ model: MODEL, context, options: {}, capabilities: CAPS, identity }).input;
+	assert.deepEqual(actual, expected);
+});
+
+it("an unsupported manager projection retains its stock error", () => {
+	const { session, state } = recorded("unsupported-manager", 1);
+	session.buildSessionProjection = () => { throw new RangeError("unsupported manager"); };
+	assert.throws(() => state.previewNativeInput({ context: CONTEXT, model: MODEL, capabilities: CAPS }, []), /unsupported manager/);
 });
 
 it("a physically edited or deleted answer gets no raw replay, an untouched one does", () => {
