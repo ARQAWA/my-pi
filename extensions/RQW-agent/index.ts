@@ -778,7 +778,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const pending = coordinator.queue.then(async () => {
 				if (agents.get(a.id) !== a || a.run || a.state !== "completed" || !a.bridge.pending() || a.controller.signal.aborted) return;
 				await startRun(a, undefined, a.controller.signal);
-				a.guard.signal = a.run?.controller.signal;
+				a.guard.signal = (a as Agent).run?.controller.signal;
 			});
 			coordinator.queue = pending.catch(error => { a.activity.reportError(String(error)); });
 		};
