@@ -289,8 +289,15 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 			try {
 				if (input.app?.cdp_url) {
 					const url = input.app.cdp_url;
-					const connection = url.startsWith("ws:") || url.startsWith("wss:") ? { browserWSEndpoint: url } : { browserURL: url };
-					const browser = await untilAborted(puppeteer.connect({ ...connection, handleDevToolsAsPage: true }), signal, pending => { trackCleanup(pending.then(b => b.disconnect(), () => {}).catch(() => {})); });
+					const transport = await (await import("./cdp-transport.ts")).proxiedCdpTransport(url, signal);
+					const connection = transport ? { transport } : url.startsWith("ws:") || url.startsWith("wss:") ? { browserWSEndpoint: url } : { browserURL: url };
+					let browser: Browser;
+					try {
+						browser = await untilAborted(puppeteer.connect({ ...connection, handleDevToolsAsPage: true }), signal, pending => { transport?.close(); trackCleanup(pending.then(b => b.disconnect(), () => {}).catch(() => {})); });
+					} catch (error) {
+						transport?.close();
+						throw error;
+					}
 					tab = { browser, owned: false, page: undefined as unknown as Page, downloads: undefined as unknown as DownloadManager, observed: new ObservedElements(), dialogs: new DialogController() };
 				} else {
 					const path = input.app?.path ? resolve(input.app.path) : await untilAborted(import("./executable.ts").then(module => module.executable(deps)), signal);
