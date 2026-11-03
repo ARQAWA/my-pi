@@ -2386,7 +2386,7 @@ test("a child that went to sleep leaves no live session manager behind", async t
 	const before = managers();
 	await live.execute({ action: "start", task: "task", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
-	assert.ok(managers() > before);
+	assert.ok(retainedChildManager(parent, "agent", 1));
 	await commitWait(live, parent);
 	now = 300000;
 	t.mock.timers.tick(300000);
