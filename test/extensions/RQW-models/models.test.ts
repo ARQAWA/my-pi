@@ -256,10 +256,11 @@ describe("RQW-models public selection", () => {
 		assert.equal(thinking, "high");
 	});
 
-	it("preserves unlisted models on non-startup and falls back on startup", async t => {
+	it("replaces the saved unlisted default with Opus medium on every session start", async t => {
 		const run = async (available: Model<string>[], reason: string) => {
 			const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
-			let current = model("outside", "other");
+			// Pi's /new and /remove build the session from the saved default model, here a Bedrock Opus 4.6.
+			let current = model("us.anthropic.claude-opus-4-6-v1", "bedrock");
 			let thinking = "high";
 			const pi = {
 				registerProvider() {}, unregisterProvider() {}, registerShortcut() {}, registerCommand() {},
@@ -284,13 +285,12 @@ describe("RQW-models public selection", () => {
 		try {
 			const unlisted = model("outside-model", "other");
 			const opus = model("claude-opus-5-5");
-			for (const reason of ["new", "resume", "fork", "reload"]) {
+			for (const reason of ["startup", "new", "resume", "fork", "reload"]) {
 				const result = await run([unlisted, opus], reason);
-				assert.equal(result.current.id, "outside");
-				assert.equal(result.thinking, "high");
+				assert.equal(result.current, opus, reason);
+				assert.equal(result.thinking, "medium", reason);
 			}
-			assert.equal((await run([unlisted, opus], "startup")).current, opus);
-			assert.equal((await run([unlisted], "startup")).current.id, "outside");
+			for (const reason of ["startup", "new"]) assert.equal((await run([unlisted], reason)).current.id, "us.anthropic.claude-opus-4-6-v1");
 		} finally {
 			process.argv = argv;
 		}

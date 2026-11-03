@@ -358,8 +358,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		let pass: Promise<ChatModel[]> | undefined;
 		const models = () => pass ??= settled(ctx);
 		await startDefault(event.reason, models);
-		if (event.reason !== "startup") return;
-		// CLI --model/--models, a saved default or a restored session may name a model outside the list.
+		// CLI --model/--models, the saved default (read again by /new and /remove), a restored or forked session may name a model outside the list.
 		const current = liveContext.model;
 		if (!current || isListed(current)) return;
 		const authenticated = await models();
