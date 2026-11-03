@@ -2113,19 +2113,17 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
   «И потом в будущем, когда мы сделаем tooling, таблица соответствия модели будет прокидываться автоматически на уровне функционала. Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться»
   Coordinator note: the earlier fixed mapping in the quoted table was replaced by the mapping below.
 
-  | Caller | Search model | low | medium | high | xhigh | max |
+  Owner, 2026-11-03: «Так, смотри, что касается изменения веб-серча, вот, я принимаю твое предложение. Вот, использую Terru от Medium до XtraH Rezinга. и только знаешь, что, я думаю, надо везде так сделать. то есть надо везде ограничить, чтобы у нас и для терры был экстра хай ризинг максимальный. вот, и для хайки, и для луну был, короче, тоже от медиума до экстра хай ризинг. без лоу и без короче нет хорошо будет луна лоу вот но макс не будет ризинга будет ризинг экстра хай всегда вот а для неизвестный пусть будет terra medium»
+
+  | Caller | Search model | low | medium | high | xhigh | max / ultra |
   | --- | --- | --- | --- | --- | --- | --- |
-  | Recognized `openai-codex` GPT | Same exact model | Same level | Same level | Same level | Same level | Same level |
-  | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low | medium | high | high | high |
-  | `anthropic/claude-sonnet-5-5` | `gpt-6.1-terra` | low | medium | high | xhigh | xhigh |
-  | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | low | medium | high | xhigh | xhigh |
-  | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low | low | low | low | low |
+  | `openai-codex/gpt-6.1-sol`, `openai-codex/gpt-6-sol`, `anthropic/claude-opus-5-5` | `gpt-6.1-terra` | medium | high | xhigh | xhigh | xhigh |
+  | `openai-codex/gpt-6.1-terra`, `anthropic/claude-sonnet-5-5` | `gpt-6.1-terra` | medium | medium | high | xhigh | xhigh |
+  | `openai-codex/gpt-6-luna` | `gpt-6-luna` | low | medium | high | xhigh | xhigh |
+  | `openai-codex/gpt-5.6-luna`, `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | low | medium | high | xhigh | xhigh |
+  | Unknown or missing model, including other providers | `gpt-6.1-terra` | medium | medium | medium | medium | medium |
 
-  GPT callers pass the model and level through as is, now including `gpt-6.1-terra`; Pi `off` is sent as native `none` where the model supports it. Owner: «нет когда мы работаем на гпт моделях ты просто пробрасываешь модель как есь и ризонинг паритет»
-
-  Claude `ultra` is above every listed level and maps like `max`, per the owner's «выше чем икс хай» and «опус хай и выше».
-
-  Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
+  Caller `off`, `none` and `minimal` clamp to medium for Terra and low for Luna. The superseded mapping is in [the archive](DECISIONS-ARCHIVE.md#a-web-effort-2026-11-03). Carrier: `extensions/RQW-web/core/model-map.ts`.
 - **Engine** `[D-WEB-ENGINE]`. The existing Codex CLI 0.164.0 source research selected the Responses Lite path `web.run -> POST alpha/search -> function_call_output -> sourced answer`, not hosted-only `web_search`. Each target has an ephemeral web-only loop, no Pi AgentSession, stored history, provider registration, prewarm or compaction. Pure transport/auth code is a minimal local snapshot with original path and commit headers; no import reaches another extension. The snapshot retains the existing 0.163.0 transport pin. Reason: preserve the researched subscription mechanism while keeping RQW-web independently switchable. Carrier: `extensions/RQW-web/core/`, `vendor/`.
 - **Read-only credentials** `[D-WEB-AUTH]`. The public `readStoredCredential` supplies only saved `openai-codex` OAuth. No auth writes, copied auth files, refresh, private ModelRuntime credentials or API-key/other-provider fallback. Missing, expiring or rejected login returns a hint to use Pi for refresh or `/login openai-codex`, then retry. Carrier: `extensions/RQW-web/core/credentials.ts`.
 - **Defaults and bounds** `[D-WEB-DEFAULTS]`. The tool retains the existing search behavior: `cached`, `short`, three concurrent targets with the rest queued, target timeout 120000 ms, input-order results with independent errors. Normalized model-facing output is capped at 2000 lines or 48 KiB; overflow returns a full-result path and exact next line rather than another paid request. No raw reasoning, headers or secrets are written. Each target consumes subscription usage, with no requested GPT Fast. Carrier: `core/batch.ts`, `core/report.ts`, `core/truncate.ts`.

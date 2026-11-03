@@ -113,7 +113,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
 - `extensions/RQW-web/`: independent shipped `web` tool for parallel independent queries or focused public URL reading,
   on macOS and Windows. Takes `queries` OR `urls`, `focus`, `mode` and `response_length`; the caller's model/thinking
-  are mapped automatically, unknown models use `openai-codex/gpt-6.1-sol` with `low`. Owns its web-only subscription
+  are mapped automatically, unknown models use `openai-codex/gpt-6.1-terra` with `medium`. Owns its web-only subscription
   engine; no RQW-codex/RQW-tools dependency, auth writes, prewarm or compaction. Subagents get
   the optional `rqw-search:subagent-web` offer on `pi.events`. Large normalized results use ordinary OS temporary files
   with an exact continuation. Description teaches batching, evidence, sources and untrusted web text.
