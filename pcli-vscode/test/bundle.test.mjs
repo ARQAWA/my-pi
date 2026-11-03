@@ -187,6 +187,51 @@ test('tab accepts BOM settings and retains filters, auth and unrelated settings'
   assert.equal(fs.readFileSync(settingsPath, 'utf8'), bytes);
 });
 
+// Run a new tab on the given package entries and return the packages it leaves in settings.json
+function packagesAfterTab(t, packages) {
+  const root = path.join(fixture(t), 'arqawa.pcli-0.0.3-win32-x64');
+  installed(root);
+  const agent = path.join(root, 'agent');
+  fs.mkdirSync(agent);
+  fs.writeFileSync(path.join(agent, 'settings.json'), JSON.stringify({ packages }));
+  const result = launch(root, agent);
+  assert.deepEqual(result.errors, []);
+  return { root, packages: JSON.parse(fs.readFileSync(path.join(agent, 'settings.json'))).packages };
+}
+
+test('tab keeps the latest toggle when pi config wrote the same path with backslashes', (t) => {
+  const { root, packages } = packagesAfterTab(t, [{
+    source: 'git:github.com/ARQAWA/my-pi',
+    extensions: ['-extensions/RQW-review/index.ts', '+extensions\\RQW-review\\index.ts'],
+  }]);
+  assert.deepEqual(packages, [{ source: path.join(root, 'my-pi'), extensions: ['+extensions/RQW-review/index.ts'] }]);
+});
+
+test('tab keeps other exclusions and writes forward slashes in every resource list', (t) => {
+  const { root, packages } = packagesAfterTab(t, [{
+    source: 'git:github.com/ARQAWA/my-pi',
+    extensions: ['-extensions/RQW-codex\\index.ts', '-extensions/RQW-review/index.ts', '+extensions\\RQW-review\\index.ts'],
+    skills: ['-skills\\selfcheck', '!skills/x/**'],
+  }]);
+  assert.deepEqual(packages, [{
+    source: path.join(root, 'my-pi'),
+    extensions: ['-extensions/RQW-codex/index.ts', '+extensions/RQW-review/index.ts'],
+    skills: ['-skills/selfcheck', '!skills/x/**'],
+  }]);
+});
+
+test('tab merges two of our entries and the later toggle wins', (t) => {
+  const { root, packages } = packagesAfterTab(t, [
+    { source: 'git:github.com/ARQAWA/my-pi', extensions: ['-extensions/RQW-review/index.ts', '-extensions/RQW-todo/index.ts'] },
+    'npm:other',
+    { source: 'C:\\Users\\owner\\.vscode\\extensions\\arqawa.pcli-0.0.1-win32-x64\\my-pi', extensions: ['+extensions\\RQW-review\\index.ts'] },
+  ]);
+  assert.deepEqual(packages, [
+    { source: path.join(root, 'my-pi'), extensions: ['-extensions/RQW-todo/index.ts', '+extensions/RQW-review/index.ts'] },
+    'npm:other',
+  ]);
+});
+
 test('Pi settings lock prevents a tab from overwriting another writer', (t) => {
   const root = fixture(t);
   installed(root);

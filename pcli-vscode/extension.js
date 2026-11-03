@@ -177,7 +177,42 @@ function agentDir() {
   return process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
 }
 
-// Replace only our package source. Object-form resource filters remain untouched.
+const RESOURCE_KEYS = ['extensions', 'skills', 'prompts', 'themes'];
+
+// Windows `pi config` writes backslashes and removes only exact matches, so an old
+// "-a/b" and a new "+a\\b" both stay. Forward slashes, then the last pattern per path wins.
+function latestPatterns(patterns) {
+  const latest = new Map();
+  for (const pattern of patterns) {
+    const normalized = pattern.replace(/\\/g, '/');
+    const target = normalized.replace(/^[+!-]/, '');
+    latest.delete(target);
+    latest.set(target, normalized);
+  }
+  return [...latest.values()];
+}
+
+// One filter from all our entries: later entries win, resource patterns are joined and cleaned.
+function mergeFilters(entries) {
+  const merged = {};
+  for (const entry of entries) {
+    if (typeof entry !== 'object') continue;
+    for (const [key, value] of Object.entries(entry)) {
+      if (key === 'source') continue;
+      const joined = RESOURCE_KEYS.includes(key) && Array.isArray(merged[key]) && Array.isArray(value);
+      merged[key] = joined ? [...merged[key], ...value] : value;
+    }
+  }
+  for (const key of RESOURCE_KEYS) {
+    const patterns = merged[key];
+    if (Array.isArray(patterns) && patterns.every((pattern) => typeof pattern === 'string')) {
+      merged[key] = latestPatterns(patterns);
+    }
+  }
+  return merged;
+}
+
+// Replace only our package source. Object-form resource filters stay, cleaned by mergeFilters.
 function configurePackage() {
   if (!fs.existsSync(path.join(bundledPackage, 'package.json'))) {
     throw new Error('Not found: ' + bundledPackage);
@@ -202,8 +237,9 @@ function configurePackage() {
         || /[\\/]arqawa\.pcli-[^\\/]+[\\/]my-pi$/i.test(source);
     };
     const owned = packages.filter(isOurs);
-    const filtered = owned.find((entry) => typeof entry === 'object');
-    const replacement = filtered ? { ...filtered, source: bundledPackage } : bundledPackage;
+    const replacement = owned.some((entry) => typeof entry === 'object')
+      ? { source: bundledPackage, ...mergeFilters(owned) }
+      : bundledPackage;
     let replaced = false;
     settings.packages = packages.flatMap((entry) => {
       if (!isOurs(entry)) return [entry];
