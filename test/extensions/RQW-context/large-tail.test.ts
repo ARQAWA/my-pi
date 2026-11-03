@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createFauxCore } from "@earendil-works/pi-ai";
 import * as Pi from "@earendil-works/pi-coding-agent";
+import { overflowTail } from "./overflow-tail.ts";
 import { harness } from "./harness.ts";
 import { saveContextHooks } from "./hooks-cleanup.ts";
 import { compactSafeTail, installManagerProjection } from "../../../extensions/RQW-context/large-tail.ts";
 import context from "../../../extensions/RQW-context/index.ts";
 
 const KEY = Symbol.for("rqw:safe-projection:v1");
+const TAIL = overflowTail();
 const shared = globalThis as Record<symbol, any>;
 let originalOffer: unknown;
 const cleanups: Array<() => Promise<void>> = [];
@@ -30,7 +32,7 @@ afterEach(async () => {
 function addHugeTail(manager: any) {
 	const first = manager.appendMessage({ role: "user", content: "old ".repeat(300), timestamp: 1 });
 	manager.appendCompaction("old summary", first, 100);
-	for (let i = 0; i < 130_000; i++) {
+	for (let i = 0; i < TAIL; i++) {
 		const entry = { type: "custom", customType: "rqw-agent-child", data: {}, id: `large-${i}`, parentId: manager.leafId, timestamp: "2026-01-01T00:00:00.000Z" };
 		manager.fileEntries.push(entry);
 		manager.byId.set(entry.id, entry);

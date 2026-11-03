@@ -14,9 +14,13 @@ const TEST_GLOBS = ["test/extensions/*/*.test.ts", "test/*.test.ts", "pcli-vscod
 /** @typedef {{ npm: string[] } | { node: string[] }} Job */
 /** @typedef {(name: string, job: Job) => Promise<number> | number} CheckRunner */
 
-/** @param {string[]} paths */
+/**
+ * A smaller V8 stack makes Pi's `push(...tail)` overflow on a tail of a few thousand entries instead of about 124000,
+ * so the huge-tail tests stay small (overflow-tail.ts in the RQW-context and RQW-codex tests measures the real limit).
+ * @param {string[]} paths
+ */
 export function testArgs(paths) {
-  return ["--test", "--experimental-test-isolation=none", "--import=./scripts/test-watch.mjs",
+  return ["--test", "--stack-size=200", "--experimental-test-isolation=none", "--import=./scripts/test-watch.mjs",
     "--test-reporter=./scripts/test-reporter.mjs", ...(paths.length ? paths : TEST_GLOBS)];
 }
 

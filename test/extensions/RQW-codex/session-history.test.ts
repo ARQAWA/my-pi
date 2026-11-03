@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { after, it } from "node:test";
 import { buildSessionProjection, convertToLlm, SessionManager, type AgentSession, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
+import { overflowTail } from "./overflow-tail.ts";
 import { SessionWireState } from "../../../extensions/RQW-codex/session-history.ts";
 import { buildRequest, type WireItem, type WireModelInfo } from "../../../extensions/RQW-codex/wire.ts";
 
@@ -217,7 +218,8 @@ it("real Pi manager preserves the wire input after a long compacted tail", () =>
 
 	const entries = [manager.getHeader()!, ...manager.getEntries()] as any[];
 	let parentId = manager.getLeafId();
-	for (let i = 0; i < 130_000; i++) {
+	const tail = overflowTail();
+	for (let i = 0; i < tail; i++) {
 		const entry = { type: "custom", id: `tail-${i}`, parentId, timestamp: "2026-01-01T00:00:00.000Z", customType: "test", data: null };
 		entries.push(entry);
 		parentId = entry.id;
@@ -225,6 +227,7 @@ it("real Pi manager preserves the wire input after a long compacted tail", () =>
 	const late = { role: "user", content: [{ type: "text", text: "after compaction" }], timestamp: 7 };
 	entries.push({ type: "message", id: "late", parentId, timestamp: "2026-01-01T00:00:00.000Z", message: late });
 	const resumed = SessionManager.inMemory(process.cwd(), undefined, entries);
+	assert.throws(() => buildSessionProjection(resumed.getEntries(), resumed.getLeafId()), RangeError, "the tail is long enough for Pi's own projection to overflow");
 	const longState = new SessionWireState({ session: { sessionId: threadId, sessionManager: resumed } as unknown as AgentSession, ownerId: "acct", modelHash: "caps-1" });
 	const context = { ...initial, messages: [...initial.messages, late] } as Context;
 	const actual = longState.previewNativeInput({ context, model: MODEL, capabilities: CAPS }, []);
