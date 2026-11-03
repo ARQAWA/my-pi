@@ -208,6 +208,21 @@ it("regression: terminal failure after retry counts every attempt once", async (
 	assert.deepEqual(terminal.error.usage, { input: 21, output: 8, cacheRead: 10, cacheWrite: 0, reasoning: 3, totalTokens: 39, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
 });
 
+it("regression: a retry that succeeds stores only the final request's usage", async () => {
+	const sse = sseScript([
+		{ events: [{ type: "response.created", response: { id: "r1" } }, { type: "response.incomplete", response: { id: "r1", incomplete_details: { reason: "content_filter" }, usage: rawUsage(11, 3, 4, 1) } }] },
+		{ events: [...textEvents("r2", "Hi").slice(0, -1), completed("r2", rawUsage(20, 5, 6, 2))] },
+	]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	const terminal = (await collect(transport.stream(MODEL, USER))).at(-1) as any;
+	assert.equal(terminal.type, "done");
+	assert.equal(sse.calls.length, 2);
+	assert.deepEqual(
+		[terminal.message.usage.input, terminal.message.usage.output, terminal.message.usage.cacheRead, terminal.message.usage.reasoning, terminal.message.usage.totalTokens],
+		[14, 5, 6, 2, 25],
+	);
+});
+
 it("regression: caller abort returns one aborted terminal without real timers", async () => {
 	const controller = new AbortController();
 	const postEvents = (options: any) => {

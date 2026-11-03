@@ -490,7 +490,8 @@ export class LiveResponsesPump {
 
 	/**
 	 * Ends the whole response with exactly one outer terminal. Open blocks are closed as dropped. An error terminal carries
-	 * the actual usage (failed attempts included) and marks Codex errors as retry-owned in `diagnostics`.
+	 * the actual usage (failed attempts included) and marks Codex errors as retry-owned in `diagnostics`. A completed
+	 * message carries only the usage of the final attempt.
 	 */
 	async finish(options: PumpFinishOptions = {}): Promise<AssistantMessage> {
 		if (this.#finished) return this.#final as AssistantMessage;
@@ -555,7 +556,8 @@ export class LiveResponsesPump {
 
 		const stopReason: StopReason =
 			options.reason ?? (content.some((block) => block.type === "toolCall") ? "toolUse" : this.#output.stopReason);
-		const message: AssistantMessage = { ...this.#output, content, usage, stopReason };
+		// A completed message stores only the final request's usage: Pi reads it as the context size, and failed attempts were resent inside it.
+		const message: AssistantMessage = { ...this.#output, content, usage: own, stopReason };
 		this.#final = message;
 		this.#stream.push({ type: "done", reason: stopReason as "stop" | "length" | "toolUse", message });
 		this.#stream.end(message);
