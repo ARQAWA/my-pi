@@ -2,6 +2,10 @@
 // Narrowed extraction: raw events/send/close, socket retirement, verified TLS, origin guards and safe errors.
 // Native permessage-deflate offer: no context takeover flags, window bits 15, compression level 6.
 // Built on the pinned ws package; connect timeout 15s and response idle timeout 300s.
+import { request as httpRequest } from "node:http";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
+import { connect as tlsConnect } from "node:tls";
+import type { Duplex } from "node:stream";
 import WebSocket from "ws";
 import { CookieJar, assertTransportOrigin, sharedCookieJar } from "./cookies.ts";
 
@@ -463,6 +467,67 @@ class Connection implements CodexSocket {
 	}
 }
 
+// True when NO_PROXY names the target: a host or parent domain, with an optional port ("*" names everything; a leading
+// dot or "*." is ignored).
+function bypassesProxy(target: URL, noProxy: string | undefined): boolean {
+	const port = target.port || "443";
+	for (const item of (noProxy ?? "").split(",")) {
+		const [, name = "", entryPort] = /^(.*?)(?::(\d+))?$/.exec(item.trim().toLowerCase()) ?? [];
+		const host = name.replace(/^\*?\./, "");
+		if (host === "*") return true;
+		if (entryPort && entryPort !== port) continue;
+		if (host && (target.hostname === host || target.hostname.endsWith(`.${host}`))) return true;
+	}
+	return false;
+}
+
+// Proxy URL for a secure target (wss, or https that ws upgrades) from the variables Pi's tab gets (PCLI exports
+// HTTPS_PROXY, HTTP_PROXY, ALL_PROXY, NO_PROXY).
+function proxyFromEnv(target: URL, env: NodeJS.ProcessEnv): string | undefined {
+	if ((target.protocol !== "wss:" && target.protocol !== "https:") || bypassesProxy(target, env.NO_PROXY || env.no_proxy)) return undefined;
+	return env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy || env.ALL_PROXY || env.all_proxy || undefined;
+}
+
+// Agent for Node's ws: opens a CONNECT tunnel through the proxy and wraps it in verified TLS.
+function tunnelAgent(proxy: string, target: URL, timeoutMs: number, signal: AbortSignal): HttpsAgent {
+	const proxyUrl = new URL(proxy);
+	const secureProxy = proxyUrl.protocol === "https:";
+	const authority = `${target.hostname}:${target.port || 443}`;
+	const headers: Record<string, string> = { Host: authority };
+	if (proxyUrl.username) {
+		const login = `${decodeURIComponent(proxyUrl.username)}:${decodeURIComponent(proxyUrl.password)}`;
+		headers["Proxy-Authorization"] = `Basic ${Buffer.from(login).toString("base64")}`;
+	}
+	const create = (_options: unknown, callback: (error: Error | null, socket?: Duplex) => void): void => {
+		const request = (secureProxy ? httpsRequest : httpRequest)({
+			host: proxyUrl.hostname, port: proxyUrl.port || (secureProxy ? 443 : 80), method: "CONNECT", path: authority, headers,
+		});
+		// A proxy that is unreachable or never answers CONNECT is cut at the connect timeout or on abort, so no request is
+		// left open. A plain timer, because the request's own timeout starts only once its socket is connected.
+		const timer = setTimeout(() => request.destroy(new Error("proxy CONNECT timed out")), timeoutMs);
+		const onAbort = () => request.destroy(abortError());
+		signal.addEventListener("abort", onAbort, { once: true });
+		request.on("close", () => {
+			clearTimeout(timer);
+			signal.removeEventListener("abort", onAbort);
+		});
+		request.on("connect", (response, socket) => {
+			clearTimeout(timer);
+			if (response.statusCode !== 200) {
+				socket.destroy();
+				callback(new Error(`proxy CONNECT rejected with HTTP ${response.statusCode}`));
+				return;
+			}
+			callback(null, tlsConnect({ socket, servername: target.hostname }));
+		});
+		request.on("error", callback);
+		request.end();
+	};
+	const agent = new HttpsAgent({ keepAlive: false });
+	(agent as unknown as { createConnection: typeof create }).createConnection = create;
+	return agent;
+}
+
 // Opens one owned connection. Resolves after the 101 upgrade; rejects with SocketError (status, headers and allowlisted
 // control fields of the rejected upgrade preserved) or AbortError. The returned socket is never shared with another request.
 export async function connect(options: ConnectOptions, SocketConstructor: new (url: string, options: Record<string, unknown>) => WsLike = WebSocket): Promise<CodexSocket> {
@@ -489,6 +554,13 @@ export async function connect(options: ConnectOptions, SocketConstructor: new (u
 		perMessageDeflate: { clientNoContextTakeover: false, serverNoContextTakeover: false, threshold: 0 },
 		handshakeTimeout: connectTimeoutMs,
 	};
+	const proxy = proxyFromEnv(url, process.env);
+	if (proxy) {
+		// The ws package never reads proxy variables. Bun's own ws takes only the `proxy` URL and ignores an agent;
+		// Node's ws takes only an agent.
+		wsOptions.proxy = proxy;
+		wsOptions.agent = tunnelAgent(proxy, url, connectTimeoutMs, options.signal);
+	}
 	let ws: WsLike;
 	try {
 		ws = new SocketConstructor(url.href, wsOptions);
