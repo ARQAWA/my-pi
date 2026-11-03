@@ -7979,3 +7979,9 @@ Verbatim replaced text:
 >   Claude `ultra` is above every listed level and maps like `max`, per the owner's «выше чем икс хай» and «опус хай и выше».
 >
 >   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
+
+## A-PCLI-FILTER-2026-11-03
+
+Status: SUPERSEDED in part by `[D-PCLI-FILTER]` inside `[D-PCLI-COMMAND]`: PCLI no longer copies package filters verbatim, it normalizes slashes and keeps the latest toggle per path. Owner, 2026-11-03, answering Main's «чинить так? 1. да.»: «1». Source: `2b013929:DECISIONS.md`, PCLI section, `[D-PCLI-COMMAND]`. Verbatim replaced text:
+
+>   local path, preserving object-form resource filters and unrelated keys/packages.

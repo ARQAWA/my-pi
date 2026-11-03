@@ -1340,8 +1340,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   the SHA in `my-pi/.revision`. The result ships next to `pi/`. `vscode:prepublish` builds both; extension updates
   update both. No Git command or GitHub package download runs on tab start. Git Bash remains the launch shell.
   Before opening a tab, PCLI replaces only its own my-pi entry in the shared Pi `settings.json` with the bundled
-  local path, preserving object-form resource filters and unrelated keys/packages. A previous version's bundled
-  path or `git:github.com/ARQAWA/my-pi` source is migrated. Authentication is never read or written. Invalid settings
+  local path, preserving object-form resource filters and unrelated keys/packages. The filters are cleaned `[D-PCLI-FILTER]`:
+  every pattern in `extensions`, `skills`, `prompts` and `themes` gets forward slashes (Windows `pi config` writes backslashes and
+  removes only exact matches, so the old `-extensions/RQW-review/index.ts` stayed next to the new
+  `+extensions\\RQW-review\\index.ts` and kept the extension off), and only the last pattern per path (prefix `+`, `-` or `!`
+  ignored) stays: the owner's latest toggle wins. Two of our entries merge the same way, later entry last. Other exclusions stay.
+  A previous version's bundled path or `git:github.com/ARQAWA/my-pi` source is migrated. Authentication is never read or written. Invalid settings
   stop tab creation without overwriting them. Restart tabs after an extension update. No manual package install
   inside PCLI. Carriers: `pcli-vscode/{package.json,bundle-my-pi.mjs,extension.js}`, `INSTALL.md`. Since: W04.
   Owner: «На Windows ставим через наше расширение VS Code ... Оно запускает Py в терминале. ... Чтобы это было не из терминала, потому что у меня нет доступа к терминалу. Я не могу остановить Py и сделать апдейт, как я это делаю в терминале в macOS.»
