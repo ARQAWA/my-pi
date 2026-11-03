@@ -118,13 +118,13 @@ it("a web call is answered through the fake backend and comes back to the model 
 	const report = toolResultText(w, "w1");
 	assert.match(report, /1 target, 1 ok, 0 failed/);
 	assert.match(report, /Verified \[documentation\]\(https:\/\/example\.com\/docs\)/);
-	assert.deepEqual(backend.rounds, [{ model: "gpt-6.1-sol", effort: "medium" }, { model: "gpt-6.1-sol", effort: "medium" }]);
+	assert.deepEqual(backend.rounds, [{ model: "gpt-6.1-terra", effort: "high" }, { model: "gpt-6.1-terra", effort: "high" }]);
 	assert.equal(backend.searches, 1);
 	assert.deepEqual(backend.upgrades, ["chatgpt.com"]);
 	assert.deepEqual(backend.unrouted, []);
 });
 
-it("a caller model the search does not know is searched with Sol at low effort", async (t) => {
+it("a caller model the search does not know is searched with Terra at medium effort", async (t) => {
 	const { backend, install } = fakeBackend(t, [round(searchCall), round(answer)]);
 	const w = await world(t, { model: "anthropic/claude-opus-5-5", thinking: "high" });
 	// The picker offers only listed models, so a caller outside the list is put straight into the agent state.
@@ -135,7 +135,7 @@ it("a caller model the search does not know is searched with Sol at low effort",
 	w.model.script(call("web", { queries: ["Pi documentation"] }, "w1"), text("read it"));
 	await w.submit("look it up");
 	assert.match(toolResultText(w, "w1"), /1 target, 1 ok, 0 failed/);
-	assert.deepEqual(backend.rounds.map(({ model, effort }) => `${model} ${effort}`), ["gpt-6.1-sol low", "gpt-6.1-sol low"]);
+	assert.deepEqual(backend.rounds.map(({ model, effort }) => `${model} ${effort}`), ["gpt-6.1-terra medium", "gpt-6.1-terra medium"]);
 });
 
 it("without a saved Codex login the call fails with the login hint and nothing goes out", async (t) => {
