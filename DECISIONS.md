@@ -824,8 +824,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Checked process-wide lifecycle** `[D-CONTEXT-LIFECYCLE]`. Native method descriptors, arities, model getter and prototype extensibility are checked before static installation; unsupported shapes fail without static changes. Hooks sit once per process in forwarding slots (`extensions/RQW-context/hooks.ts`) and apply while `Symbol.for("rqw-context/owner")` holds any live owner token; a reloaded module replaces what the slots run, so `/reload` applies new code (`[D-RELOAD-HANDOVER]`). Each `session_shutdown` removes only its own token; the last removal restores stock behavior, including physical lookup identity. SDK `dispose()` alone does not emit this lifecycle event, and sessions that excluded the extension still receive the rule while another owner remains. A process that started on an older release keeps that release's hooks until one restart.
   Coordinator text. Reason: independent sessions must not disable each other's universal context policy.
   Carrier: `extensions/RQW-context/index.ts`; restart instructions: `INSTALL.md`. Since: `e1fa03d`.
-- **Background compaction at 65% of W** `[D-CONTEXT-BACKGROUND]`. At Pi's existing checkpoints, when context reaches
-  65% of W and Pi's own threshold has not, RQW-context prepares a snapshot with a version-pinned local copy of Pi 1.4.0's
+- **Background compaction at 75% of W** `[D-CONTEXT-BACKGROUND]`. At Pi's existing checkpoints, when context reaches
+  75% of W and Pi's own threshold has not, RQW-context prepares a snapshot with a version-pinned local copy of Pi 1.4.0's
   projected preparation and starts Pi's own `_runDefaultCompaction` without awaiting it, at most once per compaction
   generation (latest compaction id), failed attempts included. A ready summary that is still fresh makes the next
   checkpoint (before the next model call, after a run, or before the next prompt) answer "threshold reached"; Pi's
@@ -853,6 +853,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   справа от папки чтобы был золотой переливающийся статус ... что-то минималистичное»; mockup variant 2:
   «2й вариант толье вместо бекграунд бг просто»; «тона только для лимитов не для компакшена».
   Owner, verbatim: «Еще смотри какая хуйня: если у нас идет BG compaction, если он активно идёт и мы достигли лимита compaction, и при этом BG compaction не закончил, то мы дожидаемся, пока он закончится. И как только он успешно завершится, мы начинаем следующий ход уже с ним. Так должно работать. Я так считаю, надо сделать.» «А сейчас я не знаю, как работает, но надо, чтобы было так.»
+  Start raised from 65% to 75% of W, 2026-11-03, owner: «подними до 75% и сразу выпускай» (answering the question about
+  raising it to 80%; `BACKGROUND_PERCENT` in `extensions/RQW-context/background.ts`).
   Coordinator text: adopting as soon as ready, placement in RQW-context, children,
   model-switch retention, one attempt per generation and the local helper copy are design choices the owner approved
   with the 7.5 SP design, not owner quotations.

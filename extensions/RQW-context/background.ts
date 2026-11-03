@@ -1,4 +1,4 @@
-// Background compaction: at 65% of W, Pi's own summary generator runs off the critical path on a snapshot of the
+// Background compaction: at 75% of W, Pi's own summary generator runs off the critical path on a snapshot of the
 // projected context. A ready and still fresh summary makes Pi's next checkpoint compact through its normal threshold
 // path, which takes the ready result instead of asking the model. Everything else stays Pi's foreground compaction.
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -6,7 +6,7 @@ import * as Pi from "@earendil-works/pi-coding-agent";
 import { installHook, isHooked } from "./hooks.ts";
 import { projectSession } from "./projection.ts";
 
-export const BACKGROUND_PERCENT = 0.65;
+export const BACKGROUND_PERCENT = 0.75;
 /** Status channel on the session's `pi.events`: `{ sessionId, active }`. */
 export const BACKGROUND_EVENT = "rqw-context:background-compaction";
 /** Per-session dispatch before a background summary request, `{ type, signal }`, so transports can route it. */

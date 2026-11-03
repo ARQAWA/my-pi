@@ -25,7 +25,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   physical window W = min(contextWindow, 500000) and compacts strictly above W - R, where R = round(W / 10).
   Explicit settings and physical request scopes remain; Pi 1.5.0 summaries use native output limits, not R.
-  Background compaction: from 65% of W Pi's own summary runs unawaited on a projected snapshot. At the threshold Pi
+  Background compaction: from 75% of W Pi's own summary runs unawaited on a projected snapshot. At the threshold Pi
   waits for a running summary and stores it if fresh; on failure, abort or staleness Pi compacts normally. Status channel
   `rqw-context:background-compaction` `{ sessionId, active }`; dispatch `rqw:background-summary:v1` (`[D-CONTEXT-BACKGROUND]`).
   Contract: `extensions/RQW-context/README.md`. Tests: `npm test`.

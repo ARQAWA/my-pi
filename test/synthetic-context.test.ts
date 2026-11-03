@@ -8,11 +8,11 @@ after(() => reportTimings(import.meta.filename));
 type World = Awaited<ReturnType<typeof world>>;
 type Request = World["requests"][number];
 
-// Opus declares 1000000 tokens; the rule caps it at W = 500000, R = 50000. The threshold is 450000, the background summary starts at 325000.
+// Opus declares 1000000 tokens; the rule caps it at W = 500000, R = 50000. The threshold is 450000, the background summary starts at 375000.
 // The fake model counts one token per four characters of message text.
 const THRESHOLD = 450_000;
-const BACKGROUND_FROM = 325_000;
-const TURN = 650_000;
+const BACKGROUND_FROM = 375_000;
+const TURN = 800_000;
 
 /** Pi's summary request: its last message carries the conversation to summarize. */
 const isSummary = (request: Request) => {
@@ -25,7 +25,7 @@ const compactions = (w: World) => w.jsonl().filter((entry) => entry.type === "co
 const filler = (characters: number) => "x".repeat(characters);
 const tokens = (w: World) => w.session.getContextUsage()?.tokens ?? 0;
 
-/** Two long turns that bring the context above 65% of the window and below the threshold. */
+/** Two long turns that bring the context above 75% of the window and below the threshold. */
 async function fillToBackground(w: World): Promise<void> {
 	w.model.script(text("one"), text("two"));
 	await w.session.prompt(filler(TURN));
@@ -37,7 +37,7 @@ async function fillToBackground(w: World): Promise<void> {
 
 const backgroundStatus = (w: World) => w.events.filter((event) => event.channel === "rqw-context:background-compaction").map((event) => (event.data as { active: boolean }).active);
 
-it("from 65% of the window a summary runs in the background and at the threshold it is stored without a second request", async (t) => {
+it("from 75% of the window a summary runs in the background and at the threshold it is stored without a second request", async (t) => {
 	const restore = saveContextHooks();
 	let w: World | undefined;
 	t.after(async () => { await w?.dispose(); restore(); });

@@ -7923,3 +7923,11 @@ Status: SUPERSEDED by `[D-MODELS-EFFORT]`: the owner chose to remove Terra off.
 Introduced: `80732f36`. Source: `ed10109e:DECISIONS.md`, line 2005. Verbatim replaced text:
 
 > RQW-models permanent `off` for Terra (`[D-WEB-MAPPING]` passes `off` as native `none`; the audit itself asks for an owner decision)
+
+## A-0487 · archived 2026-11-03 · Context · background summary start at 65% of W
+
+Status: SUPERSEDED by `[D-CONTEXT-BACKGROUND]` (DECISIONS.md#context): the owner raised the start to 75% of W. New source, 2026-11-03: «подними до 75% и сразу выпускай».
+Introduced: `6311bd5e`. Source: `be2dfcb8:DECISIONS.md`, lines 827-828. Verbatim replaced text:
+
+> - **Background compaction at 65% of W** `[D-CONTEXT-BACKGROUND]`. At Pi's existing checkpoints, when context reaches
+>   65% of W and Pi's own threshold has not, RQW-context prepares a snapshot with a version-pinned local copy of Pi 1.4.0's

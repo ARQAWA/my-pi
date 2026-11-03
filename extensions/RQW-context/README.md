@@ -31,9 +31,9 @@ Huge-tail compaction (`large-tail.ts`):
 
 Background compaction (`background.ts`):
 
-- At Pi's checkpoints, from 65% of W and below Pi's own threshold, Pi's own summary generator runs without being
+- At Pi's checkpoints, from 75% of W and below Pi's own threshold, Pi's own summary generator runs without being
   awaited on a snapshot of the projected context, once per compaction generation. Disabled compaction, or an explicit
-  reserve whose threshold is below 65%, starts nothing.
+  reserve whose threshold is below 75%, starts nothing.
 - When the summary is ready and still fresh, the next checkpoint says "threshold reached" and Pi's normal threshold
   path stores it with no new request. The snapshot cut is kept; everything after it stays verbatim.
 - If Pi's threshold is reached while the request is running, Pi waits within its normal compaction path. A successful,
