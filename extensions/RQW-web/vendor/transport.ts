@@ -286,7 +286,7 @@ export class CodexThreadTransport {
 						this.#transport = "sse";
 						continue;
 					}
-					if (transport === "websocket") throw raw;
+					if (transport === "websocket") throw error;
 					const decision = http.next(error);
 					if (!decision.retry) throw raw;
 					await sleepAbortable(decision.delayMs, signal, this.#deps.sleep);

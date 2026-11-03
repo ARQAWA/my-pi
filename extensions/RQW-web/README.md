@@ -48,6 +48,11 @@ The ephemeral web-only loop preserves the CLI mechanism: Responses Lite `web.run
 result, sourced answer. It creates no Pi session, history, provider registration, prewarm or compaction. Its pure
 transport/auth snapshot is local under `vendor/`, with original file and commit in each copied source header.
 
+The model stream is a WebSocket. It goes through the proxy from `HTTPS_PROXY`, `HTTP_PROXY` or `ALL_PROXY` (`NO_PROXY`
+honored), which PCLI sets on the VDI; the `ws` package never reads those variables itself. Bun's `ws` takes only a
+`proxy` URL, Node's `ws` only an agent, so `vendor/websocket.ts` passes both. A failed connection is reported as
+`connection_failed`.
+
 ## Subagents and switching off
 
 RQW-agent requests the optional `rqw-search:subagent-web` offer on `pi.events` and registers the tool in each child API.
