@@ -3,14 +3,16 @@ import { createAgentSession, createEventBus, DefaultResourceLoader, type Extensi
 import context from "../../../extensions/RQW-context/index.ts";
 
 export const WINDOW = 4_000;
+// Fixed, so the token counts of the scripted turns do not depend on where the checkout lives.
+const SESSION_CWD = "/";
 const isSummary = (context: any) => JSON.stringify(context).includes("context summarization assistant");
 type Summary = { context: any; aborted: boolean; resolve(text: string): void; reject(error: Error): void };
 
 /**
  * A real Pi session with RQW-context and a scripted faux model; only Pi's model and runtime are faked.
  * `say(p)` adds a user turn of about p of the window. Summary requests answer `SUMMARY n` at once, or wait for
- * `release()` while `hold` is set; with `stubborn` an aborted request stays pending until released. `next` scripts the
- * following conversation answers, default "ok". Waiting is event driven: `until(done)` re-checks after every summary
+ * `release()` while `hold` is set; with `stubborn` set when a request arrives, that request stays pending after an abort until released. `next` scripts the
+ * following conversation answers, default "ok". `reasons` lists the reason of every started compaction. Waiting is event driven: `until(done)` re-checks after every summary
  * request and every status event, so no test counts turns or polls.
  */
 export async function harness(settings: Record<string, unknown> = {}, extension?: (pi: ExtensionAPI) => void) {
@@ -29,8 +31,9 @@ export async function harness(settings: Record<string, unknown> = {}, extension?
 		if (!isSummary(context)) { const step = next.shift(); return typeof step === "function" ? step() : step ?? fauxAssistantMessage("ok"); }
 		const text = await new Promise<string>((resolve, reject) => {
 			const summary: Summary = { context, aborted: false, resolve, reject };
+			const stubborn = control.stubborn;
 			summaries.push(summary);
-			options?.signal?.addEventListener("abort", () => { summary.aborted = true; if (!control.stubborn) reject(new Error("aborted")); });
+			options?.signal?.addEventListener("abort", () => { summary.aborted = true; if (!stubborn) reject(new Error("aborted")); });
 			if (control.fail) reject(new Error("summary failed"));
 			else if (!control.hold) resolve(`SUMMARY ${summaries.length}`);
 			changed();
@@ -60,15 +63,24 @@ export async function harness(settings: Record<string, unknown> = {}, extension?
 	} as never);
 	await resourceLoader.reload();
 	const { session } = await createAgentSession({
-		cwd: process.cwd(), modelRuntime, model: model as never, resourceLoader, settingsManager,
-		sessionManager: SessionManager.inMemory(process.cwd()), tools: [],
+		cwd: SESSION_CWD, modelRuntime, model: model as never, resourceLoader, settingsManager,
+		sessionManager: SessionManager.inMemory(SESSION_CWD), tools: [],
 	});
 	await session.bindExtensions({});
+	const reasons: string[] = [];
+	session.subscribe((event) => { if (event.type === "compaction_start") reasons.push(event.reason); });
 	return {
-		session, status, compacts, summaries, next, control, until, other: core.getModel("m2")!,
+		session, status, compacts, summaries, next, control, until, reasons, other: core.getModel("m2")!,
 		manager: session.sessionManager,
 		say: (percent: number, text = "") => session.prompt(text + "x".repeat(Math.round(WINDOW * percent * 4))),
 		release: (text: string) => summaries.at(-1)!.resolve(text),
+		/** Teardown: answers every held summary request and stops the work it kept running, so a failed assertion cannot leave a request pending. */
+		async settle() {
+			control.hold = false;
+			for (const summary of summaries) summary.resolve("TEARDOWN");
+			session.abortCompaction();
+			await session.abort();
+		},
 		/** Waits until `count` summary requests arrived. */
 		async summary(count: number) {
 			await until(() => summaries.length >= count);

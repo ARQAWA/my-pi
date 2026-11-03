@@ -21,6 +21,7 @@ async function harness(...args: Parameters<typeof createHarness>) {
 afterEach(async () => {
 	try {
 		for (const h of sessions.splice(0)) {
+			await h.settle();
 			await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never);
 			h.session.dispose();
 		}
@@ -42,6 +43,8 @@ async function toBackground(h: Awaited<ReturnType<typeof harness>>) {
 	await h.summary(1);
 	if (!h.control.hold) await h.quiet();
 }
+/** toBackground ends near 78% of W; a 15% turn then ends near 93%: above Pi's threshold at 90%, below W, so Pi selects "threshold", never "overflow". */
+const THRESHOLD_TURN = 0.15;
 const userIds = (h: Awaited<ReturnType<typeof harness>>) =>
 	h.manager.getBranch().filter((entry: any) => entry.type === "message" && entry.message.role === "user").map((entry) => entry.id);
 
@@ -127,7 +130,7 @@ describe("RQW-context background compaction: ending a request", () => {
 
 	for (const [name, run] of [
 		["manual compaction", (h: Awaited<ReturnType<typeof harness>>) => h.session.compact()],
-		["threshold compaction", (h: Awaited<ReturnType<typeof harness>>) => h.say(0.22)],
+		["threshold compaction", (h: Awaited<ReturnType<typeof harness>>) => h.say(THRESHOLD_TURN)],
 	] as const) {
 		it(`a session_before_compact handler that cancels ${name} still ends the running request`, async () => {
 			let cancel = false;
@@ -137,7 +140,10 @@ describe("RQW-context background compaction: ending a request", () => {
 			await toBackground(h);
 			cancel = true;
 			if (name === "manual compaction") await assert.rejects(run(h), { message: "Compaction cancelled" });
-			else await run(h);
+			else {
+				await run(h);
+				assert.deepEqual(h.reasons, ["threshold"]);
+			}
 			// Pi never asked the summary generator, so only the compaction entry itself can end the request.
 			assert.equal(h.summaries.length, 1);
 			assert.equal(h.summaries[0].aborted, true);
@@ -225,7 +231,8 @@ describe("RQW-context background compaction: incompatible Pi shape", () => {
 				assert.deepEqual(h.status, []);
 				assert.equal(h.summaries.length, 0);
 				assert.equal(h.compactions().length, 0);
-				await h.say(0.22);
+				await h.say(THRESHOLD_TURN);
+				assert.deepEqual(h.reasons, ["threshold"]);
 				assert.equal(h.compactions().length, 1);
 				assert.equal(h.summaries.length, 1);
 				assert.deepEqual(h.status, []);
@@ -468,7 +475,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
 		h.control.hold = true;
 		await toBackground(h);
-		const done = h.say(0.22);
+		const done = h.say(THRESHOLD_TURN);
 		await threshold;
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		try {
@@ -480,6 +487,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 			for (const summary of h.summaries) summary.resolve("BACKGROUND");
 		}
 		await done;
+		assert.deepEqual(h.reasons, ["threshold"]);
 		assert.equal(h.summaries.length, 1);
 		assert.match(h.compactions()[0].summary, /^BACKGROUND/);
 		assert.deepEqual(h.status.map((item: any) => item.active), [true, false]);
@@ -491,7 +499,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
 		h.control.hold = true;
 		await toBackground(h);
-		const done = h.say(0.22);
+		const done = h.say(THRESHOLD_TURN);
 		await threshold;
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		try {
@@ -503,6 +511,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		await h.summary(2);
 		h.summaries[1].resolve("FOREGROUND");
 		await done;
+		assert.deepEqual(h.reasons, ["threshold"]);
 		assert.equal(h.compactions().length, 1);
 		assert.match(h.compactions()[0].summary, /^FOREGROUND/);
 	});
@@ -513,7 +522,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
 		h.control.hold = true;
 		await toBackground(h);
-		const done = h.say(0.22);
+		const done = h.say(THRESHOLD_TURN);
 		await threshold;
 		h.manager.appendContextEdit(userIds(h)[0], { content: [{ type: "text", text: "CHANGED_REQUIREMENT" }] } as never);
 		h.summaries[0].resolve("STALE");
@@ -524,6 +533,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		// The scripted summarizer reports what it was asked about; the active context then carries that report.
 		h.summaries[1].resolve(JSON.stringify(h.summaries[1].context).includes("CHANGED_REQUIREMENT") ? "SAW CHANGED_REQUIREMENT" : "SAW OLD INPUT");
 		await done;
+		assert.deepEqual(h.reasons, ["threshold"]);
 		assert.match(h.compactions()[0].summary, /^SAW CHANGED_REQUIREMENT/);
 		assert.ok(JSON.stringify(h.manager.buildSessionProjection().messages).includes("SAW CHANGED_REQUIREMENT"));
 	});
@@ -534,7 +544,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
 		h.control.hold = true;
 		await toBackground(h);
-		const done = h.say(0.22);
+		const done = h.say(THRESHOLD_TURN);
 		await threshold;
 		const messages = h.manager.getBranch().filter((entry: any) => entry.type === "message" && entry.message.role !== "system");
 		for (const entry of messages.slice(0, -2)) h.manager.appendContextEdit(entry.id, null);
@@ -542,6 +552,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		h.control.hold = false;
 		h.summaries[0].resolve("STALE");
 		await done;
+		assert.deepEqual(h.reasons, ["threshold"]);
 		assert.equal(h.summaries.length, 1);
 		assert.equal(h.compactions().length, 0);
 		assert.deepEqual(h.status.map((item: any) => item.active), [true, false]);
@@ -554,12 +565,15 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		h.control.hold = true;
 		h.control.stubborn = true;
 		await toBackground(h);
-		const done = h.say(0.22);
+		// Only the background request ignores its abort; a wrongly made foreground one ends, so a failure cannot hang.
+		h.control.stubborn = false;
+		const done = h.say(THRESHOLD_TURN);
 		await threshold;
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.equal(h.session.isCompacting, true);
 		h.session.abortCompaction();
 		await done;
+		assert.deepEqual(h.reasons, ["threshold"]);
 		assert.equal(h.summaries[0].aborted, true);
 		assert.equal(h.summaries.length, 1);
 		assert.equal(h.compactions().length, 0);
