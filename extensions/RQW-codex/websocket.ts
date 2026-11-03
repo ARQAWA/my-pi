@@ -15,12 +15,12 @@
 import { randomUUID } from "node:crypto";
 import { Agent as HttpAgent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
-import { connect as netConnect, isIP } from "node:net";
+import net, { isIP } from "node:net";
 import type { Socket } from "node:net";
-import { connect as tlsConnect } from "node:tls";
+import tls from "node:tls";
 import type { TLSSocket } from "node:tls";
 import WebSocket from "ws";
-import { CookieJar, assertTransportOrigin, sharedCookieJar } from "./cookies.ts";
+import { CookieJar, assertTransportOrigin, isLoopbackHost, sharedCookieJar } from "./cookies.ts";
 import { classifyEvent } from "./errors.ts";
 
 // Actual WS beta (client.rs:1401-1405). The connector sends it when the caller did not set OpenAI-Beta.
@@ -107,6 +107,7 @@ export type TlsConnector = (options: {
 	readonly servername: string | undefined;
 	readonly ca?: string | Buffer;
 	readonly socket?: Socket;
+	readonly signal?: AbortSignal;
 }) => Promise<Socket>;
 
 export type ProxyOptions = {
@@ -709,8 +710,8 @@ const defaultTls: TlsConnector = (options) =>
 	new Promise<Socket>((resolve, reject) => {
 		const onError = (error: Error) => reject(error);
 		const socket: TLSSocket = options.socket
-			? tlsConnect({ socket: options.socket, servername: options.servername, ca: options.ca })
-			: tlsConnect({ host: bareHost(options.host), port: options.port, servername: options.servername, ca: options.ca });
+			? tls.connect({ socket: options.socket, servername: options.servername, ca: options.ca, signal: options.signal })
+			: tls.connect({ host: bareHost(options.host), port: options.port, servername: options.servername, ca: options.ca, signal: options.signal });
 		socket.once("error", onError);
 		socket.once("secureConnect", () => {
 			socket.removeListener("error", onError);
@@ -728,24 +729,35 @@ function openTunnel(
 	port: number,
 	secure: boolean,
 	timeoutMs: number,
+	signal: AbortSignal,
 ): Promise<Socket> {
 	return new Promise<Socket>((resolve, reject) => {
 		let settled = false;
 		let proxySocket: Socket | undefined;
+		const controller = new AbortController();
+		const cleanup = () => {
+			clearTimeout(timer);
+			signal.removeEventListener("abort", onAbort);
+		};
 		const fail = (error: Error) => {
 			if (settled) return;
 			settled = true;
-			clearTimeout(timer);
+			cleanup();
+			controller.abort();
 			proxySocket?.destroy();
 			reject(error);
 		};
+		const onAbort = () => fail(abortError());
 		const timer = setTimeout(() => fail(new SocketError(undefined, {}, "proxy connect timed out", "connect-timeout")), timeoutMs);
+		signal.addEventListener("abort", onAbort, { once: true });
+		if (signal.aborted) return onAbort();
 		const target = host.includes(":") ? `[${host}]` : host;
 		const extra = Object.entries(options.headers)
 			.map(([name, value]) => `${name}: ${value}\r\n`)
 			.join("");
 		const request = `CONNECT ${target}:${port} HTTP/1.1\r\nHost: ${target}:${port}\r\n${extra}\r\n`;
 		const attach = (socket: Socket) => {
+			if (settled) { socket.destroy(); return; }
 			proxySocket = socket;
 			let buffered = Buffer.alloc(0);
 			const onData = (chunk: Buffer) => {
@@ -758,17 +770,19 @@ function openTunnel(
 					fail(new SocketError(status, {}, `proxy CONNECT rejected with HTTP ${status}`, "transport"));
 					return;
 				}
-				clearTimeout(timer);
 				if (!secure) {
 					settled = true;
+					cleanup();
 					resolve(socket);
 					return;
 				}
 				options
-					.tls({ host, port, servername: tlsServername(host), socket })
+					.tls({ host, port, servername: tlsServername(host), socket, signal: controller.signal })
 					.then(
 						(tunnel) => {
+							if (settled) { tunnel.destroy(); return; }
 							settled = true;
+							cleanup();
 							resolve(tunnel);
 						},
 						(error: unknown) => fail(new SocketError(undefined, {}, `target TLS failed: ${errorText(error)}`, "transport")),
@@ -782,15 +796,15 @@ function openTunnel(
 		};
 		if (proxy.protocol === "https:") {
 			options
-				.tls({ host: bareHost(proxy.hostname), port: Number(proxy.port || 443), servername: tlsServername(proxy.hostname), ca: options.ca })
+				.tls({ host: bareHost(proxy.hostname), port: Number(proxy.port || 443), servername: tlsServername(proxy.hostname), ca: options.ca, signal: controller.signal })
 				.then(attach, (error: unknown) => fail(new SocketError(undefined, {}, `proxy TLS failed: ${errorText(error)}`, "transport")));
 		} else {
-			attach(netConnect({ host: bareHost(proxy.hostname), port: Number(proxy.port || 80) }));
+			attach(net.connect({ host: bareHost(proxy.hostname), port: Number(proxy.port || 80) }));
 		}
 	});
 }
 
-function proxyAgent(proxy: ProxyOptions, target: URL, timeoutMs: number): HttpAgent {
+function proxyAgent(proxy: ProxyOptions, target: URL, timeoutMs: number, signal: AbortSignal): HttpAgent {
 	const proxyUrl = checkProxy(proxy);
 	const secure = target.protocol === "wss:" || target.protocol === "https:";
 	const tunnelOptions = { headers: proxy.headers ?? {}, ca: proxy.ca, tls: proxy.tls ?? defaultTls };
@@ -798,7 +812,7 @@ function proxyAgent(proxy: ProxyOptions, target: URL, timeoutMs: number): HttpAg
 	const create = (options: { host?: string; port?: string | number }, callback: (error: Error | null, socket?: Socket) => void) => {
 		const host = options.host ?? target.hostname;
 		const port = Number(options.port ?? target.port ?? (secure ? 443 : 80));
-		openTunnel(proxyUrl, tunnelOptions, host, port, secure, timeoutMs).then(
+		openTunnel(proxyUrl, tunnelOptions, host, port, secure, timeoutMs, signal).then(
 			(socket) => callback(null, socket),
 			(error: Error) => callback(error),
 		);
@@ -806,6 +820,20 @@ function proxyAgent(proxy: ProxyOptions, target: URL, timeoutMs: number): HttpAg
 	};
 	(agent as unknown as { createConnection: typeof create }).createConnection = create;
 	return agent;
+}
+
+// Match the environment proxy rules used by RQW-web; local test endpoints stay direct.
+function proxyFromEnv(target: URL, env: NodeJS.ProcessEnv): string | undefined {
+	if (isLoopbackHost(target.hostname) || (target.protocol !== "wss:" && target.protocol !== "https:")) return undefined;
+	const port = target.port || "443";
+	for (const item of (env.NO_PROXY || env.no_proxy || "").split(",")) {
+		const [, name = "", entryPort] = /^(.*?)(?::(\d+))?$/.exec(item.trim().toLowerCase()) ?? [];
+		const host = name.replace(/^\*?\./, "");
+		if (host === "*") return undefined;
+		if (entryPort && entryPort !== port) continue;
+		if (host && (target.hostname === host || target.hostname.endsWith(`.${host}`))) return undefined;
+	}
+	return env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy || env.ALL_PROXY || env.all_proxy || undefined;
 }
 
 // Opens one owned connection. Resolves after the 101 upgrade; rejects with SocketError (status, headers and allowlisted
@@ -834,7 +862,12 @@ export async function connect(options: ConnectOptions, SocketConstructor: new (u
 		perMessageDeflate: { clientNoContextTakeover: false, serverNoContextTakeover: false, threshold: 0 },
 		handshakeTimeout: connectTimeoutMs,
 	};
-	if (options.proxy) wsOptions.agent = proxyAgent(options.proxy, url, connectTimeoutMs);
+	const envProxy = options.proxy ? undefined : proxyFromEnv(url, process.env);
+	const proxy = options.proxy ?? (envProxy ? { url: envProxy } : undefined);
+	if (proxy) {
+		wsOptions.agent = proxyAgent(proxy, url, connectTimeoutMs, options.signal);
+		wsOptions.proxy = proxy.url;
+	}
 	let ws: WsLike;
 	try {
 		ws = new SocketConstructor(url.href, wsOptions);
