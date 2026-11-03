@@ -219,6 +219,7 @@ describe("RQW-models public selection", () => {
 			const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
 			let current = options.current;
 			let thinking = options.thinking ?? "high";
+			const notices: string[] = [];
 			const pi = {
 				registerProvider() {}, unregisterProvider() {}, registerShortcut() {}, registerCommand() {},
 				on: (name: string, handler: any) => { handlers.set(name, handler); return () => {}; },
@@ -235,11 +236,12 @@ describe("RQW-models public selection", () => {
 				get model() { return current; }, hasUI: true,
 				modelRegistry: { getAvailable: () => options.available },
 				sessionManager: { getBranch: () => entries }, isIdle: () => true,
-				ui: { notify() {} },
+				ui: { notify: (text: string) => { notices.push(text); } },
 			} as unknown as ExtensionContext;
 			t.after(() => handlers.get("session_shutdown")!({}, ctx));
 			await handlers.get("session_start")!({ type: "session_start", reason }, ctx);
-			return { current, thinking };
+			// The fake context cannot lend its session; every other notice counts.
+			return { current, thinking, notices: notices.filter((text) => !text.startsWith("RQW-models cannot restrict Pi's own model selection")) };
 		};
 
 		it("gives every new session Opus medium, whatever the saved default is", async t => {
@@ -262,7 +264,19 @@ describe("RQW-models public selection", () => {
 
 		it("keeps a listed model when neither Opus nor Sol is available, and refuses an unlisted one", async t => {
 			assert.equal((await start(t, "new", { current: sonnet, available: [sonnet] })).current, sonnet);
-			assert.equal((await start(t, "new", { current: savedDefault, available: [sonnet] })).current, savedDefault);
+			const refused = await start(t, "new", { current: savedDefault, available: [sonnet] });
+			assert.equal(refused.current, savedDefault);
+			assert.equal(refused.notices.length, 1);
+			assert.match(refused.notices[0], /requests are refused/);
+		});
+
+		it("replaces an unlisted model without a warning", async t => {
+			// Pi's own provider default for anthropic without a saved default model.
+			const piDefault = model("claude-opus-4-8");
+			for (const [reason, history] of [["startup", false], ["startup", true], ["resume", true]] as const) {
+				const result = await start(t, reason, { current: piDefault, available: [piDefault, sonnet, sol, opus], history });
+				assert.deepEqual([result.current, result.thinking, result.notices], [opus, "medium", []], `${reason}, history ${history}`);
+			}
 		});
 
 		it("keeps the model and thinking the session had on resume, fork, reload and startup with history", async t => {

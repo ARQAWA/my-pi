@@ -369,9 +369,9 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		// Resume, fork and reload keep the model and thinking the session had, unless that model is outside the list.
 		if (!isNew && !unlisted) return;
 		const target = await newSessionModel(models);
+		// The switch is silent: Pi's own provider default (anthropic: claude-opus-4-8) is unlisted in every new session.
 		if (target && await setStartupModel(target)) {
 			pi.setThinkingLevel("medium");
-			if (unlisted) warn(ctx, `${notListed(unlisted)} Switched to ${name(target)} (${pi.getThinkingLevel()}).`, true);
 			return;
 		}
 		if (unlisted) warn(ctx, `${notListed(unlisted)} Neither Opus nor GPT-6.1 Sol is authenticated; its requests are refused.`, true);
