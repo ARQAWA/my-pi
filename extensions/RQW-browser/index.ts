@@ -1,6 +1,7 @@
 import type { ChildProcess, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, rmdir, writeFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,6 +108,34 @@ const resizePiImage: ResizeScreenshot = async (bytes, mimeType) => {
 	return await resizeImage(bytes, mimeType, { maxWidth: 1024, maxHeight: 1024, maxBytes: 150 * 1024 });
 };
 type Step = { method: string; args: unknown[] };
+
+function chromeProxy(proxy: string | undefined): string | undefined {
+	if (!proxy || !proxy.includes("@")) return proxy;
+	const hasScheme = proxy.includes("://");
+	const url = new URL(hasScheme ? proxy : `http://${proxy}`);
+	return `${hasScheme ? `${url.protocol}//` : ""}${url.host}`;
+}
+
+function addProxyArgs(args: string[], env: NodeJS.ProcessEnv): void {
+	const http = chromeProxy(env.http_proxy || env.HTTP_PROXY || env.all_proxy || env.ALL_PROXY || env.https_proxy || env.HTTPS_PROXY);
+	const https = chromeProxy(env.https_proxy || env.HTTPS_PROXY || env.all_proxy || env.ALL_PROXY || env.http_proxy || env.HTTP_PROXY);
+	if (!http && !https) return;
+	const hasFlag = (name: string) => args.some(arg => arg === name || arg.startsWith(`${name}=`));
+	if (!["--proxy-server", "--proxy-pac-url", "--proxy-auto-detect", "--no-proxy-server"].some(hasFlag)) {
+		args.push(`--proxy-server=http=${http};https=${https}`);
+	}
+	if (!hasFlag("--proxy-bypass-list")) {
+		const bypass = ["localhost", "127.0.0.0/8", "[::1]"];
+		for (const item of (env.no_proxy ?? env.NO_PROXY ?? "").split(/[\s,]+/).filter(Boolean)) {
+			const host = item.replace(/^\*?\./, "");
+			const address = isIP(host);
+			const withoutPort = host.replace(/:\d+$/, "");
+			bypass.push(address === 6 ? `[${host}]` : host);
+			if (host !== "*" && !host.includes("/") && !address && !isIP(withoutPort) && !host.startsWith("[")) bypass.push(`*.${host}`);
+		}
+		args.push(`--proxy-bypass-list=${bypass.join(";")}`);
+	}
+}
 
 /** One profile folder per browser executable, so a profile is never opened by a browser of another version. */
 function profileName(executable: string): string {
@@ -256,6 +285,7 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 				} else {
 					const path = input.app?.path ? resolve(input.app.path) : await untilAborted(import("./executable.ts").then(module => module.executable(deps)), signal);
 					const args = [...(input.app?.args ?? [])];
+					addProxyArgs(args, process.env);
 					if (input.record && !args.includes("--auto-open-devtools-for-tabs")) args.push("--auto-open-devtools-for-tabs");
 					if (!args.some(arg => arg === "--user-data-dir" || arg.startsWith("--user-data-dir="))) {
 						if (input.persist) {

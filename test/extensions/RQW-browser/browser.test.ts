@@ -53,8 +53,8 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 		return instance;
 	}
 	createBrowserExtension({
-		spawnProcess: ((_path: string) => {
-			const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null, kills: 0, unrefs: 0, stderr: new PassThrough(), unref() { this.unrefs++; }, kill(this: EventEmitter & { kills: number }) { this.kills++; this.emit("exit"); return true; } });
+		spawnProcess: ((_path: string, args: string[]) => {
+			const child = Object.assign(new EventEmitter(), { args, exitCode: null, signalCode: null, kills: 0, unrefs: 0, stderr: new PassThrough(), unref() { this.unrefs++; }, kill(this: EventEmitter & { kills: number }) { this.kills++; this.emit("exit"); return true; } });
 			spawned.push(child);
 			queueMicrotask(() => { if (options.launchError) child.emit("error", options.launchError); else if (!options.spawnStall) child.stderr.write("DevTools listening on ws://localhost/devtools/browser/app\n"); });
 			return child;
@@ -63,7 +63,7 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 			loads++;
 			return {
 				launch: async (args: unknown) => { launches.push(args); if (options.launchError) throw options.launchError; if (options.launchWait) await options.launchWait; return browser(); },
-				defaultArgs: (args: unknown) => { launches.push(args); return []; },
+				defaultArgs: (args: any) => { launches.push(args); return [...args.args]; },
 				connect: async (args: any) => { if (args.browserWSEndpoint === "ws://localhost/devtools/browser/app") { applicationConnects.push(args); return browser(spawned.at(-1)); } connects.push(args); return browser(); },
 				Puppeteer: { customQueryHandlerNames: () => [], registerCustomQueryHandler() {} },
 			} as never;
@@ -106,6 +106,10 @@ it("registers the public browser tool and answers through its entry", async () =
 });
 
 it("loads lazily and launches separate profiles with path and display settings", async () => {
+	const keys = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] as const;
+	const saved = keys.map(key => process.env[key]);
+	for (const key of keys) delete process.env[key];
+	try {
 	const env = setup();
 	assert.equal(env.loads(), 0);
 	assert.equal(env.downloads(), 0);
@@ -126,6 +130,60 @@ it("loads lazily and launches separate profiles with path and display settings",
 	await env.call({ action: "close", all: true, kill: true });
 	assert.equal(env.browsers[0].child.kills, 1);
 	assert.equal(env.browsers[1].closed, 1);
+	} finally {
+		for (const [index, key] of keys.entries()) {
+			if (saved[index] === undefined) delete process.env[key];
+			else process.env[key] = saved[index];
+		}
+	}
+});
+
+it("passes environment proxies and bypasses to launched browsers while respecting explicit flags", async () => {
+	const keys = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"] as const;
+	const saved = keys.map(key => process.env[key]);
+	try {
+		for (const key of keys) delete process.env[key];
+		process.env.HTTP_PROXY = "http://proxy.test:8080";
+		process.env.HTTPS_PROXY = "http://secure-proxy.test:8081";
+		process.env.NO_PROXY = "example.test,.internal.test:3000,2001:db8::1";
+		const env = setup({ systemChrome: "/installed/chrome" });
+		await env.call({ action: "open", name: "managed" });
+		await env.call({ action: "open", name: "app", app: { path: "/custom/chrome" } });
+		for (const args of [env.launches[0].args, env.spawned[0].args]) {
+			assert.ok(args.includes("--proxy-server=http=http://proxy.test:8080;https=http://secure-proxy.test:8081"));
+			const bypass = args.find((arg: string) => arg.startsWith("--proxy-bypass-list="));
+			for (const item of ["example.test", "*.example.test", "internal.test:3000", "*.internal.test:3000", "localhost", "127.0.0.0/8", "[::1]", "[2001:db8::1]"]) assert.ok(bypass?.split(/[=;]/).includes(item), item);
+		}
+		await env.call({ action: "open", name: "custom", app: { path: "/custom/chrome", args: ["--proxy-server=http://manual:8080", "--proxy-bypass-list=manual.test"] } });
+		assert.deepEqual(env.launches[2].args, ["--proxy-server=http://manual:8080", "--proxy-bypass-list=manual.test"]);
+		process.env.HTTP_PROXY = "http://user:secret@proxy.test:8080";
+		process.env.HTTPS_PROXY = "http://user:secret@secure-proxy.test:8081";
+		await env.call({ action: "open", name: "credentials" });
+		assert.ok(env.launches[3].args.includes("--proxy-server=http=http://proxy.test:8080;https=http://secure-proxy.test:8081"));
+		assert.ok(env.launches[3].args.every((arg: string) => !arg.includes("secret")));
+		for (const key of keys) delete process.env[key];
+		for (const [index, key] of ["http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"].entries()) {
+			process.env[key] = "http://fallback.test:8080";
+			process.env.no_proxy = "lower.test";
+			await env.call({ action: "open", name: `fallback-${index}` });
+			const args = env.launches.at(-1).args;
+			assert.ok(args.includes("--proxy-server=http=http://fallback.test:8080;https=http://fallback.test:8080"));
+			assert.ok(args.some((arg: string) => arg.includes("lower.test")));
+			delete process.env[key];
+		}
+		process.env.HTTP_PROXY = "http://proxy.test:8080";
+		for (const [index, flag] of ["--proxy-pac-url=http://manual.test/proxy.pac", "--proxy-auto-detect", "--no-proxy-server"].entries()) {
+			await env.call({ action: "open", name: `override-${index}`, app: { path: "/custom/chrome", args: [flag] } });
+			assert.ok(env.spawned.at(-1).args.includes(flag));
+			assert.ok(env.spawned.at(-1).args.every((arg: string) => !arg.startsWith("--proxy-server")));
+		}
+		await env.call({ action: "close", all: true, kill: true });
+	} finally {
+		for (const [index, key] of keys.entries()) {
+			if (saved[index] === undefined) delete process.env[key];
+			else process.env[key] = saved[index];
+		}
+	}
 });
 
 it("names and lists tabs", async () => {
