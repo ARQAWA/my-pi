@@ -25,6 +25,17 @@ it("returns a sourced report for a query", async () => {
 	assert.match(report, /Answer for Pi documentation/);
 });
 
+it("uses the stepped-up Terra mapping for a Sol caller", async () => {
+	const web = createWebTool({ getThinkingLevel: () => "medium" }, { runner: async run => ({
+		...ok(run), summary: `Runner received ${run.model}, effort ${run.effort}`,
+	}) });
+	const result = await web.execute("call", { queries: ["Pi documentation"] }, undefined, undefined, {
+		model: { provider: "openai-codex", id: "gpt-6.1-sol" },
+	} as never);
+	const report = result.content.map(part => part.type === "text" ? part.text : "").join("\n");
+	assert.match(report, /Runner received gpt-6\.1-terra, effort high/);
+});
+
 it("returns a normalized URL target with its focused result", async () => {
 	const report = await execute({ urls: [" https://example.com "], focus: "exact fact" });
 	assert.match(report, /url: https:\/\/example\.com\//);

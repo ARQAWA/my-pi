@@ -27,16 +27,16 @@ sources, cite the supporting links near claims, and read the evidence before sta
 `ctx.model` and the calling session's `getThinkingLevel()` are captured at invocation. There are no model arguments.
 The canonical table and owner sources are in [DECISIONS.md](../../DECISIONS.md#web-search).
 
-| Caller | Search model | low | medium | high | xhigh | max |
+| Caller | Search model | low | medium | high | xhigh | max / ultra |
 | --- | --- | --- | --- | --- | --- | --- |
-| Recognized `openai-codex` GPT | Same exact model | Same level | Same level | Same level | Same level | Same level |
-| `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low | medium | high | high | high |
-| `anthropic/claude-sonnet-5-5` | `gpt-6.1-terra` | low | medium | high | xhigh | xhigh |
-| `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | low | medium | high | xhigh | xhigh |
-| Unknown or missing model | `gpt-6.1-sol` | low | low | low | low | low |
+| `openai-codex/gpt-6.1-sol`, `openai-codex/gpt-6-sol`, `anthropic/claude-opus-5-5` | `gpt-6.1-terra` | medium | high | xhigh | xhigh | xhigh |
+| `openai-codex/gpt-6.1-terra`, `anthropic/claude-sonnet-5-5` | `gpt-6.1-terra` | medium | medium | high | xhigh | xhigh |
+| `openai-codex/gpt-6-luna` | `gpt-6-luna` | low | medium | high | xhigh | xhigh |
+| `openai-codex/gpt-5.6-luna`, `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | low | medium | high | xhigh | xhigh |
+| Unknown or missing model | `gpt-6.1-terra` | medium | medium | medium | medium | medium |
 
-Claude `ultra` is above `max` and maps like `max`. An unsupported thinking level on a recognized model is an error; Claude `off` and `minimal` remain unmapped.
-The fallback covers unknown GPT slugs too. Calls consume subscription usage and do not request GPT Fast.
+`off`, `none` and `minimal` map to the minimum for the search model: medium for Terra, low for Luna.
+The fallback covers unknown GPT slugs and other providers too. Calls consume subscription usage and do not request GPT Fast.
 
 ## Auth and transport
 

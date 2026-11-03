@@ -7931,3 +7931,23 @@ Introduced: `6311bd5e`. Source: `be2dfcb8:DECISIONS.md`, lines 827-828. Verbatim
 
 > - **Background compaction at 65% of W** `[D-CONTEXT-BACKGROUND]`. At Pi's existing checkpoints, when context reaches
 >   65% of W and Pi's own threshold has not, RQW-context prepares a snapshot with a version-pinned local copy of Pi 1.4.0's
+
+## A-WEB-EFFORT-2026-11-03
+
+Status: SUPERSEDED by `[D-WEB-MAPPING]`. Source: `7a2d0897:DECISIONS.md`, Web search. Owner, 2026-11-03: «Так, смотри, что касается изменения веб-серча, вот, я принимаю твое предложение. Вот, использую Terru от Medium до XtraH Rezinга. и только знаешь, что, я думаю, надо везде так сделать. то есть надо везде ограничить, чтобы у нас и для терры был экстра хай ризинг максимальный. вот, и для хайки, и для луну был, короче, тоже от медиума до экстра хай ризинг. без лоу и без короче нет хорошо будет луна лоу вот но макс не будет ризинга будет ризинг экстра хай всегда вот а для неизвестный пусть будет terra medium»
+
+Verbatim replaced text:
+
+>   | Caller | Search model | low | medium | high | xhigh | max |
+>   | --- | --- | --- | --- | --- | --- | --- |
+>   | Recognized `openai-codex` GPT | Same exact model | Same level | Same level | Same level | Same level | Same level |
+>   | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low | medium | high | high | high |
+>   | `anthropic/claude-sonnet-5-5` | `gpt-6.1-terra` | low | medium | high | xhigh | xhigh |
+>   | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | low | medium | high | xhigh | xhigh |
+>   | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low | low | low | low | low |
+>
+>   GPT callers pass the model and level through as is, now including `gpt-6.1-terra`; Pi `off` is sent as native `none` where the model supports it. Owner: «нет когда мы работаем на гпт моделях ты просто пробрасываешь модель как есь и ризонинг паритет»
+>
+>   Claude `ultra` is above every listed level and maps like `max`, per the owner's «выше чем икс хай» and «опус хай и выше».
+>
+>   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
