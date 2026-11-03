@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { connect as netConnect } from "node:net";
+import type { AddressInfo } from "node:net";
 import { registerHooks } from "node:module";
 import { PassThrough } from "node:stream";
+import type { Duplex } from "node:stream";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { it } from "node:test";
+import { WebSocketServer } from "ws";
 import { createBrowserExtension } from "../../../extensions/RQW-browser/index.ts";
 
 function deferred<T>() {
@@ -366,6 +371,100 @@ it("disconnects a foreign CDP browser without killing it", async () => {
 	await env.shutdown();
 	assert.equal(env.browsers[1].closed, 0);
 	assert.equal(env.browsers[1].disconnected, 1);
+});
+
+it("connects a remote CDP endpoint through the environment proxy and keeps loopback and NO_PROXY hosts direct", async () => {
+	const keys = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"] as const;
+	const saved = keys.map(key => process.env[key]);
+	const cdp = createServer((request, response) => {
+		if (request.url !== "/json/version") { response.statusCode = 404; response.end(); return; }
+		response.end(JSON.stringify({ webSocketDebuggerUrl: "ws://chrome.test:9222/devtools/browser/1" }));
+	});
+	const sockets = new WebSocketServer({ server: cdp });
+	sockets.on("connection", socket => socket.on("message", data => socket.send(`echo ${data}`)));
+	await new Promise<void>(resolve => cdp.listen(0, "127.0.0.1", resolve));
+	const cdpPort = (cdp.address() as AddressInfo).port;
+	const tunnels: string[] = [];
+	const open: Duplex[] = [];
+	const proxy = createServer();
+	proxy.on("connect", (request, client, head) => {
+		tunnels.push(request.url ?? "");
+		open.push(client);
+		const upstream = netConnect(cdpPort, "127.0.0.1", () => {
+			client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+			upstream.write(head);
+			upstream.pipe(client);
+			client.pipe(upstream);
+		});
+		upstream.on("error", () => client.destroy());
+		client.on("error", () => upstream.destroy());
+		client.on("close", () => upstream.destroy());
+	});
+	await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
+	try {
+		for (const key of keys) delete process.env[key];
+		process.env.HTTP_PROXY = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+		process.env.NO_PROXY = "bypassed.test";
+		const env = setup();
+		await env.call({ action: "open", name: "lookup", app: { cdp_url: "http://chrome.test:9222" } });
+		const transport = env.connects[0].transport;
+		const reply = new Promise<string>(resolve => { transport.onmessage = resolve; });
+		transport.send("ping");
+		assert.equal(await reply, "echo ping");
+		assert.deepEqual(tunnels, ["chrome.test:9222", "chrome.test:9222"]);
+		await env.call({ action: "open", name: "socket", app: { cdp_url: "ws://chrome.test:9222/devtools/browser/1" } });
+		assert.equal(typeof env.connects[1].transport.send, "function");
+		assert.equal(tunnels.length, 3);
+		await env.call({ action: "open", name: "loopback", app: { cdp_url: `http://127.0.0.1:${cdpPort}` } });
+		await env.call({ action: "open", name: "bypassed", app: { cdp_url: "http://bypassed.test:9222" } });
+		assert.deepEqual(env.connects[2], { browserURL: `http://127.0.0.1:${cdpPort}`, handleDevToolsAsPage: true });
+		assert.deepEqual(env.connects[3], { browserURL: "http://bypassed.test:9222", handleDevToolsAsPage: true });
+		assert.equal(tunnels.length, 3);
+		env.connects[0].transport.close();
+		env.connects[1].transport.close();
+		await env.shutdown();
+	} finally {
+		for (const [index, key] of keys.entries()) {
+			if (saved[index] === undefined) delete process.env[key];
+			else process.env[key] = saved[index];
+		}
+		for (const client of open) client.destroy();
+		sockets.close();
+		cdp.closeAllConnections();
+		cdp.close();
+		proxy.close();
+	}
+});
+
+it("cancels a remote CDP connection that waits on the proxy without an unhandled socket error", async () => {
+	const keys = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"] as const;
+	const saved = keys.map(key => process.env[key]);
+	const held: Duplex[] = [];
+	const reached = deferred<void>();
+	const proxy = createServer();
+	proxy.on("connect", (_request, client) => { held.push(client); reached.resolve(); });
+	await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
+	try {
+		for (const key of keys) delete process.env[key];
+		process.env.HTTP_PROXY = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+		const env = setup();
+		const controller = new AbortController();
+		const opening = env.call({ action: "open", app: { cdp_url: "ws://chrome.test:9222/devtools/browser/1" } }, controller.signal);
+		const early = opening.then(() => { throw new Error("open finished before the proxy was reached"); });
+		early.catch(() => {});
+		await Promise.race([reached.promise, early]);
+		controller.abort();
+		await assert.rejects(opening, /abort/i);
+		await new Promise<void>(resolve => setImmediate(resolve));
+		assert.deepEqual(env.connects, []);
+	} finally {
+		for (const [index, key] of keys.entries()) {
+			if (saved[index] === undefined) delete process.env[key];
+			else process.env[key] = saved[index];
+		}
+		for (const client of held) client.destroy();
+		proxy.close();
+	}
 });
 
 it("cancels a pending launch and cleans a late browser and profile", async () => {
