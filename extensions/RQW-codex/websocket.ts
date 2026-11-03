@@ -708,15 +708,21 @@ function tlsServername(host: string): string | undefined {
 // node:tls with certificate verification on. rejectUnauthorized is never set to false anywhere in this module.
 const defaultTls: TlsConnector = (options) =>
 	new Promise<Socket>((resolve, reject) => {
-		const onError = (error: Error) => reject(error);
 		const socket: TLSSocket = options.socket
-			? tls.connect({ socket: options.socket, servername: options.servername, ca: options.ca, signal: options.signal })
-			: tls.connect({ host: bareHost(options.host), port: options.port, servername: options.servername, ca: options.ca, signal: options.signal });
-		socket.once("error", onError);
-		socket.once("secureConnect", () => {
+			? tls.connect({ socket: options.socket, servername: options.servername, ca: options.ca })
+			: tls.connect({ host: bareHost(options.host), port: options.port, servername: options.servername, ca: options.ca });
+		const cleanup = () => {
 			socket.removeListener("error", onError);
-			resolve(socket);
-		});
+			socket.removeListener("secureConnect", onSecure);
+			options.signal?.removeEventListener("abort", onAbort);
+		};
+		const onError = (error: Error) => { cleanup(); reject(error); };
+		const onSecure = () => { cleanup(); resolve(socket); };
+		const onAbort = () => { cleanup(); socket.destroy(); reject(abortError()); };
+		socket.once("error", onError);
+		socket.once("secureConnect", onSecure);
+		options.signal?.addEventListener("abort", onAbort, { once: true });
+		if (options.signal?.aborted) onAbort();
 	});
 
 // Explicit CONNECT tunnel through an http:// or https:// proxy. The agent's callback form hands ws a socket only after

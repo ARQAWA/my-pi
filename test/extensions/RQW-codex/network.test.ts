@@ -72,7 +72,7 @@ it("routes the Codex websocket through the environment proxy and honors bypasses
 	let tunnelRequest = "";
 	let destroyed = false;
 	let stallTls = false;
-	let tlsSignal: AbortSignal | undefined;
+	let tlsDestroyed = false;
 	let tlsStarted: (() => void) | undefined;
 	const proxySocket = new EventEmitter() as EventEmitter & { connecting: boolean; write(data: string): void; destroy(): void };
 	proxySocket.connecting = false;
@@ -81,17 +81,17 @@ it("routes the Codex websocket through the environment proxy and honors bypasses
 		queueMicrotask(() => proxySocket.emit("data", Buffer.from("HTTP/1.1 200 Connection Established\r\n\r\n")));
 	};
 	proxySocket.destroy = () => { destroyed = true; };
-	const tunnel = new EventEmitter();
+	const tunnel = new EventEmitter() as EventEmitter & { destroy(): void };
+	tunnel.destroy = () => { tlsDestroyed = true; };
 	const connectMock = mock.method(net, "connect", ((options: unknown) => {
 		proxyAddress = options;
 		return proxySocket;
 	}) as typeof net.connect);
-	const tlsMock = mock.method(tls, "connect", ((options: { signal?: AbortSignal }) => {
-		tlsSignal = options.signal;
+	const tlsMock = mock.method(tls, "connect", (() => {
 		if (stallTls) queueMicrotask(() => tlsStarted?.());
 		else queueMicrotask(() => tunnel.emit("secureConnect"));
 		return tunnel;
-	}) as typeof tls.connect);
+	}) as unknown as typeof tls.connect);
 	try {
 		for (const name of names) delete process.env[name];
 		process.env.HTTPS_PROXY = "http://proxy.example:8080";
@@ -121,7 +121,7 @@ it("routes the Codex websocket through the environment proxy and honors bypasses
 		controller.abort();
 		await assert.rejects(pending, { name: "AbortError" });
 		assert.equal(destroyed, true);
-		assert.equal(tlsSignal?.aborted, true);
+		assert.equal(tlsDestroyed, true);
 	} finally {
 		connectMock.mock.restore();
 		tlsMock.mock.restore();
