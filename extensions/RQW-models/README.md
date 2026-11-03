@@ -1,11 +1,22 @@
 # RQW-models
 
-Independent model picker and shortcuts. A new session starts on Opus medium. Authenticated models, their
+Independent model picker and shortcuts. Authenticated models, their
 strongest-first order and supported effort lists: [DECISIONS.md, Models](../../DECISIONS.md#models).
 Startup choices await provider-scoped authenticated availability, without an extension-imposed deadline or a stale
 snapshot on failure. Errors follow Pi's existing extension-error reporting path.
-An unlisted current model is replaced by authenticated Opus first, otherwise the strongest authenticated listed
-model. This also applies to resumed sessions, reloads, history and explicit unlisted CLI choices; picker order stays unchanged.
+
+## Session models
+
+A new session (a startup without history, `/new`, `/remove`) always gets `claude-opus-5-5` at medium, whatever the
+saved default is; without an authenticated Opus it gets `gpt-6.1-sol` at medium. A resumed session (`/resume`,
+`--resume`, `--continue`, a restart into an existing session), a fork and `/reload` keep the model and thinking the
+session had. If the model the session recorded, or the one Pi ended up with, is outside the list, the
+new-session default above replaces it, with a warning. Opus and Sol mean the model families, so a Bedrock or proxy
+variant counts; the canonical `anthropic` and `openai-codex` entries win when both exist. With neither
+Opus nor Sol authenticated a listed model stays and an unlisted one is refused. The user's settings are never written;
+picker order stays unchanged. Limits: an explicit CLI `--model` or `--thinking` given with `--continue` is the user's own
+choice and stays; an RPC `fork` before the first message loses the old selection, because Pi builds that empty session
+from the saved default (`/fork` and its keys are disabled by RQW-commands). Owner rule: DECISIONS.md, Models, `[D-MODELS-DEFAULT]`.
 
 ## Draft chooser
 

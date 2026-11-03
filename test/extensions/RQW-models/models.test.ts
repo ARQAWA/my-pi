@@ -79,7 +79,7 @@ describe("RQW-models public selection", () => {
 		t.mock.method(AgentSession.prototype, "dispose", () => {});
 		const compose = prototype.composeProvider;
 		const runtime = Object.create(prototype) as ModelRuntime;
-		const sessionManager = {};
+		const sessionManager = { getBranch: () => [] };
 		const session = Object.assign(Object.create(AgentSession.prototype), { sessionManager, _modelRuntime: runtime }) as AgentSession;
 		const handlers = new Map<string, (event: any, ctx: any) => unknown>();
 		const pi = { registerShortcut() {}, registerCommand() {}, on: (name: string, handler: any) => { handlers.set(name, handler); return () => {}; } };
@@ -208,60 +208,17 @@ describe("RQW-models public selection", () => {
 		assert.deepEqual(calls, cancel ? [] : ["model:claude-sonnet-5-5", "thinking:xhigh"]);
 	});
 
-	it("selects authenticated Opus medium at startup regardless of CLI options and history", async t => {
-		const opus = model("claude-opus-5-5", "bedrock");
+	describe("session model defaults", () => {
+		const opus = model("claude-opus-5-5");
 		const sonnet = model("claude-sonnet-5-5");
-		let current = sonnet;
-		let thinking = "high";
-		let available = [opus, sonnet];
-		let history: { type: string }[] = [];
-		const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
-		const pi = {
-			registerShortcut() {}, registerCommand() {},
-			on: (name: string, handler: any) => { handlers.set(name, handler); return () => {}; },
-			getThinkingLevel: () => thinking,
-			setThinkingLevel: (level: string) => { thinking = level; },
-			setModel: async (next: Model<string>) => { current = next; return true; },
-		};
-		extension(pi as unknown as ExtensionAPI);
-		const ctx = {
-			get model() { return current; }, hasUI: true,
-			modelRegistry: { getAvailable: () => available },
-			sessionManager: { getBranch: () => history }, isIdle: () => true,
-			ui: { notify() {} },
-		} as unknown as ExtensionContext;
-		const argv = process.argv;
-		t.after(() => { process.argv = argv; handlers.get("session_shutdown")!({}, ctx); });
-		for (const entries of [[], [{ type: "message" }]]) {
-			history = entries;
-			for (const args of [[], ["--model", "anthropic/claude-sonnet-5-5", "--thinking", "high"], ["--models", "anthropic/claude-sonnet-5-5", "--continue"]]) {
-				process.argv = [...argv.slice(0, 2), ...args];
-				current = sonnet;
-				thinking = "high";
-				await handlers.get("session_start")!({ reason: "startup" }, ctx);
-				assert.equal(current, opus);
-				assert.equal(thinking, "medium");
-			}
-		}
-		current = sonnet;
-		thinking = "high";
-		for (const reason of ["new", "resume", "fork", "reload"]) {
-			await handlers.get("session_start")!({ reason }, ctx);
-			assert.equal(current, sonnet);
-			assert.equal(thinking, "high");
-		}
-		available = [sonnet];
-		await handlers.get("session_start")!({ reason: "startup" }, ctx);
-		assert.equal(current, sonnet);
-		assert.equal(thinking, "high");
-	});
-
-	it("replaces the saved unlisted default with Opus medium on every session start", async t => {
-		const run = async (available: Model<string>[], reason: string) => {
+		const sol = model("gpt-6.1-sol", "openai-codex");
+		// Pi builds an empty session from the saved default, here a Bedrock Opus 4.6 outside the list.
+		const savedDefault = model("us.anthropic.claude-opus-4-6-v1", "bedrock");
+		type Start = { current: Model<string>; available: Model<string>[]; thinking?: string; history?: boolean; recorded?: Model<string>; answeredBy?: Model<string> };
+		const start = async (t: any, reason: string, options: Start) => {
 			const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
-			// Pi's /new and /remove build the session from the saved default model, here a Bedrock Opus 4.6.
-			let current = model("us.anthropic.claude-opus-4-6-v1", "bedrock");
-			let thinking = "high";
+			let current = options.current;
+			let thinking = options.thinking ?? "high";
 			const pi = {
 				registerProvider() {}, unregisterProvider() {}, registerShortcut() {}, registerCommand() {},
 				on: (name: string, handler: any) => { handlers.set(name, handler); return () => {}; },
@@ -270,29 +227,69 @@ describe("RQW-models public selection", () => {
 				setModel: async (next: Model<string>) => { current = next; return true; },
 			};
 			extension(pi as unknown as ExtensionAPI);
+			// A session with history records its own model; an empty one only the saved default Pi built it from.
+			const recorded = options.recorded ?? options.current;
+			const entries = [{ type: "model_change", provider: recorded.provider, modelId: recorded.id }, ...(options.history ? [{ type: "message", message: { role: "user" } }] : []),
+				...(options.answeredBy ? [{ type: "message", message: { role: "assistant", provider: options.answeredBy.provider, model: options.answeredBy.id } }] : [])];
 			const ctx = {
 				get model() { return current; }, hasUI: true,
-				modelRegistry: { getAvailable: () => available },
-				sessionManager: { getBranch: () => [] }, isIdle: () => true,
+				modelRegistry: { getAvailable: () => options.available },
+				sessionManager: { getBranch: () => entries }, isIdle: () => true,
 				ui: { notify() {} },
 			} as unknown as ExtensionContext;
 			t.after(() => handlers.get("session_shutdown")!({}, ctx));
 			await handlers.get("session_start")!({ type: "session_start", reason }, ctx);
 			return { current, thinking };
 		};
-		const argv = process.argv;
-		process.argv = argv.slice(0, 2);
-		try {
-			const unlisted = model("outside-model", "other");
-			const opus = model("claude-opus-5-5");
-			for (const reason of ["startup", "new", "resume", "fork", "reload"]) {
-				const result = await run([unlisted, opus], reason);
-				assert.equal(result.current, opus, reason);
-				assert.equal(result.thinking, "medium", reason);
+
+		it("gives every new session Opus medium, whatever the saved default is", async t => {
+			for (const current of [savedDefault, sonnet, sol]) {
+				for (const reason of ["startup", "new"]) {
+					const result = await start(t, reason, { current, available: [savedDefault, sonnet, sol, opus] });
+					assert.deepEqual([result.current, result.thinking], [opus, "medium"], `${reason} from ${current.id}`);
+				}
 			}
-			for (const reason of ["startup", "new"]) assert.equal((await run([unlisted], reason)).current.id, "us.anthropic.claude-opus-4-6-v1");
-		} finally {
-			process.argv = argv;
-		}
+		});
+
+		it("falls back to GPT-6.1 Sol medium when Opus is not available", async t => {
+			for (const current of [savedDefault, sonnet]) {
+				for (const reason of ["startup", "new"]) {
+					const result = await start(t, reason, { current, available: [savedDefault, sonnet, sol] });
+					assert.deepEqual([result.current, result.thinking], [sol, "medium"], `${reason} from ${current.id}`);
+				}
+			}
+		});
+
+		it("keeps a listed model when neither Opus nor Sol is available, and refuses an unlisted one", async t => {
+			assert.equal((await start(t, "new", { current: sonnet, available: [sonnet] })).current, sonnet);
+			assert.equal((await start(t, "new", { current: savedDefault, available: [sonnet] })).current, savedDefault);
+		});
+
+		it("keeps the model and thinking the session had on resume, fork, reload and startup with history", async t => {
+			for (const reason of ["resume", "fork", "reload", "startup"]) {
+				const result = await start(t, reason, { current: sonnet, available: [sonnet, sol, opus], history: true });
+				assert.deepEqual([result.current, result.thinking], [sonnet, "high"], reason);
+			}
+		});
+
+		it("uses the new-session default when the model of a resumed session is not listed", async t => {
+			for (const reason of ["resume", "fork", "reload", "startup"]) {
+				const withOpus = await start(t, reason, { current: savedDefault, available: [savedDefault, sonnet, sol, opus], history: true });
+				assert.deepEqual([withOpus.current, withOpus.thinking], [opus, "medium"], reason);
+				const withSol = await start(t, reason, { current: savedDefault, available: [savedDefault, sonnet, sol], history: true });
+				assert.deepEqual([withSol.current, withSol.thinking], [sol, "medium"], reason);
+			}
+		});
+
+		it("uses the new-session default when the last answer of the session came from an unlisted model", async t => {
+			const result = await start(t, "resume", { current: sonnet, recorded: sonnet, answeredBy: savedDefault, available: [sonnet, sol, opus], history: true });
+			assert.deepEqual([result.current, result.thinking], [opus, "medium"]);
+		});
+
+		it("uses the new-session default when Pi could not restore the unlisted model a session recorded", async t => {
+			// Pi fell back to a listed saved default, but the session itself ran on the unlisted model.
+			const result = await start(t, "resume", { current: sonnet, recorded: savedDefault, available: [sonnet, sol, opus], history: true });
+			assert.deepEqual([result.current, result.thinking], [opus, "medium"]);
+		});
 	});
 });
