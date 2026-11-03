@@ -13,6 +13,10 @@ defaults:
   run:
     shell: bash
 
+env:
+  # Windows runners are slower: scripts/check.mjs kills a run after 120 s locally, 240 s here.
+  RQW_CHECK_DEADLINE_MS: "240000"
+
 jobs:
   lint:
     runs-on: ubuntu-latest

@@ -82,6 +82,7 @@ test("check passes only requested test paths and accepts successful jobs", async
 });
 
 test("the default test run covers every test folder of the repository", () => {
+  assert.ok(!testArgs([]).some(arg => arg.startsWith("--test-timeout")));
   assert.deepEqual(testArgs([]).slice(-3), ["test/extensions/*/*.test.ts", "test/*.test.ts", "pcli-vscode/test/*.test.mjs"]);
 });
 
@@ -132,7 +133,6 @@ test("the test job gives each test 5 s, runs node directly and a failing exit fa
   assert.equal(code, 1);
   assert.equal(launches.length, 1);
   assert.equal(launches[0].command, process.execPath);
-  assert.ok(launches[0].args.includes("--test-timeout=5000"));
   assert.ok(launches[0].args.includes("--test-reporter=./scripts/test-reporter.mjs"));
   assert.equal(launches[0].options.detached, true);
   assert.match(launches[0].options.env.RQW_CHECK_LOG, /rqw-check-/);
@@ -185,8 +185,10 @@ test("a stale install fails before any job starts and says to run npm ci", async
   }
 });
 
+const NOW = 1_000_000; // the guard's fake clock
+
 /** Runs guardedCheck with fake timers; the fake test job writes `state` where the reporter would. Returns the kills and the error text. */
-async function runUntilKilled(state: (file: string) => unknown, ticks: number[]) {
+async function runUntilKilled(state: (file: string) => unknown, ticks: number[], env: Record<string, string> = {}) {
   // Only the last tick may end the run: the earlier ones must leave it alive.
   const errors = mock.method(console, "error", () => {});
   mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
@@ -195,7 +197,7 @@ async function runUntilKilled(state: (file: string) => unknown, ticks: number[])
   const launch = fakeLaunch([]);
   try {
     const result = guardedCheck([], {
-      root, platform: "darwin", kill: pid => killed.push(pid),
+      root, env, platform: "darwin", now: () => NOW, kill: pid => killed.push(pid),
       launch: ((command: string, args: string[], options: Launch["options"]) => {
         if (args[0] === "--test") writeFileSync(options.env.RQW_CHECK_LOG, JSON.stringify(state(join(root, "test", "a.test.ts"))));
         return (launch as Function)(command, args, options);
@@ -214,30 +216,32 @@ async function runUntilKilled(state: (file: string) => unknown, ticks: number[])
   }
 }
 
-test("the run is killed at the deadline and the error names the running and timed-out tests", async () => {
+test("the run is killed at the deadline and the error names the running test", async () => {
   const { killed, message } = await runUntilKilled(file => ({
-    current: { file, name: "stuck test", at: Date.now() },
-    timedOut: [{ file, name: "old" }],
+    current: { file, name: "stuck test", at: NOW },
   }), [119_999, 1]);
   assert.deepEqual(killed, [100, 101, 102]);
   assert.match(message, /the run took longer than 120 s\. The run was killed/);
   assert.match(message, /Stages still running: lint, test, typecheck/);
-  assert.match(message, /Test still running:\n {2}test[\\/]a\.test\.ts > stuck test\n/);
-  assert.match(message, /timed out after 5 s[^\n]*\n {2}test[\\/]a\.test\.ts > old$/);
+  assert.match(message, /Test still running:\n {2}test[\\/]a\.test\.ts > stuck test$/);
+});
+
+test("RQW_CHECK_DEADLINE_MS replaces the 120 s run limit, as the Windows CI sets it", async () => {
+  const { message } = await runUntilKilled(file => ({ current: { file, name: "slow windows", at: NOW } }), [239_999, 1], { RQW_CHECK_DEADLINE_MS: "240000" });
+  assert.match(message, /the run took longer than 240 s/);
 });
 
 test("a test that blocks its own event loop past 5 s is killed early and named", async () => {
   const { killed, message } = await runUntilKilled(file => ({
-    current: { file, name: "spins forever", at: Date.now() - 7000 },
-    timedOut: [],
+    current: { file, name: "spins forever", at: NOW - 5500 },
   }), [1000]);
   assert.deepEqual(killed, [100, 101, 102]);
   assert.match(message, /a test ran longer than 5 s without ending/);
   assert.match(message, /Test still running:\n[^\n]*> spins forever/);
 });
 
-test("a test that has just started is not mistaken for a blocked test", async () => {
-  const { message } = await runUntilKilled(file => ({ current: { file, name: "quick", at: Date.now() }, timedOut: [] }), [60_000, 60_000]);
+test("a test that has run 4.5 s is not mistaken for a blocked test", async () => {
+  const { message } = await runUntilKilled(file => ({ current: { file, name: "quick", at: NOW - 4500 } }), [60_000, 60_000]);
   assert.match(message, /the run took longer than 120 s/);
 });
 
@@ -301,7 +305,7 @@ test("a passing test leaves the test process successful", async () => {
 /** Runs a fixture in a real node test process with the watch preload; calls `until` with the state file text until it returns true. */
 async function watchFixture(fixture: string, until: (state: any) => boolean) {
   const stateFile = join(mkdtempSync(join(tmpdir(), "check-watch-")), "state.json");
-  const args = testArgs([fileURLToPath(new URL(fixture, import.meta.url))]).map(arg => arg.replace("--test-timeout=5000", "--test-timeout=100"));
+  const args = testArgs([fileURLToPath(new URL(fixture, import.meta.url))]);
   const env = { ...process.env, RQW_CHECK_LOG: stateFile, RQW_TEST_LIMIT_MS: "5000", NODE_TEST_CONTEXT: undefined }; // this run's context must not leak in
   const child = spawn(process.execPath, args, { cwd: fileURLToPath(new URL("..", import.meta.url)), env, stdio: "ignore" });
   const closed = new Promise(resolve => child.once("close", resolve));
@@ -320,16 +324,14 @@ async function watchFixture(fixture: string, until: (state: any) => boolean) {
   }
 }
 
-test("the watch file names a test that times out", async () => {
-  const state = await watchFixture("./fixtures/timing-out.mjs", s => s.timedOut.length === 1);
-  assert.match(state.timedOut[0].file, /timing-out\.mjs$/);
-  assert.equal(state.timedOut[0].name, "held forever");
+test("the watch file names a test that never ends", async () => {
+  const state = await watchFixture("./fixtures/timing-out.mjs", s => s.current?.name === "held forever");
+  assert.match(state.current.file, /timing-out\.mjs$/);
 });
 
 test("the watch file names a test that blocks its event loop", async () => {
   const state = await watchFixture("./fixtures/spinning.mjs", s => s.current?.name === "spins forever");
   assert.match(state.current.file, /spinning\.mjs$/);
-  assert.deepEqual(state.timedOut, []);
 });
 
 test("the watch file keeps the parent test named after a nested test ends", async () => {
@@ -338,11 +340,15 @@ test("the watch file keeps the parent test named after a nested test ends", asyn
 });
 
 /** Runs a fixture to the end in a real node test process with the watch preload and a 100 ms test limit. */
-function runWatched(fixture: string) {
-  const env = { ...process.env, RQW_CHECK_LOG: join(mkdtempSync(join(tmpdir(), "check-run-")), "state.json"), RQW_TEST_LIMIT_MS: "100", NODE_TEST_CONTEXT: undefined };
+function runWatched(fixture: string, limitMs = 100) {
+  const env = { ...process.env, RQW_CHECK_LOG: join(mkdtempSync(join(tmpdir(), "check-run-")), "state.json"), RQW_TEST_LIMIT_MS: String(limitMs), NODE_TEST_CONTEXT: undefined };
   const file = fileURLToPath(new URL(fixture, import.meta.url));
   return spawnSync(process.execPath, testArgs([file]), { cwd: fileURLToPath(new URL("..", import.meta.url)), env, encoding: "utf8", timeout: 20_000 });
 }
+
+test("tests that add up past the limit in a suite or under a parent test are not failed", () => {
+  assert.equal(runWatched("./fixtures/sums.mjs", 400).status, 0); // node's own --test-timeout would fail the suite, which broke Windows CI
+});
 
 test("a test that mocks the clock is not failed for its length", () => {
   assert.equal(runWatched("./fixtures/mocked-clock.mjs").status, 0);

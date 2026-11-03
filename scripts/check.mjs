@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-/** The whole run is killed after this many ms; one test fails after TEST_LIMIT_MS. */
+/** The whole run is killed after this many ms (RQW_CHECK_DEADLINE_MS replaces it: the Windows CI sets 240000); one test fails after TEST_LIMIT_MS. */
 export const RUN_LIMIT_MS = 120_000;
 export const TEST_LIMIT_MS = 5_000;
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -16,7 +16,7 @@ const TEST_GLOBS = ["test/extensions/*/*.test.ts", "test/*.test.ts", "pcli-vscod
 
 /** @param {string[]} paths */
 export function testArgs(paths) {
-  return ["--test", "--experimental-test-isolation=none", `--test-timeout=${TEST_LIMIT_MS}`, "--import=./scripts/test-watch.mjs",
+  return ["--test", "--experimental-test-isolation=none", "--import=./scripts/test-watch.mjs",
     "--test-reporter=./scripts/test-reporter.mjs", ...(paths.length ? paths : TEST_GLOBS)];
 }
 
@@ -101,12 +101,12 @@ export function killTree(pid, platform = process.platform) {
   }
 }
 
-/** scripts/test-watch.mjs keeps this file current: `{ current: { file, name, at }, timedOut: [{ file, name }] }`. */
+/** scripts/test-watch.mjs keeps this file current: `{ current: { file, name, at } }`. */
 function readTestState(stateFile) {
   try {
     return JSON.parse(readFileSync(stateFile, "utf8"));
   } catch {
-    return { timedOut: [] }; // not written yet, or caught mid-write
+    return {}; // not written yet, or caught mid-write
   }
 }
 
@@ -114,17 +114,16 @@ function expiryReport(reason, stages, state, root) {
   const label = test => `  ${test.file ? relative(root, test.file) : "?"} > ${test.name}`;
   const lines = [`check: ${reason} The run was killed.`, `Stages still running: ${stages.join(", ")}`];
   if (state.current) lines.push("Test still running:", label(state.current));
-  if (state.timedOut.length) lines.push(`Tests that timed out after ${TEST_LIMIT_MS / 1000} s (they may hold the process):`, ...state.timedOut.map(label));
-  if (!state.current && !state.timedOut.length) lines.push("No test is running: lint, typecheck or a leftover handle keeps the run alive.");
+  if (!state.current) lines.push("No test is running: lint, typecheck or a leftover handle keeps the run alive.");
   return lines.join("\n");
 }
 
 /**
  * Preflights the dependencies, runs the jobs and kills their whole process tree when the run passes limitMs.
  * @param {string[]} args
- * @param {{ root?: string, env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform, launch?: typeof spawn, kill?: typeof killTree, limitMs?: number }} [world]
+ * @param {{ root?: string, env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform, launch?: typeof spawn, kill?: typeof killTree, limitMs?: number, now?: () => number }} [world]
  */
-export async function guardedCheck(args, { root = ROOT, env = process.env, platform = process.platform, launch = spawn, kill = killTree, limitMs = RUN_LIMIT_MS } = {}) {
+export async function guardedCheck(args, { root = ROOT, env = process.env, platform = process.platform, launch = spawn, kill = killTree, limitMs = Number(env.RQW_CHECK_DEADLINE_MS) || RUN_LIMIT_MS, now = Date.now } = {}) {
   const problems = checkDependencies(root);
   if (problems.length) {
     console.error(`check: installed dependencies do not match package-lock.json. Run \`npm ci\`.\n${problems.map(p => `  ${p}`).join("\n")}`);
@@ -156,15 +155,13 @@ export async function guardedCheck(args, { root = ROOT, env = process.env, platf
   process.once("SIGTERM", onSignal);
   let timer;
   let watcher;
-  // Resolves with the reason. The node test timeout cannot stop a test that blocks its own event loop, so watch from outside:
-  // every test ends within the test limit, so one that has run longer blocks the process.
-  // (A timed-out test whose leftovers keep the process alive is left to the run limit.)
+  // Resolves with the reason. Watch from outside: a test that never ends, or blocks its own event loop, cannot stop itself.
   const expired = new Promise(resolve => {
     timer = setTimeout(resolve, limitMs, `the run took longer than ${limitMs / 1000} s.`);
     watcher = setInterval(() => {
       const { current } = readTestState(logFile);
-      if (current && Date.now() - current.at > TEST_LIMIT_MS + 1000) {
-        resolve(`a test ran longer than ${TEST_LIMIT_MS / 1000} s without ending, so it blocks the process.`);
+      if (current && now() - current.at > TEST_LIMIT_MS) {
+        resolve(`a test ran longer than ${TEST_LIMIT_MS / 1000} s without ending.`);
       }
     }, 1000);
   });
