@@ -208,6 +208,7 @@ describe("RQW-context huge-tail compaction bypass", () => {
 			const h = await huge();
 			h.control.hold = hold;
 			await h.say(0.4);
+			while (h.percent() < 0.75) await h.say(0.05);
 			await h.summary(1);
 			if (!hold) await h.quiet();
 			const pending = (h.session as any)._runAutoCompaction("threshold", false);

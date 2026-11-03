@@ -32,13 +32,13 @@ const { prepareCompaction } = await import(new URL("core/compaction/compaction.j
 	prepareCompaction(entries: unknown[], settings: unknown): any;
 };
 
-/** Four turns: 20%, 20%, 20% of W, then 10%, which crosses 65% after the last answer. */
+/** Four turns: 25%, 20%, 20% of W, then 12%, which crosses 75% after the last answer. */
 async function toBackground(h: Awaited<ReturnType<typeof harness>>) {
-	for (const percent of [0.2, 0.2, 0.2]) await h.say(percent);
-	assert.ok(h.percent() < 0.65);
+	for (const percent of [0.25, 0.2, 0.2]) await h.say(percent);
+	assert.ok(h.percent() < 0.75);
 	assert.equal(h.summaries.length, 0);
-	await h.say(0.1);
-	assert.ok(h.percent() >= 0.65 && h.percent() < 0.9);
+	await h.say(0.12);
+	assert.ok(h.percent() >= 0.75 && h.percent() < 0.9);
 	await h.summary(1);
 	if (!h.control.hold) await h.quiet();
 }
@@ -51,7 +51,7 @@ it("does not read the branch below the background threshold", () => {
 	const session = {
 		sessionManager: { getBranch() { branches++; return []; }, getSessionId() { return "test"; } },
 		settingsManager: { getCompactionSettings() { return { enabled: true, reserveTokens: 100, keepRecentTokens: 100 }; } },
-		getContextUsage() { return { tokens: 649 }; },
+		getContextUsage() { return { tokens: 749 }; },
 		async _runDefaultCompaction() { throw new Error("unexpected summary"); },
 	};
 	maybeStart(session, { contextWindow: 1_000 });
@@ -60,7 +60,7 @@ it("does not read the branch below the background threshold", () => {
 });
 
 describe("RQW-context background compaction: trigger and lifecycle", () => {
-	it("starts one background summary from 65% of W per generation and reports it on the status channel", async () => {
+	it("starts one background summary from 75% of W per generation and reports it on the status channel", async () => {
 		const h = await harness();
 		h.control.hold = true;
 		await toBackground(h);
@@ -83,10 +83,10 @@ describe("RQW-context background compaction: trigger and lifecycle", () => {
 		assert.equal(usage.mock.callCount(), 0);
 	});
 
-	it("does not start when compaction is off or an explicit reserve puts Pi's threshold below 65%", async () => {
+	it("does not start when compaction is off or an explicit reserve puts Pi's threshold below 75%", async () => {
 		for (const settings of [{ enabled: false }, { reserveTokens: 2_000 }, { modelOverrides: { "faux/m": { reserveTokens: 2_000 } } }]) {
 			const h = await harness(settings);
-			for (const percent of [0.2, 0.2, 0.2, 0.1]) await h.say(percent);
+			for (const percent of [0.2, 0.2, 0.2, 0.17]) await h.say(percent);
 			assert.deepEqual(h.status, [], JSON.stringify(settings));
 			// Only Pi's own foreground compactions asked for summaries.
 			assert.equal(h.summaries.length, h.compactions().length, JSON.stringify(settings));
@@ -157,7 +157,7 @@ describe("RQW-context background compaction: ending a request", () => {
 		await manual;
 		assert.equal(h.compactions().length, 1);
 		// Grow again until the next generation starts its own request.
-		for (const percent of [0.1, 0.2, 0.2]) await h.say(percent);
+		while (h.percent() < 0.75) await h.say(0.05);
 		await h.summary(3);
 		assert.deepEqual(h.status.map((item: any) => item.active), [true, false, true]);
 		// Let the cancelled request finish its handling before settling the current one.
@@ -189,8 +189,8 @@ describe("RQW-context background compaction: exact trigger boundaries", () => {
 	}
 	// W is 4000 and R is 400, so Pi compacts strictly above 3600.
 	const cases: [string, number, boolean][] = [
-		["64% of W", 0.64 * WINDOW, false],
-		["exactly 65% of W", 0.65 * WINDOW, true],
+		["74% of W", 0.74 * WINDOW, false],
+		["exactly 75% of W", 0.75 * WINDOW, true],
 		["one token below Pi's threshold", 0.9 * WINDOW - 1, true],
 		["exactly Pi's threshold", 0.9 * WINDOW, true],
 		["one token above Pi's threshold: Pi compacts in the foreground", 0.9 * WINDOW + 1, false],
@@ -220,8 +220,8 @@ describe("RQW-context background compaction: incompatible Pi shape", () => {
 			// Installing against the odd prototype is what the extension does at load.
 			installBackground(shape() as never, () => true);
 			try {
-				for (const percent of [0.2, 0.2, 0.2, 0.1]) await h.say(percent);
-				assert.ok(h.percent() > 0.65 && h.percent() < 0.9);
+				for (const percent of [0.2, 0.2, 0.2, 0.17]) await h.say(percent);
+				assert.ok(h.percent() > 0.75 && h.percent() < 0.9);
 				assert.deepEqual(h.status, []);
 				assert.equal(h.summaries.length, 0);
 				assert.equal(h.compactions().length, 0);
@@ -405,8 +405,7 @@ describe("RQW-context background compaction: freshness", () => {
 		await toBackground(h);
 		await h.say(0.02);
 		const [base] = h.compactions();
-		await h.say(0.2);
-		await h.say(0.2);
+		while (h.percent() < 0.75) await h.say(0.05);
 		await h.summary(2);
 		await h.quiet();
 		assert.equal(h.summaries.length, 2);
@@ -440,7 +439,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		h.control.hold = true;
 		await h.say(0.2);
 		await h.say(0.2);
-		await h.say(0.1);
+		await h.say(0.17);
 		await h.summary(1);
 		h.next.push(async () => {
 			// Pi's pre-prompt check has passed: the summary becomes ready during the turn.
@@ -586,7 +585,7 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		await h.say(0.2);
 		await h.say(0.2);
 		await h.say(0.2);
-		await h.say(0.1);
+		await h.say(0.17);
 		await h.summary(1);
 		h.next.push(async () => {
 			// Ready during the turn, then the provider answers with a context overflow error.

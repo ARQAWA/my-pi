@@ -76,9 +76,9 @@ describe("RQW-context /reload", () => {
 		assert.equal(window(), 400_000);
 
 		// The session keeps working through every swapped hook: its request wrappers run the newest module's code
-		// and a background summary still starts at 65% of W.
+		// and a background summary still starts at 75% of W.
 		assert.equal(counter[REQUESTS], undefined);
-		for (const percent of [0.2, 0.2, 0.2, 0.1]) await h.say(percent);
+		for (const percent of [0.2, 0.2, 0.2, 0.17]) await h.say(percent);
 		assert.ok((counter[REQUESTS] ?? 0) > 0);
 		await h.summary(1);
 		await h.quiet();

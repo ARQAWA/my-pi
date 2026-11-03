@@ -7951,3 +7951,11 @@ Status: SUPERSEDED by the updated `[D-PROMPT-ZORD]`: diffs 1 and 7 make the agre
 Status: SUPERSEDED by the updated `[D-DELETE-UNORDERED]`: diff 8 deletes what the owner directly ordered deleted without asking again and names the proof. Owner acceptance, 2026-11-03: «ничего не выбрасываем все нравится», answering Main's «напиши номера, которые выбросить. остальные внедрю.» for `/Users/arkadijcukavin/Downloads/process-holes-diffs.html`. Source: `4c83e0ca:DECISIONS.md`, line 2029. Verbatim replaced text:
 
 >   Decision: whatever was never ordered, and no owner source or active decision asks for, is deleted at once, with the proof in the report; a disputed item is asked first (`PROCESS.md` rule 1). The extension audits deleted: RQW-codex `web-engine.ts` with its closed dependencies (`web-alpha.ts`, `web-commands.ts`, `web-types.ts`, `web-native-tools.json`, notices) and the `turn-settings` session record; RQW-browser the `call` guard in `index.ts` and the window and scroll geometry of `observe`; RQW-tool-ui `installFolds`, `Classified.countKey` and the copy of Pi's path rules (Unicode spaces, `@`, `~`, `file://`, Windows shell drives) in the read count key; RQW-skill-dollar links without the `skill://` prefix; RQW-tabs-link the Linux registry path; RQW-session the nested tree walk of `/cleanup`; RQW-naming the control-character rule for names; RQW-history-edit the unused `string | Buffer` mode of `replaceSessionFile`.
+
+## A-0491 · archived 2026-11-03 · Context · background summary start at 65% of W
+
+Status: SUPERSEDED by `[D-CONTEXT-BACKGROUND]` (DECISIONS.md#context): the owner raised the start to 75% of W. New source, 2026-11-03: «подними до 75% и сразу выпускай».
+Introduced: `6311bd5e`. Source: `be2dfcb8:DECISIONS.md`, lines 827-828. Verbatim replaced text:
+
+> - **Background compaction at 65% of W** `[D-CONTEXT-BACKGROUND]`. At Pi's existing checkpoints, when context reaches
+>   65% of W and Pi's own threshold has not, RQW-context prepares a snapshot with a version-pinned local copy of Pi 1.4.0's
