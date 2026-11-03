@@ -1605,9 +1605,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
     model, RPC `get_available_models`/`set_model`/`cycle_model` and post-login auto-selection find no model.
   - Selection outside the list is refused before mutation: `setModel` rejects with `<provider>/<id> is not in the RQW
     models list. Allowed: <listed IDs>.` and a warning; model, entries, settings and `model_select` stay unchanged.
-  - On `session_start` an unlisted current model is replaced by authenticated Opus, else the strongest authenticated
-    listed model, at medium or the startup/`/new` `--thinking`, with a warning. With no authenticated listed model the
-    model stays and the warning says its requests are refused. The wait before this choice is `[D-MODELS-STARTUP]`.
+  - On `session_start` a model outside the list (a saved default, or the own model of a resumed, forked or reloaded session) is
+    replaced by the new-session default of `[D-MODELS-DEFAULT]`, with a warning. With neither Opus nor GPT-6.1 Sol authenticated
+    the model stays and the warning says its requests are refused. The wait before this choice is `[D-MODELS-STARTUP]`.
   - Requests: the owning runtime's `prepareRequest` refuses chat requests for an unlisted model with `RQW-models refused
     the request: <the same text>`, covering in-process subagents; the reviewer models (GPT-6.1 Terra and Sol) are
     listed. Pi's own requests use the session's model; image and classifier models pass.
@@ -1616,15 +1616,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   - Limits: Ctrl+P still prints "Only one model available"; `/scoped-models` shows saved patterns as unavailable rows;   after `/login` Pi suggests `/model`; if the session cannot be borrowed RQW-models warns and stock lists stay. Owner: «Смотри, про выбор модели, где через стрелочки вверх, вниз, через плюс-минус мы меняем модели, меняем effort. Там меняются только модели из нашего списка. И вообще другие модели выбрать нельзя, только модели в этом списке. Дефолтный Model Picker работать не должен. Там должен быть пустой список моделей.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 335); «Да, делай» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 344) to the coordinator option "a) Закрыть и эти пути. Модель вне списка не выбирается нигде, Pi покажет предупреждение." The
   strongest-listed fallback without Opus auth is a coordinator choice derived from that rule. Carrier:
   `extensions/RQW-models/index.ts`. Since: `5e1d478`.
-- **Opus medium at startup** `[D-MODELS-DEFAULT]`. Without explicit CLI model selection, `session_start` selects
-  available Opus at `medium` on a fresh startup or `/new`; with no authenticated Opus it keeps Pi's initial model if
-  listed. Startups with history or continuation/session flags, and `resume`, `fork`, `reload`, keep a listed current
-  model and thinking. Explicit CLI `--model`/`--models` of listed models keep Pi's resolved model and thinking, including
-  suffixes, scoped suffixes, `--thinking` precedence and settings effort; Pi's exported `parseArgs` recognizes them and
-  no suffix is parsed again. Without an explicit model, `--thinking` applies through Pi's native clamping, else medium.
-  CLI overrides apply to `/new` too; no defaults are persisted. An SDK host must pass reason `resume` for an empty
-  restored session. Coordinator text (owner quote C:3113, an omp session, not found in the Pi sessions): "И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит". CLI precedence and resumed-session
-  preservation are coordinator choices (C:3123, C:3274). Since: `071df1e`.
+- **Session models** `[D-MODELS-DEFAULT]`. A new session (a startup without a message in its branch, `/new`, `/remove`) always gets
+  `claude-opus-5-5` at `medium`, whatever the saved default model is; without an authenticated Opus it gets `gpt-6.1-sol` at `medium`.
+  Any provider variant of the family counts, in the picker's order. A resumed session (`/resume`, `--resume`, `--continue`, a restart
+  into an existing session), a fork and `/reload` keep the model and thinking the session had. If that model is outside the list,
+  the new-session default replaces it, with a warning. With neither Opus nor Sol authenticated a listed model stays and an unlisted
+  one is refused. CLI `--model` and `--thinking` do not change the default of a new session (unchanged since `f891244f`, no owner
+  order for them); the user's settings are never written. Owner, 2026-11-03 (verbatim): «Смотри, короче, у нас модель должна браться та, которая была в сессии изначальной, если это, допустим, резюм. а если это создание, ну, запуск p, new или remove, ну, короче, сброс сессии. новая сессия, там модель должна быть по дефолту опус медиум. если опус медиум нету, то сол 6.1 medium, вот»
+  Carriers: `extensions/RQW-models/index.ts` (`session_start`), its README, `test/extensions/RQW-models/models.test.ts`.
 - **Harness effort lists** `[D-MODELS-EFFORT]`. `FAMILY_LEVELS` intersected with Pi's `getSupportedThinkingLevels`:
   Opus, Sonnet, GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Sol, both Luna models and Haiku low,
   medium, high, xhigh, max (Opus xhigh/max and Sonnet max added later at the owner's request: «на Sonnet добавь Max тоже»). No minimal, no off. A model switch keeps the previous effort if allowed, else the nearest

@@ -7985,3 +7985,25 @@ Verbatim replaced text:
 Status: SUPERSEDED in part by `[D-PCLI-FILTER]` inside `[D-PCLI-COMMAND]`: PCLI no longer copies package filters verbatim, it normalizes slashes and keeps the latest toggle per path. Owner, 2026-11-03, answering Main's «чинить так? 1. да.»: «1». Source: `2b013929:DECISIONS.md`, PCLI section, `[D-PCLI-COMMAND]`. Verbatim replaced text:
 
 >   local path, preserving object-form resource filters and unrelated keys/packages.
+
+## A-0492 · archived 2026-11-03 · Models · Opus medium at startup
+
+Status: SUPERSEDED by `[D-MODELS-DEFAULT]` ([DECISIONS.md, Models](DECISIONS.md#models)). Owner, 2026-11-03: «Смотри, короче, у нас модель должна браться та, которая была в сессии изначальной, если это, допустим, резюм. а если это создание, ну, запуск p, new или remove, ну, короче, сброс сессии. новая сессия, там модель должна быть по дефолту опус медиум. если опус медиум нету, то сол 6.1 medium, вот» Source: `2b013929:DECISIONS.md`, Models. Verbatim replaced text:
+
+> - **Opus medium at startup** `[D-MODELS-DEFAULT]`. Without explicit CLI model selection, `session_start` selects
+>   available Opus at `medium` on a fresh startup or `/new`; with no authenticated Opus it keeps Pi's initial model if
+>   listed. Startups with history or continuation/session flags, and `resume`, `fork`, `reload`, keep a listed current
+>   model and thinking. Explicit CLI `--model`/`--models` of listed models keep Pi's resolved model and thinking, including
+>   suffixes, scoped suffixes, `--thinking` precedence and settings effort; Pi's exported `parseArgs` recognizes them and
+>   no suffix is parsed again. Without an explicit model, `--thinking` applies through Pi's native clamping, else medium.
+>   CLI overrides apply to `/new` too; no defaults are persisted. An SDK host must pass reason `resume` for an empty
+>   restored session. Coordinator text (owner quote C:3113, an omp session, not found in the Pi sessions): "И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит". CLI precedence and resumed-session
+>   preservation are coordinator choices (C:3123, C:3274). Since: `071df1e`.
+
+## A-0493 · archived 2026-11-03 · Models · unlisted current model replacement
+
+Status: SUPERSEDED by `[D-MODELS-DEFAULT]` ([DECISIONS.md, Models](DECISIONS.md#models)). Owner, 2026-11-03: «Смотри, короче, у нас модель должна браться та, которая была в сессии изначальной, если это, допустим, резюм. а если это создание, ну, запуск p, new или remove, ну, короче, сброс сессии. новая сессия, там модель должна быть по дефолту опус медиум. если опус медиум нету, то сол 6.1 medium, вот» Source: `2b013929:DECISIONS.md`, Models. Verbatim replaced text:
+
+>   - On `session_start` an unlisted current model is replaced by authenticated Opus, else the strongest authenticated
+>     listed model, at medium or the startup/`/new` `--thinking`, with a warning. With no authenticated listed model the
+>     model stays and the warning says its requests are refused. The wait before this choice is `[D-MODELS-STARTUP]`.
