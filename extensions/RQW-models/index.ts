@@ -1,5 +1,5 @@
 import { getSupportedThinkingLevels, type AnyModel } from "@earendil-works/pi-ai";
-import { AgentSession, ModelRuntime, parseArgs, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { AgentSession, ModelRuntime, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ModelEffortPicker, sameModel, stepDraft, type ChatModel, type Draft, type PickerSpec, type Step } from "./picker.ts";
 
 export const FAMILIES = [
@@ -329,14 +329,6 @@ export default function modelsExtension(pi: ExtensionAPI) {
 			if (model) await enqueue(() => select(ctx, model));
 		},
 	});
-	const applyThinking = (thinking: Level | undefined) => {
-		if (thinking) pi.setThinkingLevel(thinking);
-		else {
-			const currentModel = liveContext.model;
-			const next = currentModel && nearestLevel(currentModel, "medium");
-			if (next) pi.setThinkingLevel(next);
-		}
-	};
 	// pi.setModel first checks the same possibly stale configured-auth snapshot. The owning session's
 	// setModel checks real auth asynchronously, retains the list guard and emits the normal selection event.
 	const setStartupModel = async (model: ChatModel) => {
@@ -344,31 +336,45 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		await bound.session.setModel(model);
 		return true;
 	};
-	const startDefault = async (reason: string, models: () => Promise<ChatModel[]>) => {
-		if (reason !== "startup") return;
-		const opus = (await models()).find((model) => FAMILIES[familyOf(model)] === "claude-opus-5-5");
-		if (opus && await setStartupModel(opus)) pi.setThinkingLevel("medium");
+	// A new session always starts on the first of these that is authenticated, at medium.
+	const NEW_SESSION_FAMILIES = ["claude-opus-5-5", "gpt-6.1-sol"] as const;
+	const newSessionModel = async (models: () => Promise<ChatModel[]>) => {
+		const authenticated = await models();
+		for (const family of NEW_SESSION_FAMILIES) {
+			const found = authenticated.find((model) => FAMILIES[familyOf(model)] === family);
+			if (found) return found;
+		}
+		return undefined;
+	};
+	// Pi builds an empty session from the saved default model, so only the history tells a new session from a resumed one.
+	const hasHistory = (ctx: ExtensionContext) => ctx.sessionManager.getBranch().some((entry) => entry.type === "message");
+	// The model the session itself recorded; Pi may have replaced it by the saved default when it could not restore it.
+	const recordedModel = (ctx: ExtensionContext) => {
+		let recorded: { provider: string; id: string } | undefined;
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type === "model_change") recorded = { provider: entry.provider, id: entry.modelId };
+			else if (entry.type === "message" && entry.message.role === "assistant" && entry.message.model) recorded = { provider: entry.message.provider, id: entry.message.model };
+		}
+		return recorded;
 	};
 	pi.on("session_start", async (event, ctx) => {
 		invalidateSession();
 		liveContext = ctx;
 		bind(ctx);
-		const args = parseArgs(process.argv.slice(2));
 		// Only an actual choice waits for the availability pass.
 		let pass: Promise<ChatModel[]> | undefined;
 		const models = () => pass ??= settled(ctx);
-		await startDefault(event.reason, models);
-		// CLI --model/--models, the saved default (read again by /new and /remove), a restored or forked session may name a model outside the list.
-		const current = liveContext.model;
-		if (!current || isListed(current)) return;
-		const authenticated = await models();
-		const fallback = authenticated.find((model) => FAMILIES[familyOf(model)] === "claude-opus-5-5") ?? authenticated[0];
-		if (!fallback || !(await setStartupModel(fallback))) {
-			warn(ctx, `${notListed(current)} No listed model is authenticated; its requests are refused.`, true);
+		const isNew = event.reason === "new" || (event.reason === "startup" && !hasHistory(ctx));
+		const unlisted = [recordedModel(ctx), liveContext.model].find((model) => model && !isListed(model));
+		// Resume, fork and reload keep the model and thinking the session had, unless that model is outside the list.
+		if (!isNew && !unlisted) return;
+		const target = await newSessionModel(models);
+		if (target && await setStartupModel(target)) {
+			pi.setThinkingLevel("medium");
+			if (unlisted) warn(ctx, `${notListed(unlisted)} Switched to ${name(target)} (${pi.getThinkingLevel()}).`, true);
 			return;
 		}
-		applyThinking(event.reason === "startup" || event.reason === "new" ? args.thinking : undefined);
-		warn(ctx, `${notListed(current)} Switched to ${name(fallback)} (${pi.getThinkingLevel()}).`, true);
+		if (unlisted) warn(ctx, `${notListed(unlisted)} Neither Opus nor GPT-6.1 Sol is authenticated; its requests are refused.`, true);
 	});
 	pi.on("session_shutdown", () => {
 		invalidateSession();
