@@ -1606,7 +1606,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   - Selection outside the list is refused before mutation: `setModel` rejects with `<provider>/<id> is not in the RQW
     models list. Allowed: <listed IDs>.` and a warning; model, entries, settings and `model_select` stay unchanged.
   - On `session_start` a model outside the list (a saved default, or the own model of a resumed, forked or reloaded session) is
-    replaced by the new-session default of `[D-MODELS-DEFAULT]`, with a warning. With neither Opus nor GPT-6.1 Sol authenticated
+    replaced by the new-session default of `[D-MODELS-DEFAULT]`, without a warning. With neither Opus nor GPT-6.1 Sol authenticated
     the model stays and the warning says its requests are refused. The wait before this choice is `[D-MODELS-STARTUP]`.
   - Requests: the owning runtime's `prepareRequest` refuses chat requests for an unlisted model with `RQW-models refused
     the request: <the same text>`, covering in-process subagents; the reviewer models (GPT-6.1 Terra and Sol) are
@@ -1620,7 +1620,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `claude-opus-5-5` at `medium`, whatever the saved default model is; without an authenticated Opus it gets `gpt-6.1-sol` at `medium`.
   Any provider variant of the family counts, in the picker's order. A resumed session (`/resume`, `--resume`, `--continue`, a restart
   into an existing session), a fork and `/reload` keep the model and thinking the session had. If that model is outside the list,
-  the new-session default replaces it, with a warning. With neither Opus nor Sol authenticated a listed model stays and an unlisted
+  the new-session default replaces it silently: Pi 1.5.0 gives an `anthropic` login without a saved default the unlisted `claude-opus-4-8`, so every new session switches. Owner on that warning, 2026-11-03 (verbatim): «Че за ворнинг? убрать его надо нахуй разберись». With neither Opus nor Sol authenticated a listed model stays and an unlisted
   one is refused. CLI `--model` and `--thinking` do not change the default of a new session (unchanged since `f891244f`, no owner
   order for them); the user's settings are never written. Owner, 2026-11-03 (verbatim): «Смотри, короче, у нас модель должна браться та, которая была в сессии изначальной, если это, допустим, резюм. а если это создание, ну, запуск p, new или remove, ну, короче, сброс сессии. новая сессия, там модель должна быть по дефолту опус медиум. если опус медиум нету, то сол 6.1 medium, вот»
   Carriers: `extensions/RQW-models/index.ts` (`session_start`), its README, `test/extensions/RQW-models/models.test.ts`.
