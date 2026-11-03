@@ -43,7 +43,7 @@ function addHugeTail(manager: any) {
 
 async function huge(extension?: (pi: any) => void) {
 	const h = await harness({}, extension);
-	cleanups.push(async () => { await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never); h.session.dispose(); });
+	cleanups.push(async () => { await h.settle(); await h.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never); h.session.dispose(); });
 	addHugeTail(h.manager);
 	delete shared[KEY];
 	return h;
