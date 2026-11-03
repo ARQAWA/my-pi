@@ -11,7 +11,8 @@ A new session (a startup without history, `/new`, `/remove`) always gets `claude
 saved default is; without an authenticated Opus it gets `gpt-6.1-sol` at medium. A resumed session (`/resume`,
 `--resume`, `--continue`, a restart into an existing session), a fork and `/reload` keep the model and thinking the
 session had. If the model the session recorded, or the one Pi ended up with, is outside the list, the
-new-session default above replaces it, with a warning. Opus and Sol mean the model families, so a Bedrock or proxy
+new-session default above replaces it silently: Pi's own default for an `anthropic` login without a saved default is
+the unlisted `claude-opus-4-8`, so every new session starts with this switch. Opus and Sol mean the model families, so a Bedrock or proxy
 variant counts; the canonical `anthropic` and `openai-codex` entries win when both exist. With neither
 Opus nor Sol authenticated a listed model stays and an unlisted one is refused. The user's settings are never written;
 picker order stays unchanged. Limits: an explicit CLI `--model` or `--thinking` given with `--continue` is the user's own
