@@ -16,6 +16,7 @@ import { DownloadManager } from "./downloads.ts";
 import { gotoPage } from "./navigation.ts";
 import { ObservedElements } from "./observe.ts";
 import { budgetBound } from "./ops.ts";
+import { proxyFromEnv } from "./proxy-env.ts";
 import { elementReads } from "./reads.ts";
 import { checkRunModel, executeRun, runCondition, validateRun } from "./run.ts";
 import { finishRecording, startRecording, stopRecording } from "./recorder.ts";
@@ -117,8 +118,17 @@ function chromeProxy(proxy: string | undefined): string | undefined {
 }
 
 function addProxyArgs(args: string[], env: NodeJS.ProcessEnv): void {
-	const http = chromeProxy(env.http_proxy || env.HTTP_PROXY || env.all_proxy || env.ALL_PROXY || env.https_proxy || env.HTTPS_PROXY);
-	const https = chromeProxy(env.https_proxy || env.HTTPS_PROXY || env.all_proxy || env.ALL_PROXY || env.http_proxy || env.HTTP_PROXY);
+	const target = new URL("https://localhost");
+	const http = chromeProxy(proxyFromEnv(target, {
+		HTTPS_PROXY: env.http_proxy || env.HTTP_PROXY,
+		HTTP_PROXY: env.all_proxy || env.ALL_PROXY,
+		ALL_PROXY: env.https_proxy || env.HTTPS_PROXY,
+	}));
+	const https = chromeProxy(proxyFromEnv(target, {
+		HTTPS_PROXY: env.https_proxy || env.HTTPS_PROXY,
+		HTTP_PROXY: env.all_proxy || env.ALL_PROXY,
+		ALL_PROXY: env.http_proxy || env.HTTP_PROXY,
+	}));
 	if (!http && !https) return;
 	const hasFlag = (name: string) => args.some(arg => arg === name || arg.startsWith(`${name}=`));
 	if (!["--proxy-server", "--proxy-pac-url", "--proxy-auto-detect", "--no-proxy-server"].some(hasFlag)) {
