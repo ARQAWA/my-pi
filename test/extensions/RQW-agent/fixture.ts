@@ -78,21 +78,22 @@ export function runtime(cwd: string, root: string, thinking = "off", extraModels
 		stream: core.streamSimple, streamSimple: core.streamSimple,
 	};
 	let definition: any;
+	const commands: any[] = [];
 	const ctx: any = {
 		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: (_provider: string, id: string) => models.get(id), hasConfiguredAuth: () => true },
-		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt", signal: new AbortController().signal, mode: "tui",
+		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt", signal: new AbortController().signal, mode: "tui", ui: { notify() {} },
 	};
 	const pi: any = {
 		events: createEventBus(), on: (name: string, hook: any) => hooks.set(name, [...hooks.get(name) ?? [], hook]),
 		registerTool: (tool: any) => { definition = tool; },
 		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
 		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }),
-		getThinkingLevel: () => thinking, getActiveTools: () => activeTools,
+		getThinkingLevel: () => thinking, getActiveTools: () => activeTools, getCommands: () => commands,
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
 	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, "", undefined);
 	return {
-		live, requests, efforts, events: pi.events, parent, description: () => definition.description as string,
+		live, requests, efforts, commands, events: pi.events, parent, description: () => definition.description as string,
 		async emit(name: string) { for (const hook of hooks.get(name) ?? []) await hook({}, ctx); },
 		execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx),
 		/** Model, effort and prompt of the child that ran `task`, from the public status and the model request. */
