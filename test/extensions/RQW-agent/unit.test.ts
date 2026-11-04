@@ -1361,18 +1361,17 @@ test("custom system and system_file prompts still get the subagent reminder last
 	live.runtime.close();
 });
 
-test("Pi extension loader retains enum schemas for agent, todo and job", async t => {
+test("Pi extension loader retains enum schemas for agent and job", async t => {
 	const root = fileURLToPath(new URL("../../../", import.meta.url));
 	const cwd = await temp(t);
 	const loader = await import(new URL("node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js", new URL("../../../", import.meta.url)).href);
 	const methods = ["bindExtensions", "_refreshToolRegistry", "_setActiveTools"];
 	const originals = methods.map(name => Object.getOwnPropertyDescriptor(AgentSession.prototype, name));
-	const loaded = await loader.loadExtensions(["RQW-agent", "RQW-todo", "RQW-tools"].map(name => join(root, "extensions", name, "index.ts")), cwd);
+	const loaded = await loader.loadExtensions(["RQW-agent", "RQW-tools"].map(name => join(root, "extensions", name, "index.ts")), cwd);
 	try {
 		assert.deepEqual(loaded.errors, []);
 		const tool = (name: string) => loaded.extensions.flatMap((extension: any) => [...extension.tools.values()]).find((entry: any) => entry.definition.name === name).definition;
 		assert.deepEqual(tool("agent").parameters.properties.action.enum, ["start", "status", "send", "resume", "interrupt", "stop", "restart"]);
-		assert.deepEqual(tool("todo").parameters.properties.items.items.properties.status.enum, ["pending", "active", "done", "dropped", "blocked"]);
 		assert.deepEqual(tool("job").parameters.properties.action.enum, ["status", "kill"]);
 	} finally {
 		const tools = loaded.extensions.find((extension: any) => extension.tools.has("job"));
