@@ -252,7 +252,7 @@ class NotificationBridge {
 }
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean; backgroundCount?(): number; subscribeActivity?(listener: () => void): () => void; autoSource?(): { source: AutoSource; close(): void } };
-type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
+type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; busy: () => boolean; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -350,7 +350,20 @@ type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?
 type ToolCatalogue = { names: string[]; aliases: Record<string, string> };
 type ToolOffer = { factory: ToolsFactory; catalogue?: ToolCatalogue };
 
-type ExtensionFactory = (child: ExtensionAPI) => void;
+type ExtensionFactory = ((child: ExtensionAPI) => void) & { busy?: () => boolean };
+
+const shutdowns = new WeakMap<AgentSession, Promise<void>>();
+function shutdownSession(session: AgentSession): Promise<void> {
+	let shutdown = shutdowns.get(session);
+	if (!shutdown) {
+		shutdown = (async () => {
+			const runner = session.extensionRunner;
+			if (typeof runner?.emit === "function") await runner.emit({ type: "session_shutdown", reason: "quit" });
+		})().catch(() => {});
+		shutdowns.set(session, shutdown);
+	}
+	return shutdown;
+}
 const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
 
 /** Inline extensions explicitly offered for each child, without enabling resource discovery. */
@@ -422,7 +435,7 @@ type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kin
 
 /**
  * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
- * a refused request disposes the session and throws. `childName` is the child's actual label, `kind#id`.
+ * a refused request throws. `childName` is the child's actual label, `kind#id`.
  */
 function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string, startupSystemPromptForced: boolean, childApi: ExtensionAPI): { release: () => void; capture: (callerThreadId?: string) => void } {
 	const request: SessionPolicyRequest = { session, parentThreadId, kind, startupSystemPrompt, startupSystemPromptForced, childName };
@@ -444,7 +457,6 @@ function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession
 	} catch (error) { failed = true; failure = error; }
 	if (!failed && request.error === undefined) return { release, capture };
 	release();
-	session.dispose();
 	const reason = failed ? (failure instanceof Error ? failure.message : String(failure)) : String(request.error);
 	throw new Error(`Session policy refused: ${reason.split("\n")[0].slice(0, 200)}`);
 }
@@ -816,7 +828,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			|| a.state !== "completed" || !a.result || a.run || a.next?.length || a.activity.isRunning()
 			|| a.session.agent.state.isStreaming || a.session.agent.hasQueuedMessages()
 			|| a.session.getSteeringMessages().length || a.session.getFollowUpMessages().length
-			|| a.bridge.pending() || a.children?.pending() || a.children?.runningCounts().agents || a.jobs?.hasJobs?.()
+			|| a.bridge.pending() || a.children?.pending() || a.children?.runningCounts().agents || a.children?.busy?.() || a.busy() || a.jobs?.hasJobs?.()
 			|| coordinator.undelivered(`${name}#${a.id}`)) return false;
 		// A queued Pi message is not durable delivery yet. Wait for its actual branch entry.
 		const delivered = main?.sessionManager.getBranch().some(entry => {
@@ -1229,7 +1241,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						prompt = servers ? `${config.system}\n\n<mcp_servers>\n${servers}\n</mcp_servers>` : config.system;
 						return { systemPrompt: prompt };
 					});
-					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost, rootCommands, () => rootBranch(ctx));
+					children = registerCaller(sub, toolEvents, true, false, () => fast.on, () => {
+						onRunning();
+						const a = agents.get(localNumber(childName)!);
+						if (a && a.session === childSession) queueSleep(a);
+					}, () => config.base, `${label}/`, childHost, rootCommands, () => rootBranch(ctx));
 					web?.(sub);
 				},
 				...childExtensions,
@@ -1256,14 +1272,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {
+				try {
 				childSession = session;
 				if (core.on) await session.bindExtensions({ mode: "tui" });
 				// Before any prompt. A late create after an abort is released here too.
 				let parent: string;
-				try { parent = ctx.sessionManager.getSessionId(); } catch (error) { session.dispose(); throw error; }
+				parent = ctx.sessionManager.getSessionId();
 				// The child's factory forces config.system as its prompt (before_agent_start returns it), so the prompt is forced.
 				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true, childApi);
-				if (signal.aborted) { jobs?.dispose(); policy.release(); session.dispose(); signal.throwIfAborted(); }
+				if (signal.aborted) { policy.release(); signal.throwIfAborted(); }
 				mcp?.start(session);
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 				progress = new ProgressReports(toolEvents, childName, manager.getSessionId(), (message, current, delivered) => {
@@ -1321,14 +1338,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						if (!activity?.isRunning()) armSleep(a);
 					}
 				}, { alert_after_ms: config.alert_after_ms });
-				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: () => { releaseRequests?.(); policy.release(); mcp?.stop(); }, captureRun: policy.capture, core, bridge };
+				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, busy: () => childExtensions.some(factory => typeof factory.busy === "function" && factory.busy()), release: () => { releaseRequests?.(); policy.release(); mcp?.stop(); }, captureRun: policy.capture, core, bridge };
+				} catch (error) {
+					await shutdownSession(session);
+					session.dispose();
+					throw error;
+				}
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
 			controller.abort();
 			if (!retainedBridge) bridge.close();
 			jobs?.dispose();
-			void creating?.then(({ session, release }) => { release(); session.dispose(); }).catch(() => {});
+			void creating?.then(async ({ session, release }) => { release(); await shutdownSession(session); session.dispose(); }).catch(() => {});
 			throw error;
 		}
 	}
@@ -1594,6 +1616,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		a.session.agent.abort();
 		void (async () => {
 			await Promise.all([a.session.abort().catch(() => {}), a.session.agent.waitForIdle()]);
+			await shutdownSession(a.session);
 			a.session.dispose();
 			afterClose?.();
 		})();
@@ -2034,6 +2057,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (depth > 0) for (const a of agents.values()) await a.children?.prepareStatus?.(depth - 1, signal);
 		},
 		runningCounts,
+		busy: () => [...agents.values()].some(a => a.busy() || a.children?.busy?.()),
 		stopBackground() {
 			const count = runningCounts().agents;
 			mainAborted = true;

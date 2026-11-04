@@ -1835,6 +1835,159 @@ test("an uncommitted answer blocks sleep until its wait result is saved", async 
 	live.runtime.close();
 });
 
+test("a child with an offered busy resource stays awake and sleeps after release", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let busy = true;
+	let closed = 0;
+	const live = runtimeFixture(parent, root, context => {
+		if (userTexts(context).includes("release") && !context.messages.some((m: any) => m.role === "toolResult"))
+			return fauxAssistantMessage([fauxToolCall("release_resource", {}, { id: "release" })], { stopReason: "toolUse" });
+		return "answer";
+	});
+	live.events.on("rqw-agent:subagent-extension-factories", (request: any) => {
+		const factory = Object.assign((child: any) => {
+			child.on("session_shutdown", async () => { closed++; });
+			child.registerTool({ name: "release_resource", label: "Release", description: "Release", parameters: { type: "object", properties: {} }, execute: async () => { busy = false; return { content: [{ type: "text", text: "released" }], details: {} }; } });
+		}, { busy: () => busy });
+		request.offer(factory, ["release_resource"]);
+	});
+	await live.execute({ action: "start", task: "task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
+	now = 300000;
+	t.mock.timers.tick(300000);
+	await live.execute({ action: "status", ids: ["agent#1"] });
+	assert.ok(retainedChildManager(parent, "agent", 1));
+	assert.equal(closed, 0);
+	await live.execute({ action: "send", id: "agent#1", task: "release" });
+	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
+	now = 600000;
+	t.mock.timers.tick(300000);
+	await until(() => closed === 1);
+	live.runtime.close();
+	assert.equal(closed, 1);
+});
+
+test("a busy grandchild keeps its idle ancestor until the resource is released", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const sessions: AgentSession[] = [];
+	let factoryCount = 0;
+	const live = runtimeFixture(parent, root, context => {
+		const users = userTexts(context);
+		const task = users.at(-1);
+		const lastUser = context.messages.findLastIndex((message: any) => message.role === "user");
+		const results = context.messages.slice(lastUser + 1).filter((message: any) => message.role === "toolResult");
+		if (task === "outer" && !results.length)
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "inner", tools: [] }, { id: "delegate-inner" })], { stopReason: "toolUse" });
+		if (task === "release" && !results.length)
+			return fauxAssistantMessage([fauxToolCall("release_resource", {}, { id: "release-inner" })], { stopReason: "toolUse" });
+		return "done";
+	}, 32);
+	live.events.on("rqw-codex:session-policy", (request: any) => { sessions.push(request.session); });
+	live.events.on("rqw-agent:subagent-extension-factories", (request: any) => {
+		let busy = ++factoryCount === 2;
+		request.offer(Object.assign((child: any) => child.registerTool({
+			name: "release_resource", label: "Release", description: "Release", parameters: { type: "object", properties: {} },
+			execute: async () => { busy = false; return { content: [{ type: "text", text: "released" }], details: {} }; },
+		}), { busy: () => busy }), ["release_resource"]);
+	});
+	await live.execute({ action: "start", task: "outer", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
+	assert.equal(sessions.length, 2);
+	const outer = sessions[0].sessionManager;
+	assert.ok(retainedChildManager(outer, "agent", 1));
+	now = 300000;
+	t.mock.timers.tick(300000);
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(live.runtime.busy?.(), true);
+	assert.ok(retainedChildManager(parent, "agent", 1));
+	await sessions[1].prompt("release");
+	await until(() => !retainedChildManager(parent, "agent", 1));
+	live.runtime.close();
+});
+
+test("stopping an ancestor shuts down its tree but not a sibling", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const closed: number[] = [];
+	let created = 0;
+	const live = runtimeFixture(parent, root, context => {
+		const task = userTexts(context).at(-1);
+		if (task === "outer" && !context.messages.some((message: any) => message.role === "toolResult"))
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "inner", tools: [] }, { id: "delegate-inner" })], { stopReason: "toolUse" });
+		return "done";
+	}, 24);
+	live.events.on("rqw-agent:subagent-extension-factories", (request: any) => {
+		const id = ++created;
+		request.offer((child: any) => child.on("session_shutdown", () => { closed.push(id); }));
+	});
+	await live.execute({ action: "start", task: "outer", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await live.execute({ action: "start", task: "sibling", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	assert.equal(created, 3);
+	await live.execute({ action: "stop", id: "agent#1" });
+	await until(() => closed.length === 2);
+	assert.deepEqual([...closed].sort(), [1, 2]);
+	await live.execute({ action: "stop", id: "agent#2" });
+	await until(() => closed.length === 3);
+	assert.deepEqual([...closed].sort(), [1, 2, 3]);
+	live.runtime.close();
+});
+
+test("shutdown is awaited before disposing a stopped child", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<void>();
+	let entered = 0;
+	let session: AgentSession | undefined;
+	const live = runtimeFixture(parent, root);
+	live.events.on("rqw-agent:subagent-extension-factories", (request: any) => request.offer((child: any) => {
+		child.on("session_shutdown", async () => { entered++; await gate.promise; });
+	}));
+	live.events.on("rqw-codex:session-policy", (request: any) => { session = request.session; });
+	await live.execute({ action: "start", task: "task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	const dispose = t.mock.method(session!, "dispose");
+	await live.execute({ action: "stop", id: "agent#1" });
+	await until(() => entered === 1);
+	assert.equal(dispose.mock.callCount(), 0);
+	gate.resolve();
+	await until(() => dispose.mock.callCount() === 1);
+	live.runtime.close();
+	assert.equal(entered, 1);
+});
+
+test("a refused child creation shuts down its extensions once", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let closed = 0;
+	const live = runtimeFixture(parent, root);
+	live.events.on("rqw-agent:subagent-extension-factories", (request: any) => request.offer((child: any) => {
+		child.on("session_shutdown", () => { closed++; });
+	}));
+	live.events.on("rqw-codex:session-policy", (request: any) => { request.error = "refused"; });
+	await assert.rejects(live.execute({ action: "start", task: "task", tools: [] }), /refused/);
+	assert.equal(closed, 1);
+	live.runtime.close();
+	assert.equal(closed, 1);
+});
+
 test("a finished child keeps its job registry through the idle deadline", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let now = 0;
