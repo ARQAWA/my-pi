@@ -37,4 +37,40 @@ describe("RQW-naming rename_session tool", () => {
 		await assert.rejects(tool.execute("1", { name: "   " }));
 		assert.deepEqual(names, []);
 	});
+
+	it("offers only the tool to a child, bound to the child's own session", async () => {
+		const parentNames: string[] = [];
+		const listeners: Record<string, (request: unknown) => void> = {};
+		const parent = {
+			events: { on: (name: string, listener: (request: unknown) => void) => { listeners[name] = listener; }, emit() {} },
+			on() {},
+			registerCommand() {},
+			registerTool() {},
+			setSessionName: (name: string) => { parentNames.push(name); },
+		};
+		naming(parent as never);
+		let offered: ((child: unknown) => void) | undefined;
+		let offeredTools: string[] | undefined;
+		listeners["rqw-agent:subagent-extension-factories"]!({ offer: (factory: (child: unknown) => void, tools: string[]) => { offered = factory; offeredTools = tools; } });
+		assert.ok(offered);
+		assert.deepEqual(offeredTools, ["rename_session"]);
+
+		const childNames: string[] = [];
+		const registered: any[] = [];
+		const hooks: string[] = [];
+		const commands: string[] = [];
+		offered!({
+			events: { on() {}, emit() {} },
+			on: (name: string) => { hooks.push(name); },
+			registerCommand: (name: string) => { commands.push(name); },
+			registerTool: (tool: unknown) => { registered.push(tool); },
+			setSessionName: (name: string) => { childNames.push(name); },
+		});
+		assert.deepEqual(registered.map((tool) => tool.name), ["rename_session"]);
+		assert.deepEqual(hooks, []);
+		assert.deepEqual(commands, []);
+		await registered[0].execute("1", { name: "Child work" });
+		assert.deepEqual(childNames, ["Child work"]);
+		assert.deepEqual(parentNames, []);
+	});
 });

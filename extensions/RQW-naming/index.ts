@@ -4,6 +4,7 @@ import { generateSessionName, type NamingMessage, type NamingRegistry } from "./
 
 /** Initial attempt plus three retries. */
 const ATTEMPTS = 4;
+const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
 const WARNING = "Automatic session naming failed; the previous session name is kept.";
 
 type Run = { controller: AbortController; sessionId: string | undefined };
@@ -34,6 +35,21 @@ function sessionIdOf(ctx: ExtensionContext): string | undefined {
 function hasUserMessage(ctx: ExtensionContext): boolean {
 	try { return ctx.sessionManager.getEntries().some((entry) => entry.type === "message" && entry.message.role === "user"); }
 	catch { return true; } // Unknown history must not start a generation.
+}
+
+function registerRenameTool(pi: ExtensionAPI): void {
+	pi.registerTool({
+		name: "rename_session",
+		label: "Rename session",
+		description: "Rename the current session.",
+		parameters: Type.Object({ name: Type.String({ description: "The new session name." }) }),
+		async execute(_id, params) {
+			const name = params.name.trim();
+			if (!name) throw new Error("Session name must not be empty.");
+			pi.setSessionName(name);
+			return { content: [{ type: "text", text: `Session renamed to "${name}".` }], details: {} };
+		},
+	});
 }
 
 export default function (pi: ExtensionAPI) {
@@ -141,17 +157,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", () => cancel());
 
-	pi.registerTool({
-		name: "rename_session",
-		label: "Rename session",
-		description: "Rename the current session.",
-		parameters: Type.Object({ name: Type.String({ description: "The new session name." }) }),
-		async execute(_id, params) {
-			const name = params.name.trim();
-			if (!name) throw new Error("Session name must not be empty.");
-			pi.setSessionName(name);
-			return { content: [{ type: "text", text: `Session renamed to "${name}".` }], details: {} };
-		},
+	registerRenameTool(pi);
+	// Children get only the tool, with their own session API; naming and /rename-gen stay in the main chat.
+	pi.events.on(SUBAGENT_EXTENSION_FACTORIES, (request: unknown) => {
+		(request as { offer?: (factory: typeof registerRenameTool, tools: string[]) => void } | null)?.offer?.(registerRenameTool, ["rename_session"]);
 	});
 
 	pi.registerCommand("rename-gen", {
