@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { runtime, world } from "./fixture.ts";
 
-const reviewer = new URL("../../../extensions/RQW-review/REVIEWER.md", import.meta.url).pathname;
+const reviewer = fileURLToPath(new URL("../../../extensions/RQW-review/REVIEWER.md", import.meta.url));
 
 test("new tasks expand mentions before include, except for reviewer briefs", async t => {
 	const w = await world(t);
@@ -39,7 +40,7 @@ test("new tasks expand mentions before include, except for reviewer briefs", asy
 	} finally { run.live.close(); }
 });
 
-const spotty = new URL("../../../extensions/RQW-review/profiles/spotty.toml", import.meta.url).pathname;
+const spotty = fileURLToPath(new URL("../../../extensions/RQW-review/profiles/spotty.toml", import.meta.url));
 
 /** A child saved before the reviewer flag existed: the saved config has no `reviewer`, so restore must decide once. */
 async function legacyChild(t: Parameters<typeof world>[0], start: Record<string, unknown>, edit: (config: any) => void) {
