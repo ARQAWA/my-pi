@@ -1519,7 +1519,7 @@ test("registered description and parameters carry adapted Codex guidance", async
 	assert.equal(properties.role.description, "Short role text added after the default prompt; start, restart");
 	assert.equal(properties.system_file.description, "start, restart: UTF-8 whole-prompt file, relative to caller cwd; conflicts with system and either role option");
 	assert.equal(properties.role_file.description, "start, restart: UTF-8 role file, relative to caller cwd; conflicts with role and either system option");
-	assert.equal(properties.include.description, "start, restart: append verbatim user-role text from this caller's current session branch after the task");
+	assert.equal(properties.include.description, "start, restart: append verbatim user-role text from the current branch of the root chat after the task");
 	assert.equal(properties.title.description, "Short title, 3-5 words, shown in status and result headers; start, restart. Make it concrete and distinct, consider recent titles to avoid reuse.");
 	assert.equal(properties.agent_type.description, "Agent type override for the new agent. Omit unless explicitly asked. Restart inherits and revalidates the selected agent_type. The roles are listed at the end of the tool description.");
 	assert.equal(properties.task.description, "Initial plain-text task for the new agent, or the message text to send to the target agent with send or restart.");
