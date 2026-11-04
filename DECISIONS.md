@@ -409,7 +409,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
   Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
-- **Independent review** `[D-WORK-FINAL-CHECK]`. Except for records, the executor launches a selfcheck fork after its own checks. The fork runs the self-check and the blind Spotty loop; Bossy is for an owner-requested high review ([D-AGENT-FORK-SELFCHECK], [PROCESS.md](PROCESS.md#independent-review), rule 19). The `code-reviewer` and `test-reviewer`
+- **Independent review** `[D-WORK-FINAL-CHECK]`. Except for records, the executor launches a selfcheck fork after its own checks. The fork runs the self-check and the reviewer loop at the requested level: Spotty for blind, Bossy for an owner-requested high review ([D-AGENT-FORK-SELFCHECK], [PROCESS.md](PROCESS.md#independent-review), rule 19). The `code-reviewer` and `test-reviewer`
   profiles remain available. Findings need evidence and impact; missing evidence goes back to the same reviewer.
   Owner: «Ревьюеров циклических надо будет переработать, чтобы они работали так же, как слепые ревьюеры: чтобы они не по одной находке находили и цикл перезапускали, а чтобы они находили сразу все косяки и отдавали их пачкой, и потом заново перепроверяли.» `code-reviewer` and `test-reviewer` return every finding of a pass at once; a re-review checks the fixes and changed lines and returns all remaining findings at once.
   Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`,
@@ -1170,7 +1170,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «их работу не прерываем».
   Carriers: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/unit.test.ts`.
 
-- **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into a child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the blind loop (spotty, medium, fresh clean reviewers) on its own and gives the caller one report; the caller ends its turn, the report arrives automatically, and it does not touch the checked object meanwhile. A persisted caller stores its fork under its own `.children` tree, linked by `parentSession`, with the copied branch; descendants use the same layout and resume works after restart. A caller without a session file keeps its fork in memory. Previously created in-memory forks cannot recover missing history. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
+- **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into a child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the reviewer loop at the requested level (spotty high for blind, bossy max for high, fresh clean reviewers) on its own and gives the caller one report; the caller ends its turn, the report arrives automatically, and it does not touch the checked object meanwhile. A persisted caller stores its fork under its own `.children` tree, linked by `parentSession`, with the copied branch; descendants use the same layout and resume works after restart. A caller without a session file keeps its fork in memory. Previously created in-memory forks cannot recover missing history. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
   Coordinator question, 2026-11-02: the owner asked for a real subagent rather than RAM; the coordinator explained that the fork is a real subagent with its own ID and resumable session file on disk, while all subagents run inside the Pi process. Option 1: keep it as is. Owner: «Ну да, так и должно работать, как ты писал. Ничего не меняем поэтому сыл в чеку.»
   Owner: «Это так не должно быть! Все саб агенты должны быть на диске и должны быть прилинкованы к родителям Вне диска только редчайшые кейсы»; to «1. Форк сохранять на диск, как обычного ребёнка, со ссылкой на родителя. Тогда и все его ревьюеры лягут в .children. Это 1–2 SP.»: «ДА».
   Owner (2026-10-31, verbatim excerpts): «Исполнитель выполнил работу свою полностью от начала до конца, потом forked самого себя и в этом форке сам себя перепроверил. Context засрался. Потом он поднял reviewer, reviewer перепроверил его вслепую, выдал ему ответ. Тот сам себя починил. После этого снова поднял blind reviewer, и так они довели всё это дело до конца. Потом он написал огромный отчёт основному агенту в ответ: «Так мы зафинализировали работу. Было столько-то проблем, столько-то исправлений. Статус clean».» … «Но самая главная здесь не оптимизация, а чтобы он качественно проверял, при этом без фанатизма.»
@@ -1236,8 +1236,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `fix-reviewer-evidence-output`.
 
 - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
-  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "medium"`;
-  `profiles/bossy.toml` defaults to the same model with `"xhigh"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
+  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "high"`;
+  `profiles/bossy.toml` defaults to the same model with `"max"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
   without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
@@ -1267,17 +1267,16 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Impact admission and executor-owned cycle** `[D-REVIEW-IMPACT]`. Findings need exact evidence, severity,
   a concrete trigger and a wrong outcome in the ordered result. P0 critical, P1 high, P2 medium retain real bugs,
   material owner requirements and regression-detection gaps. Data, security and destructive-action risks are at
-  least P2, including symlink protection. Grade omissions and unagreed additions by their impact, not automatically
-  critical. P3 are reported and fixed in the same batch only when the pass also has admitted P0-P2 findings.
+  least P2, including symlink protection. Missed requirements and unagreed additions follow
+  `[D-REVIEW-STRICT-SCOPE]`. P3 are reported and fixed in the same batch only when the pass also has admitted P0-P2 findings.
   A P3-only pass is CLEAN: drop its P3 without mentioning them. Never report P4, taste or no-impact hypotheticals.
   Quotes alone do not admit findings; custom criteria cannot bypass the gate.
-  An unagreed element must change the ordered result, expand scope or add material risk, subject to that gate.
   In this repository the executor first checks itself briefly: touched tests, product run where possible and
   authorized, reread against the owner's words, fix. Text changes need no runs. It owns blind review, fixes and
   fresh changed-object passes until CLEAN, then returns one report with problems, fixes and CLEAN status.
   Changed-object passes check fixes, changed lines and affected paths, not the whole object again. Format slips
   are corrected locally without a new pass; missing material evidence still prevents acceptance and is completed
-  with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty medium, high Bossy xhigh.
+  with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty high, high Bossy max.
   The self-check fork is implemented under `[D-AGENT-FORK-SELFCHECK]`.
   Owner, verbatim and in order, supplied in the reviewer-p2-gate brief, 2026-10-31:
   «Надо оптимизировать, ускорить процесс приемки, но при этом не потерять в контроле качества вообще никак. Выбросить только то, что не относится к контролю качества напрямую»
@@ -1292,6 +1291,34 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   The correction replaces the earlier proposal to discard every P3; only P3-only passes are discarded.
   Reason: preserve quality and destructive-risk protection without low-only correction loops.
   Evidence: `my-pi-evidence/reviewer-audit/REPORT.md`, offline examples in `VALIDATION.md` alongside it.
+  Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/*.toml`, `skills/reviewer/SKILL.md`,
+  [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
+- **Strict requirement and scope admission** `[D-REVIEW-STRICT-SCOPE]`. A proven missed requirement and a proven
+  unagreed addition are each at least P2, higher by impact, never P3, taste or a point judged acceptable; for both,
+  delivery is the trigger and the missing requirement or unordered element is the wrong result. `REVIEWER.md`
+  defines both, the closed list of what is not an addition, and the proof: agreement only from verbatim quotes read
+  in their source, a short answer together with the question it answers, the latest word on each point; a quote not
+  found proves nothing, and an unavailable source is UNCHECKED. Other issues keep `[D-REVIEW-IMPACT]`, including
+  P3-only CLEAN.
+  Owner, verbatim and in order, supplied in the strict-scope brief, 2026-11-04:
+  «Надо что бы ревьюер строго это проверял что НИКАКОЙ незаказанной не согласованной работы небыло добавленно это уже реализовано да»
+  «Давай там с консилиумом отследи потому что это важная хуйня, так же как нельзя ничего забыть сделать проебать требования так же нельзя допустить ничего, что неыбло заказано пользователем, на что небыло прямого требования и согласования, никаких галлюцинаций»
+  «консилиму подними все 10 тел с ревьюерами пусть они найдут самое пиздатое простое решение по нашему манифесту и нашим стандартам»
+  Earlier owner message in the same conversation, the source of the latest-word rule:
+  «опора должна быть еще более строгой, то есть он должен опираться именно на цитаты прямые и кумулятивные решения пользователя на прямые цитаты. кумулятивные решения пользоваться, чтобы не было такого, что какое-то старое решение, которое было отменено в будущем, сработало»
+  Owner answers at approval:
+  Q1, question and options from `my-pi-evidence/designs/strict-scope/FINAL.md:31-33`:
+  **Q1. M9: пропуск требования из правила процесса тоже минимум P2?**
+  1. Да, рекомендую. Правило цитируется дословно, как требование. За: «нельзя ничего забыть сделать проебать требования» не сужает требования до слов владельца; роль уже велит читать «applicable governing rules» и сверять «the in-scope requirements and decisions one by one»; 8 из 10. Цена: больше находок P2, когда правило, например «максимум семь слов в предложении», прямо относится к объекту. Шум ограничен: дословная цитата, правило в scope, действует сейчас.
+  2. Нет. Нарушение правила оценивается по последствиям, как сейчас (S9, S10). Цена: такое нарушение может стать P3 и исчезнуть в CLEAN без упоминания.
+  Recorded answer: «да» on items 8 and 15, both marked «Q1 = yes» and «Согласование: «да»» in
+  `my-pi-evidence/designs/strict-scope/OWNER-DIFFS.md`. The owner's raw Q1 reply wording is not in these evidence files; this is the recorded relay.
+  Q2, source `my-pi-evidence/designs/strict-scope/PLAN.md:22`:
+  Main спросил, заменить ли одобренный R3 строгим правилом. Владелец: «что я правку восемь не одобрил, заменить её строгим правилом. я согласен заменить, если это отвечает моим последним запросам, если это кумулятивно выполняет мои требования»
+  Затем Main показал пункт 8 как «главное строгое правило. заменяет старую правку 8, которую ты одобрял», владелец ответил «да».
+  Replaced text: `DECISIONS-ARCHIVE.md` A-0495.
+  Reason: catch every lost requirement and every unordered element without invented agreement or requirements.
+  Evidence: `my-pi-evidence/designs/strict-scope/FINAL.md`.
   Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/*.toml`, `skills/reviewer/SKILL.md`,
   [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
 

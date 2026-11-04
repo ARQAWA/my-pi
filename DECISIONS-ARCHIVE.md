@@ -8020,3 +8020,98 @@ Verbatim replaced text:
 >   Owner: «Надо убрать туду в если работает координатор режим, но тудушки можно ставить саб агентам работникам координатора подумай над этим». Asked whether all subagents of every chat should get todo or only coordinator workers, the owner answered «1» for all subagents.
 >   Owner answers in the delegated task, verbatim: Q1 «по туду 1»; Q2 «1»; mockup «макет подшагов принял»; Q3 «1»; Q4 «1». Q1 selects the name `todo`, session-long mode and the request «выключи список» to turn it off. Q2 selects current item, current substep, then next item. Q3 selects the full-screen `/todo` view. Q4 selects one blocker status with a required reason and the reminder and Escape behaviour above.
 >   Reason: maintain the task as working memory without imposing planning on every conversation. Design: `my-pi-evidence/designs/todo-panel/PLAN.md`. Carriers: `extensions/RQW-todo/`, `package.json`, `test/extensions/RQW-todo/`, `test/synthetic-todo.test.ts`.
+
+## A-0495 · archived 2026-11-04 · Review · impact grading of omissions and additions
+
+Status: SUPERSEDED in part by `[D-REVIEW-STRICT-SCOPE]` ([DECISIONS.md, Review](DECISIONS.md#review)): proven missed requirements and unagreed additions are each at least P2; the rest stays in force in the amended `[D-REVIEW-IMPACT]`. Owner, 2026-11-04: «Давай там с консилиумом отследи потому что это важная хуйня, так же как нельзя ничего забыть сделать проебать требования так же нельзя допустить ничего, что неыбло заказано пользователем, на что небыло прямого требования и согласования, никаких галлюцинаций» Introducing commit: `b4ac98a11c1571b6c8b44571db37adc5981f0b41`. Source: `7e45b061cd9c543a0715c5195dfc7e1b1612e5ec:DECISIONS.md`, original lines 1267-1296. Verbatim replaced text:
+
+> - **Impact admission and executor-owned cycle** `[D-REVIEW-IMPACT]`. Findings need exact evidence, severity,
+>   a concrete trigger and a wrong outcome in the ordered result. P0 critical, P1 high, P2 medium retain real bugs,
+>   material owner requirements and regression-detection gaps. Data, security and destructive-action risks are at
+>   least P2, including symlink protection. Grade omissions and unagreed additions by their impact, not automatically
+>   critical. P3 are reported and fixed in the same batch only when the pass also has admitted P0-P2 findings.
+>   A P3-only pass is CLEAN: drop its P3 without mentioning them. Never report P4, taste or no-impact hypotheticals.
+>   Quotes alone do not admit findings; custom criteria cannot bypass the gate.
+>   An unagreed element must change the ordered result, expand scope or add material risk, subject to that gate.
+>   In this repository the executor first checks itself briefly: touched tests, product run where possible and
+>   authorized, reread against the owner's words, fix. Text changes need no runs. It owns blind review, fixes and
+>   fresh changed-object passes until CLEAN, then returns one report with problems, fixes and CLEAN status.
+>   Changed-object passes check fixes, changed lines and affected paths, not the whole object again. Format slips
+>   are corrected locally without a new pass; missing material evidence still prevents acceptance and is completed
+>   with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty medium, high Bossy xhigh.
+>   The self-check fork is implemented under `[D-AGENT-FORK-SELFCHECK]`.
+>   Owner, verbatim and in order, supplied in the reviewer-p2-gate brief, 2026-10-31:
+>   «Надо оптимизировать, ускорить процесс приемки, но при этом не потерять в контроле качества вообще никак. Выбросить только то, что не относится к контролю качества напрямую»
+>   «Я имею в виду случаи исключительные, какая-то хуйня абсолютная, без которой всё и так будет работать. И это какая-то вкусовщина, хотя вкусовщину должно было исключить.»
+>   «И надо оценку по соотношению потраченного времени, потраченных токенов на риск, который мы несём при сохранении проблемы. Это самая важная оценка, потому что наша задача — выявить критические штуки. Например, когда агент пропустил какое-то условие или добавил что-то от себя, что не согласовано. Этот пропуск и согласование входит в одну из категорий и влияет на заказанный конечный результат: сильно критически, слабо либо вообще не влияет. Что-то такое. Надо найти супер интеллектуальный баланс, потому что вроде как заказывать с неперфекционистом похоже на перфекционизм полный.»
+>   «Погоди! Смотри, мы возвращаем blind на medium. Эта тема, что исполнитель чинит себя сам без нового круга, мне нравится.»
+>   «Мы в теории можем вообще P3 отбросить и оставить только P0, P1, P2»
+>   «Ну я к тому, что мы по три просто можем отбросить и даже про них не говорить.»
+>   «А там защита ссылок я понял окей»
+>   Latest owner correction, verbatim:
+>   «Погоди, какую ты правку запустил? Я же это самое сказал что я понял, что там защита отсылок. Сказал окей типа мы не отбрасываем. Мы отбрацываем только если кроме МП3 ничего нету тогда мы отбрасываем»
+>   The correction replaces the earlier proposal to discard every P3; only P3-only passes are discarded.
+>   Reason: preserve quality and destructive-risk protection without low-only correction loops.
+>   Evidence: `my-pi-evidence/reviewer-audit/REPORT.md`, offline examples in `VALIDATION.md` alongside it.
+>   Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/*.toml`, `skills/reviewer/SKILL.md`,
+>   [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
+
+## A-0496 · archived 2026-11-04 · Agent · fork of the caller for self-check
+
+Status: SUPERSEDED in part by `[D-AGENT-FORK-SELFCHECK]`. Introducing commit: `0acee344134d8b091c13415e261f4cb6e83cc0fa`. Source: `7e45b061cd9c543a0715c5195dfc7e1b1612e5ec:DECISIONS.md`, lines 1173-1183. Verbatim replaced text:
+
+> - **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into a child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the blind loop (spotty, medium, fresh clean reviewers) on its own and gives the caller one report; the caller ends its turn, the report arrives automatically, and it does not touch the checked object meanwhile. A persisted caller stores its fork under its own `.children` tree, linked by `parentSession`, with the copied branch; descendants use the same layout and resume works after restart. A caller without a session file keeps its fork in memory. Previously created in-memory forks cannot recover missing history. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
+>   Coordinator question, 2026-11-02: the owner asked for a real subagent rather than RAM; the coordinator explained that the fork is a real subagent with its own ID and resumable session file on disk, while all subagents run inside the Pi process. Option 1: keep it as is. Owner: «Ну да, так и должно работать, как ты писал. Ничего не меняем поэтому сыл в чеку.»
+>   Owner: «Это так не должно быть! Все саб агенты должны быть на диске и должны быть прилинкованы к родителям Вне диска только редчайшые кейсы»; to «1. Форк сохранять на диск, как обычного ребёнка, со ссылкой на родителя. Тогда и все его ревьюеры лягут в .children. Это 1–2 SP.»: «ДА».
+>   Owner (2026-10-31, verbatim excerpts): «Исполнитель выполнил работу свою полностью от начала до конца, потом forked самого себя и в этом форке сам себя перепроверил. Context засрался. Потом он поднял reviewer, reviewer перепроверил его вслепую, выдал ему ответ. Тот сам себя починил. После этого снова поднял blind reviewer, и так они довели всё это дело до конца. Потом он написал огромный отчёт основному агенту в ответ: «Так мы зафинализировали работу. Было столько-то проблем, столько-то исправлений. Статус clean».» … «Но самая главная здесь не оптимизация, а чтобы он качественно проверял, при этом без фанатизма.»
+>   Coordinator answered that dropping P3 keeps every P0-P2, with one condition: «риск для данных или безопасности считается не ниже P2», and proposed: «P3 и вкусовщина не считаются замечаниями. исполнитель сам ведёт цикл до clean и сдаёт один отчёт. повторный круг смотрит только правки. blind остаётся на medium.» and the fork of the main chat later, separately. Owner: «А там защита ссылок я понял окей»
+>   Owner source for the P3 rule: `[D-REVIEW-IMPACT]`.
+>   Owner (in order): «окей, давай, после проверки сразу выкатывай и потом сделаем форк главного чата для самопроверки» … «нельзя 5 сп задачи, декомпозируй» … coordinator split into 4 tasks: «1 | agent получает fork_turns: "all". Ребёнок стартует с копией текущей ветки в памяти, с той же моделью и теми же инструментами. | 2» «2 | Доработка форка. Он не шлёт отчёты о ходе работы. Если после перезапуска история пропала, он сообщает явную ошибку. Вложенный запуск тоже работает. | 1» «3 | Навык самопроверки ... | 1» «4 | Исключение в guard для форка и документы. | 1» … owner: «А вижу уже давай тогда делай»
+>   Owner: «Нет нет форк идет эксклюзивно основной агент ждет так что кеш должен в этой схеме участвовать»
+>   Owner answered «да» to «Кеш делаем двумя задачами по 2 SP?» (2: Кеш codex: форк получает ключ кеша родителя и тот же запрос. 3: Кеш anthropic: тот же системный промпт, те же инструменты, те же метки кеша.) and «да» to «предлагаю поднять ширину до трёх. запускаю обе свободные задачи?» (selfcheck skill and PROCESS step; guard exception and docs).
+>   Reason: the executor finishes, checks and fixes itself in a fork that reuses the caller's cached prefix, so the caller's context stays small and no new review round is needed per fix.
+>   Carriers: `extensions/RQW-agent/` (`fork_turns`), `extensions/RQW-review/skills/selfcheck/`, `.pi/extensions/coordinator-guard/` with `test/coordinator-guard.test.ts`, `AGENTS.md`; contract: [RQW-agent README](extensions/RQW-agent/README.md#forking-the-callers-branch).
+
+## A-0497 · archived 2026-11-04 · Review · reviewer profiles
+
+Status: SUPERSEDED in part by `[D-REVIEW-PROFILES]`. Introducing commit: `689da9c9dc77bc59afacd6c105d9a86d62671038`. Source: `7e45b061cd9c543a0715c5195dfc7e1b1612e5ec:DECISIONS.md`, lines 1238-1266. Verbatim replaced text:
+
+> - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
+>   or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "medium"`;
+>   `profiles/bossy.toml` defaults to the same model with `"xhigh"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
+>   without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
+>   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
+>   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
+>   review section of the owner's `skills/subagents/SKILL.md`; wrappers select Spotty or Bossy.
+>   Every pass starts a fresh ordinary `agent` with `agent_type`, the absolute package `role_file` and
+>   `include: ["user_messages"]`. Read-only is
+>   instruction only: no separate tool filter, git-state guard or sandbox. There is no separate reviewer runner,
+>   verdict delivery, Fast/cache implementation, review count producer or child-review offer. A verdict is an ordinary
+>   `agent#N` result, counted and rendered as an agent; lifecycle, tools, settings, cancellation, credentials, Fast,
+>   caching, persistence and exactly-once delivery are RQW-agent's existing contracts.
+>   Disabling RQW-review removes its offered profiles and skills, not user-owned profile files. Without RQW-agent
+>   there is no reviewer execution or fallback route. The common skill reports missing runtime/profile resources.
+>   Owner rename (`16-27-59:6489`, entry `96fcf727`), coordinator summary: the blind profile is Spotty (`spotty`);
+>   the high profile keeps its name.
+>   Owner approval and exact messages: `[D-AGENT-PROFILES]`.
+>   Source of the existing reviewer text and skills, read-only external archive:
+>   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
+>   Owner, current task `reviewers-terra`, 2026-10-27:
+>   «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
+>   Coordinator note: the Spotty and Bossy levels in this quote were replaced by the later medium and xhigh choice.
+>   Owner, 2026-10-31: «Я хочу что бы ревьюер блайнд был medium, а хай - xhigh».
+>   Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra high. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже». Coordinator note: the Terra Medium level in this quote was replaced by the accepted matrix in [PROCESS.md](PROCESS.md#subagent-models). Owner: «переделай исполнителя с terra с high на xhi, подними всех терра на один уровеньи покажи как изменится матрица» «и покажи предполагаемую новую матрицу после принятия мной изменений потенциальных» «по матрице 1».
+>   Reason: one profile mechanism rather than a parallel reviewer execution stack.
+>   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
+>   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
+>   Since: subagent-profiles.
+
+## A-0498 · archived 2026-11-04 · Work policy · independent review
+
+Status: SUPERSEDED in part by `[D-WORK-FINAL-CHECK]`. Introducing commit: `a79812e4786abf4dd37626c7c0860529145b4b24`. Source: `7e45b061cd9c543a0715c5195dfc7e1b1612e5ec:DECISIONS.md`, lines 412-416. Verbatim replaced text:
+
+> - **Independent review** `[D-WORK-FINAL-CHECK]`. Except for records, the executor launches a selfcheck fork after its own checks. The fork runs the self-check and the blind Spotty loop; Bossy is for an owner-requested high review ([D-AGENT-FORK-SELFCHECK], [PROCESS.md](PROCESS.md#independent-review), rule 19). The `code-reviewer` and `test-reviewer`
+>   profiles remain available. Findings need evidence and impact; missing evidence goes back to the same reviewer.
+>   Owner: «Ревьюеров циклических надо будет переработать, чтобы они работали так же, как слепые ревьюеры: чтобы они не по одной находке находили и цикл перезапускали, а чтобы они находили сразу все косяки и отдавали их пачкой, и потом заново перепроверяли.» `code-reviewer` and `test-reviewer` return every finding of a pass at once; a re-review checks the fixes and changed lines and returns all remaining findings at once.
+>   Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`,
+>   `.pi/agents/test-reviewer.toml`, `extensions/RQW-review/`.
