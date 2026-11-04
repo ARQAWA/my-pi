@@ -1522,7 +1522,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 							a.sends = [...a.sends.filter(batch => !open.includes(batch)), { n: open[0].n, tasks: open.flatMap(batch => batch.tasks) }];
 							persist(a);
 						}
-						await session.prompt([...queued.steering, ...queued.followUp].join("\n\n"));
+						await session.prompt([...queued.steering, ...queued.followUp].join("\n\n"), { expandPromptTemplates: !a.config.reviewer });
 					}
 					else {
 						// The child's own agents decide when this logical run is final: nothing live and nothing ready.

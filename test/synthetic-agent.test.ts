@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { call, fail, isTask, reportTimings, text, world } from "./synthetic/world.ts";
 import { untilWake } from "./synthetic/wake.ts";
@@ -88,6 +91,36 @@ it("send to a running child steers it: the message joins its next request after 
 	assert.match(JSON.stringify(secondRequest.context.messages), /also check b/);
 
 	await w.settle();
+});
+
+it("late skill steering preserves reviewer text and expands for ordinary children", async t => {
+	const w = await world(t, { beforeExtensions: [{ name: "test-skill", factory: pi => {
+		pi.on("resources_discover", event => {
+			const dir = join(event.cwd, "test-skill");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "SKILL.md"), "---\nname: lateprobe\ndescription: Late steering probe\n---\nLATE SKILL BODY\n");
+			return { skillPaths: [dir] };
+		});
+	} }] });
+	const reviewer = fileURLToPath(new URL("../extensions/RQW-review/REVIEWER.md", import.meta.url));
+	const runner = w.session.extensionRunner;
+	const invoke = (id: string, params: any) => runner.getToolDefinition("agent")!.execute(id, params, new AbortController().signal, undefined, runner.createToolContext(id, undefined));
+	for (const [id, role] of [[1, reviewer], [2, undefined]] as const) {
+		const task = `parent ${id}`;
+		const nestedTask = `nested ${id}`;
+		const nested = w.model.hold(isTask(nestedTask));
+		w.model.when(isTask(task), call("agent", { action: "start", task: nestedTask }, `nested-${id}`), text("waiting"), text("steered"));
+		await invoke(`start-${id}`, { action: "start", task, ...(role ? { role_file: role } : {}) });
+		await w.until(() => nested.arrived && w.childFiles(id).some(file => w.jsonl(file).some(entry => entry.type === "custom" && entry.customType === "rqw-agent-waiting")), "child turn settled while nested agent runs");
+		await invoke(`send-${id}`, { action: "send", id: `agent#${id}`, task: "/skill:lateprobe argument" });
+		await w.until(() => w.requests.filter(isTask(task)).length >= 3, "late steering request");
+		const request = w.requests.filter(isTask(task)).at(-1)!;
+		const user = request.context.messages.filter(message => message.role === "user").at(-1)!;
+		const userText = Array.isArray(user.content) ? (user.content[0] as { text: string }).text : user.content;
+		if (role) assert.equal(userText, "/skill:lateprobe argument");
+		else assert.match(userText, /LATE SKILL BODY[\s\S]*argument$/);
+		nested.reply(text("done"));
+	}
 });
 
 it("send to a running child restored after a restart is queued in its session, like a fresh child's", async (t) => {
