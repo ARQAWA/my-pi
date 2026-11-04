@@ -42,7 +42,8 @@ it("a child is offered the four chat tools as deferred tools, the same offer at 
 	const { send } = await pairOfTabs(t);
 	const [first, second] = [offered(send), offered(send)];
 	assert.equal(first.length, 1);
-	assert.deepEqual(first[0].names, NAMES);
+	// Wildcards allow the tools without activating them, so tool_search can still load them.
+	assert.deepEqual(first[0].names, NAMES.map(name => `${name}*`));
 	assert.equal(first[0].factory, second[0].factory);
 	const child = startChild(send, ["tool_search"]);
 	assert.deepEqual(child.tools.map(tool => [tool.name, tool.exposure]), NAMES.map(name => [name, "deferred"]));
