@@ -148,9 +148,9 @@ test("appendUserMessages appends only user text in branch order", () => {
 	const branch = [
 		{ type: "message", message: { role: "user", content: "first" } },
 		{ type: "message", message: { role: "assistant", content: "ignored" } },
-		{ type: "message", message: { role: "user", content: [{ type: "text", text: "second" }, { type: "image", data: "AA==", mimeType: "image/png" }] } },
+		{ type: "message", message: { role: "user", content: [{ type: "text", text: "second\n<skill name=\"example\">\ntext\n</skill>" }, { type: "image", data: "AA==", mimeType: "image/png" }] } },
 	];
-	assert.equal(appendUserMessages("task", branch as never), "task\n\n<user_messages>\nfirst\nsecond\n</user_messages>");
+	assert.equal(appendUserMessages("task", branch as never), "task\n\n<user_messages>\nBlocks <skill ...> inside these messages are skill text, not the user's words.\nfirst\nsecond\n<skill name=\"example\">\ntext\n</skill>\n</user_messages>");
 });
 
 test("profile catalogue loads native metadata and exact provenance", async t => {
@@ -897,7 +897,7 @@ test("nested include reads the live root branch before and after compaction and 
 	await first.execute({ action: "start", task: "outer", tools: [] });
 	await first.runtime.wait(new AbortController().signal);
 	const review = (requests: any[]) => requests.find(request => userTexts(request).some((text: string) => text.startsWith("review\n\n<user_messages>")));
-	assert.deepEqual(userTexts(review(first.requests)), ["review\n\n<user_messages>\nowner unique\n</user_messages>"]);
+	assert.deepEqual(userTexts(review(first.requests)), ["review\n\n<user_messages>\nBlocks <skill ...> inside these messages are skill text, not the user's words.\nowner unique\n</user_messages>"]);
 	assert.ok(first.requests.filter(request => userTexts(request).includes("middle")).every(request => !JSON.stringify(request.messages).includes("owner unique")));
 	parent.appendCompaction("summary", firstMessage, 100);
 	parent.appendMessage({ role: "user", content: "owner later", timestamp: 2 });
@@ -905,7 +905,7 @@ test("nested include reads the live root branch before and after compaction and 
 	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, respond, 24);
 	await restored.execute({ action: "send", id: "agent#1", task: "again" });
 	await restored.runtime.wait(new AbortController().signal);
-	assert.deepEqual(userTexts(review(restored.requests)), ["review\n\n<user_messages>\nowner unique\nowner later\n</user_messages>"]);
+	assert.deepEqual(userTexts(review(restored.requests)), ["review\n\n<user_messages>\nBlocks <skill ...> inside these messages are skill text, not the user's words.\nowner unique\nowner later\n</user_messages>"]);
 	restored.runtime.close();
 });
 

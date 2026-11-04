@@ -20,7 +20,7 @@ test("new tasks expand mentions before include, except for reviewer briefs", asy
 	await run.live.wait(new AbortController().signal);
 	const first = run.requests[0].messages.find((message: any) => message.role === "user").content[0].text;
 	assert.match(first, /SKILL BODY/);
-	assert.match(first, /<user_messages>\nowner \$example\n<\/user_messages>/);
+	assert.match(first, /<user_messages>\nBlocks <skill \.\.\.> inside these messages are skill text, not the user's words\.\nowner \$example\n<\/user_messages>/);
 	await run.execute({ action: "send", id: "agent#1", task: `use [$example](skill://${skill})` });
 	await run.live.wait(new AbortController().signal);
 	assert.match(run.requests[1].messages.filter((message: any) => message.role === "user").at(-1).content[0].text, /SKILL BODY/);

@@ -23,5 +23,5 @@ export function appendUserMessages(task: string, branch: readonly SessionEntry[]
 		const content = entry.message.content;
 		return typeof content === "string" ? [content] : content.flatMap(part => part.type === "text" ? [part.text] : []);
 	});
-	return `${task}\n\n<user_messages>\n${texts.join("\n")}\n</user_messages>`;
+	return `${task}\n\n<user_messages>\nBlocks <skill ...> inside these messages are skill text, not the user's words.\n${texts.join("\n")}\n</user_messages>`;
 }
