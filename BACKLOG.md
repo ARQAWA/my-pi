@@ -25,13 +25,15 @@ The reminder stays permanently last until the old queue is empty; it remains or 
 | --- | --- | --- | --- |
 | 18 | <a id="plan-site"></a>PLAN-SITE: Backlog.md trial installed 2026-11-03, board `/Users/arkadijcukavin/ai-project/my-pi-board`; owner 2026-11-03, verbatim: «так давай для начала поставим просто бэклог и будем думать как че кого куда дальше, запустим и посмотрим». Read-only research of ready solutions for a local site with chat where the owner writes tasks, discusses plan and solution, plans the week, and the agent works only on what is planned and approved for the week, with a separate hotfix approval lane. Ready solution first (PROCESS.md rule 35); own code only with the owner's consent. 2 SP (parallel web research by four helpers 1, merge and report 1). | IN PROGRESS 2026-11-03: Backlog.md trial running, no decision yet. Research DONE (round 4, hard filter: the agent fully manages the board without the UI: create, status, title and description, notes, checklist or subtask, read); awaits the owner's yes on our part. Passed: Backlog.md, Lific, Vikunja, Kanboard, Kaneo, Beaver Backlog, kanban-lite, beads plus beads-ui; failed: Pine, Taskboard, Kanzo, git-bug, Fusion. Recommended again Backlog.md: all six operations by its own CLI, best progress view, Markdown in git so the VDI works offline; Lific is smaller (23 MB) but young and needs a server the VDI can reach; Beaver Backlog is lightest but shows no progress. Our part 3 SP unchanged. Report spotty CLEAN in round 2. Round 3 recommended: Backlog.md (MIT, 7.3k, v1.55.3 on 2026-10-23): one native executable about 101 MB, Markdown task files in git, local web board, CLI and official MCP; progress rings per task, milestone as the week; VDI uses git plus its own Windows exe. Our part 3 SP, not started, own code needs the owner's consent (rule 35): setup with statuses, week milestone, hotfix and hotfix-approved labels and an agent rule 1; Pi gate allowing work only on an approved task of this week or an approved hotfix and forbidding the agent to change approval fields 2. Runners-up: Lific (Apache-2.0, 84 stars, 23 MB binary, SQLite), Kanboard (MIT, 9.9k, PHP). OpenProject links: https://www.openproject.org/ and https://github.com/opf/openproject (too heavy for this goal). Report spotty CLEAN in round 3. Earlier, round 2 ranked general self-hosted trackers. «фьюжн» most likely means Fusion by Runfusion (MIT, about 1.3k stars, a Pi-based ticket site; early preview, pins Pi 1.1.0, no weeks or hotfix lane). Recommended: OpenProject Community (GPL-3.0, 16.9k, 17.9.6 on 2026-10-30): free sprints, role-based status transitions so only the owner's role sets Approved, a separate Hotfix type with its own workflow, REST API v3, webhooks, community MCP; Docker, 4 GB RAM. Our part 7 SP, not started, own code needs the owner's consent (rule 35): setup 1, Pi ticket tools over REST 2, Pi gate bound to sprint, approval revision and revocation 2, agent replies in ticket comments 2 (5 SP without the last). Alternative: hands-on Fusion probe 1 SP. Open risk: the VDI must reach the server. Round 1 (AI boards: KanDev, Backlog.md and others) kept as a short section. Plan spotty CLEAN in round 2 of each pass; report spotty CLEAN in round 2, opened. Evidence: `my-pi-evidence/designs/plan-site/` (PLAN, BRIEF, BRIEF2, 01-12). Report: `/Users/arkadijcukavin/Downloads/plan-site-research.html`. No branch. | Owner 2026-11-03, verbatim: «Надо найти какое то решение для этих задач ``` - работа строго по плану - список задач отдельно - брать в работу задачи нельзя только кроме хот фиксов - для хотфиксов надо сделать отделньый процесс согласования ``` А именно я хочу что бы был какой то локал сайт с функционалом чата что бы там писать задачи и общаться с ИИ. ставить новые задачи обсудать план и решение, планировать работу на неделю и что бы агент делал ток работу вот по этому сайту и только то что спланировано и согласовано на неделю. Я хочу что бы ты поискал самые топовые варианты что юзает сообщество и поискал какие то варианты готовые на гитхабе с большим количество звезд сделай разнообразные поисковые запросы широчайший ресерч»; widening 2026-11-03, verbatim: «Смотри, насчет сайта не обязательно, чтобы это был типа что-то для пи. Это может быть вообще любой сайт, готовый open source, мы просто сами его подключим к основном на к. Вот. работать допустим по какому-нибудь там агентскому протоколу или просто через пи вот мы напишем свой транспорт для этого нам нужна именно возможность чтобы был веб-сайт в котором можно писать тикеты типа Типа фьюжн ч<unk>-то такое.»; narrowing 2026-11-03, verbatim: «Мне надо САМЫЙ легковесный вариант можно даже просто сайт + MCP/CLI локальный самый простой быстрый легковесный И дай ссылку на опенпрожект»; core goal 2026-11-03, verbatim: «суть задачи в том что бы реализовать UI интерфейс готовый для организации работы что бы я мог смотреть визуально на прогресс»; filter 2026-11-03, verbatim: «смотри, нужно готовый визуальный интерфейс, прогресс, доску нужно с этими всякими статусами, чтобы агент мог полностью ей управлять, то есть он мог перетаскивать клод клод ну или статусы просто переключать визуально вот чтобы он мог короче там менять описание писать прогресс и так далее вот не обязательно чтобы там визуально что-то отображалось то есть агент просто будет сам вести эту эту хуйню и сам будет ее это самое ну сам будет делать апдейты в ней и все ну вот / я думаю, из этого принципа можно какой-то отсев сделать» |
 
-| 19 | <a id="subagent-review-parity"></a>SUBAGENT-REVIEW-PARITY: полноценные саб-агенты и правдивый вход ревьюера. База 16 SP, максимум 21 SP; детали и критерии ниже. | To Do; ветка не создана; зависит от удаления RQW-todo, уже доставлено. План и решения (a)-(f) ожидают согласования; выполнение не разрешено. | [Итоговый план](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md); [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); цитата владельца: «Я жду результаты по саб-агентам и по reviewer в виде тасок в backlog md со ссылками на отчеты Все задачи должны быть разложены. Должна быть родительская задача с акцептом, с критериями, со всем полностью заполненным. И каждая дочерняя подзадача должна быть тоже полностью заполнена максимально.» |
+| 19 | <a id="subagent-review-parity"></a>SUBAGENT-REVIEW-PARITY: полноценные саб-агенты и правдивый вход ревьюера. Итого 16 SP; детали и критерии ниже. | To Do; ветка не создана; зависит от удаления RQW-todo, уже доставлено. План 16 SP принят: Main спросил «план 16 SP ... 1. запускаем после записи ответов. советую это. 2. пока не запускаем.», владелец ответил «1». Решения (a)-(f) приняты; пакеты A и R ожидают согласования. | [Итоговый план](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md); [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); цитата владельца: «Я жду результаты по саб-агентам и по reviewer в виде тасок в backlog md со ссылками на отчеты Все задачи должны быть разложены. Должна быть родительская задача с акцептом, с критериями, со всем полностью заполненным. И каждая дочерняя подзадача должна быть тоже полностью заполнена максимально.» |
 
 ## Current design details
 
 ### SUBAGENT-REVIEW-PARITY details
 
-Статус: To Do. Ветка не создана. База 16 SP; максимум 21 SP. Все дети To Do, ветки не созданы. Одобрение плана, решения (a)-(f) и пакеты A и R необходимы; A2 только при выборе (a) или (b). Текущие записи не означают одобрение работ. Blocked by: удаление RQW-todo, доставлено.
+Статус: To Do. Ветка не создана. Итого 16 SP. Выбранные дети To Do, ветки не созданы. План принят владельцем: «1» на предложение запустить после записи ответов. Пакеты A и R требуют согласования. Решения (a)-(f) приняты; A2 не нужен. Blocked by: удаление RQW-todo, доставлено.
+
+Решения: (a) флаги детям не передаются; владелец сменил «2» на «выбираю первый вариант 1». (b) байтовая копия форка, ответ «1». (c) вопрос вручную в `<agreement>`, ответ «1». (d) все явные `include`: после поручения Main выбрать владелец ответил «ну давай первый вариант»; владелец предупреждён о секретах у вложенных агентов. (e) малая своя связка на Pi SDK. (f) снимок MCP при старте и пробуждении. (e) и (f) выбрал Main по поручению владельца. SA11, SA12 и QC не выбрано владельцем, в 16 SP не входят.
 
 Источники: [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); [FINAL.md](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md).
 
@@ -181,14 +183,14 @@ SP: 1. Статус: To Do. Ветка: не создана. Blocked by: SA6.
 
 #### SA8: Root-источник `include`
 
-SP: 2. Статус: To Do. Ветка: не создана. Blocked by: (d), (e), пакет A; SA6 при (d) = только ревьюерам.
+SP: 2. Статус: To Do. Ветка: не создана. Blocked by: (d), (e), пакет A.
 
 Q2: «все саб-агенты должны работать также как основной чат, то есть доступ к скиллам, к ревьюерам, к саб агентам, ко всем тулам такой же как в основном чате»
 Q3: «Делай так, чтобы у агентов было всё то же самое, и проверь, что в этом проекте работ нет ничего, что я не заказывал, никакой лишней хуйни. Там всё должно на 100% совпадать и покрывать требования, которые я заявил. Дословные мои цитаты должны быть закрыты полностью в исполнении, но ничего от себя не должно быть. Ничего, что не было прямо заказано.»
 
 - Цитата: пункт 6 «ревьюер от помощника не видит твоих слов»; Q2 «к ревьюерам»; Q3 «Дословные мои цитаты должны быть закрыты полностью в исполнении».
 - Механизм: getter корневой ветки идёт вниз, как `config.base` через `registerCaller` (`index.ts:1209`). `include` читает его вместо ветки вызывающего (`:1730`). Новой сохранённой записи нет: дерево пересобирается под живым корнем (`:1033`, `:1079`). Получатели по (d). Блок `<user_messages>` получает одну постоянную строку-пометку: блоки `<skill …>` внутри — текст скилла, не слова владельца. Байты сообщений не меняются, парсера нет.
-- Приёмка: внук не видел уникальную строку владельца. Он запускает Spotty с `include`. Реальный запрос ревьюера содержит строку после задачи. То же после compaction и перезапуска Pi. Запрос содержит пометку о `<skill>`-блоках. При (d) = только ревьюерам обычный ребёнок с `include` получает историю вызывающего.
+- Приёмка: внук не видел уникальную строку владельца. Он запускает Spotty с `include`. Реальный запрос ревьюера содержит строку после задачи. То же после compaction и перезапуска Pi. Запрос содержит пометку о `<skill>`-блоках.
 
 Источники: [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); [FINAL.md](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md#sa8).
 
@@ -206,7 +208,7 @@ SP: 1. Статус: To Do. Ветка: не создана. Blocked by: пак�
 
 #### SA10: Описание `agent`
 
-SP: 0. Статус: To Do. Ветка: не создана. Blocked by: SA2, SA3, SA5, SA8, пакет A; QC, SA11, SA12 если выбраны.
+SP: 0. Статус: To Do. Ветка: не создана. Blocked by: SA2, SA3, SA5, SA8, пакет A.
 
 Q3: «Делай так, чтобы у агентов было всё то же самое, и проверь, что в этом проекте работ нет ничего, что я не заказывал, никакой лишней хуйни. Там всё должно на 100% совпадать и покрывать требования, которые я заявил. Дословные мои цитаты должны быть закрыты полностью в исполнении, но ничего от себя не должно быть. Ничего, что не было прямо заказано.»
 
@@ -216,11 +218,11 @@ Q3: «Делай так, чтобы у агентов было всё то же 
 
 Источники: [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); [FINAL.md](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md#sa10).
 
-#### SA11: Флаги tools, только (a) = перенести
+#### SA11: Флаги tools, не выбрано владельцем
 
 Только если владелец выберет перенос флагов в решении (a).
 
-SP: 2. Статус: To Do. Ветка: не создана. Blocked by: (a), (e), пакет A2.
+SP: 2 в невыбранной альтернативе, в итог не входит. Статус: не выбрано владельцем.
 
 Q2: «все саб-агенты должны работать также как основной чат, то есть доступ к скиллам, к ревьюерам, к саб агентам, ко всем тулам такой же как в основном чате»
 
@@ -230,11 +232,11 @@ Q2: «все саб-агенты должны работать также как
 
 Источники: [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); [FINAL.md](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md#sa11).
 
-#### SA12: Первый запрос форка, только (b) = изменить
+#### SA12: Первый запрос форка, не выбрано владельцем
 
 Только если владелец выберет изменение форка в решении (b).
 
-SP: 2. Статус: To Do. Ветка: не создана. Blocked by: (b), SA2, SA3, SA5; SA11 если выбран; пакет A2.
+SP: 2 в невыбранной альтернативе, в итог не входит. Статус: не выбрано владельцем.
 
 Q2: «все саб-агенты должны работать также как основной чат, то есть доступ к скиллам, к ревьюерам, к саб агентам, ко всем тулам такой же как в основном чате»
 C: «Нет нет форк идет эксклюзивно основной агент ждет так что кеш должен в этой схеме участвовать» (`DECISIONS.md:1181`); «да» на «тот же системный промпт, те же инструменты, те же метки кеша» (`:1182`)
@@ -246,11 +248,11 @@ C: «Нет нет форк идет эксклюзивно основной а�
 
 Источники: [отчёт](http://127.0.0.1:6421/reports/subagent-reviewer-final-plan.html); [FINAL.md](http://127.0.0.1:6421/evidence/joint-consensus/FINAL.md#sa12).
 
-#### QC: Вопрос перед ответом, только (c) = авто
+#### QC: Вопрос перед ответом, не выбрано владельцем
 
 Только если владелец выберет автоматическую передачу в решении (c).
 
-SP: 1. Статус: To Do. Ветка: не создана. Blocked by: (c), SA8, пакет A.
+SP: 1 в невыбранной альтернативе, в итог не входит. Статус: не выбрано владельцем.
 
 QR: «Не было ничего лишнего, и ревьюер выполнял ту роль, для которой он предназначен, максимально эффективно, быстро и четко и доставлял максимально качественный результат и защищал нас максимально качественно от хуйни.»
 
@@ -262,7 +264,7 @@ QR: «Не было ничего лишнего, и ревьюер выполн�
 
 #### RV2: Проверка ревьюера
 
-SP: 2. Статус: To Do. Ветка: не создана. Blocked by: RV1, SA6, SA8; QC если выбран.
+SP: 2. Статус: To Do. Ветка: не создана. Blocked by: RV1, SA6, SA8.
 
 QV: «И если мы что-то действительно изменяем, то надо убедиться в том, что оно действительно работает так, как соответствует контексту, и это не нарушает контекст и не переусложняет ревьюеры.»
 
@@ -279,7 +281,7 @@ QV: «И если мы что-то действительно изменяем, 
 
 #### J1: Итоговый прогон и scope-аудит
 
-SP: 1. Статус: To Do. Ветка: не создана. Blocked by: SA1-SA10, RV2, выбранные SA11/SA12/QC, удаление RQW-todo (доставлено).
+SP: 1. Статус: To Do. Ветка: не создана. Blocked by: SA1-SA10, RV2, удаление RQW-todo (доставлено).
 
 Q5: «Мне нужны полнофункциональные саб-агенты, такие же, как в Codex и других моделях, чтобы саб-агенты были настолько же мощны, как и основной агент. Не должно быть никакого разрыва в этом плане у саб-агента, но при этом мы помним про то, что это саб-агенты.»
 Q3: «Делай так, чтобы у агентов было всё то же самое, и проверь, что в этом проекте работ нет ничего, что я не заказывал, никакой лишней хуйни. Там всё должно на 100% совпадать и покрывать требования, которые я заявил. Дословные мои цитаты должны быть закрыты полностью в исполнении, но ничего от себя не должно быть. Ничего, что не было прямо заказано.»
