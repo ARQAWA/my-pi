@@ -60,7 +60,7 @@ export async function world(t: TestContext) {
 	return { base, put, project: join(base, "project"), cwd: join(base, "project", "pkg") };
 }
 
-export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = [], activeTools: string[] = [], restored?: SessionManager) {
+export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = [], activeTools: string[] = [], restored?: SessionManager, mainPrompt = "original prompt") {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const parent = restored ?? SessionManager.create(root, join(root, "parent"));
 	// Two models: the parent's `model` and a distinct `other`, so a profile model that is ignored shows.
@@ -81,7 +81,7 @@ export function runtime(cwd: string, root: string, thinking = "off", extraModels
 	const commands: any[] = [];
 	const ctx: any = {
 		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: (_provider: string, id: string) => models.get(id), hasConfiguredAuth: () => true },
-		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt", signal: new AbortController().signal, mode: "tui", ui: { notify() {} },
+		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => mainPrompt, signal: new AbortController().signal, mode: "tui", ui: { notify() {} },
 	};
 	const pi: any = {
 		events: createEventBus(), on: (name: string, hook: any) => hooks.set(name, [...hooks.get(name) ?? [], hook]),

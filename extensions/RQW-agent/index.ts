@@ -22,7 +22,7 @@ import {
 	shouldCompact,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt.ts";
+import { SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder, withModelLine } from "./prompt.ts";
 import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
@@ -1047,6 +1047,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const config: Config = { ...c, model, system: withCurrentReminder(c.system) };
 			const migratedReviewer = config.reviewer === undefined;
 			if (migratedReviewer) config.reviewer = legacyReviewer(config);
+			if (inheritsCallerPrompt(c)) { config.system = withModelLine(config.system, model); config.base = withModelLine(config.base, model); }
 			const neverRunIdle = data.state === "idle" && data.runNumber === 0 && data.task === undefined;
 			// No history yet when saved: its file may be absent, and the accepted task still waits in `pending_sends`.
 			const unflushed = data.history === false;
@@ -1663,6 +1664,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		return matches[0]!;
 	}
 
+	/** Own system, system_file, role_file and fork children keep their prompt as it is. */
+	const inheritsCallerPrompt = (c: Pick<Config, "custom" | "prompt_file" | "fork_turns">) => c.custom === undefined && c.prompt_file === undefined && c.fork_turns === undefined;
+
 	async function resolveConfig(params: Params, ctx: ExtensionContext, signal: AbortSignal, base?: Config): Promise<Config> {
 		signal.throwIfAborted();
 		const profileName = params.agent_type ?? base?.profile?.name;
@@ -1716,7 +1720,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			throw new Error(`No credentials for provider ${model.provider}`);
 		signal.throwIfAborted();
 		const reviewerText = role === undefined ? undefined : await readFile(REVIEWER_PATH, "utf8").catch(() => undefined);
-		return { system, base: root, cwd: ctx.cwd, reviewer: role !== undefined && reviewerText !== undefined && role === reviewerText, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
+		const inherits = inheritsCallerPrompt({ custom, prompt_file: promptFile });
+		return { system: inherits ? withModelLine(system, model) : system, base: inherits ? withModelLine(root, model) : root, cwd: ctx.cwd, reviewer: role !== undefined && reviewerText !== undefined && role === reviewerText, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
 			...(promptFile ? { prompt_file: promptFile } : {}), ...(profile ? { profile: { name: profile.name, path: profile.path, sha256: profile.sha256 },
 				profile_defaults: { model: profileModel, thinking: profileThinking, role: profileRole } } : {}),
 			model, thinking, tools: selectors(params.tools ?? fallback?.tools ?? [...TOOLS], offeredFactory()?.catalogue),

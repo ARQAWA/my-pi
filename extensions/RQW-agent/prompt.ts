@@ -49,3 +49,8 @@ export function withCurrentReminder(system: string): string {
 		.replace(CURSOR_SUBAGENT_REMINDER, () => SUBAGENT_REMINDER);
 	return replaced.includes(SUBAGENT_REMINDER) ? replaced : `${replaced}\n\n${SUBAGENT_REMINDER}`;
 }
+
+/** Gives a prompt that inherits the caller's workstation block the child's own model; nothing else changes. */
+export function withModelLine(system: string, model: { provider: string; id: string }): string {
+	return system.replace(/(<workstation>(?:(?!<\/workstation>)[\s\S])*?^- Model: ).*$/m, (_match, head: string) => `${head}${model.provider}/${model.id}`);
+}
