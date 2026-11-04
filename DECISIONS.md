@@ -24,13 +24,6 @@ Provenance:
 - Only the quoted lines are copied from the sessions; no full transcript and no credential is copied into this
   repository.
 
-## Todo panel
-
-- **Todo working memory and panel** `[D-TODO-PANEL]`. The independent `RQW-todo` extension works in the main chat and offers a private always-enabled list to every subagent, including nested agents. The dev-only coordinator guard disables todo in the coordinator's main session through `rqw-todo:disable:v1`; it asks Main to instruct workers when they should use their lists. The `todo` skill enables the mode until it is switched off; `todo` updates items together and stores branch state in tool-result details. An open list supplies a request-only summary and a three-line panel above the editor. The panel shows the current item, its current substep and the next item. `/todo` opens a full-screen view of items, substeps, reasons and closed lists. `blocked` requires a reason, shows a yellow `!` and is not done. Escape does not restart work. Before a completed turn, pending or active items receive at most one reminder per user message; blocked items do not trigger it. The extension follows RQW-statusbar in the package manifest.
-  Owner: «Надо убрать туду в если работает координатор режим, но тудушки можно ставить саб агентам работникам координатора подумай над этим». Asked whether all subagents of every chat should get todo or only coordinator workers, the owner answered «1» for all subagents.
-  Owner answers in the delegated task, verbatim: Q1 «по туду 1»; Q2 «1»; mockup «макет подшагов принял»; Q3 «1»; Q4 «1». Q1 selects the name `todo`, session-long mode and the request «выключи список» to turn it off. Q2 selects current item, current substep, then next item. Q3 selects the full-screen `/todo` view. Q4 selects one blocker status with a required reason and the reminder and Escape behaviour above.
-  Reason: maintain the task as working memory without imposing planning on every conversation. Design: `my-pi-evidence/designs/todo-panel/PLAN.md`. Carriers: `extensions/RQW-todo/`, `package.json`, `test/extensions/RQW-todo/`, `test/synthetic-todo.test.ts`.
-
 ## Auto-wait
 
 - **Automatic wait in the main chat** `[D-AUTO-WAIT]`. After a settled turn, the independently disableable `RQW-auto-wait` shows a context-free wait card while direct agents or main jobs are live. The card counts the full active tree as specified in `[D-AUTO-WAIT-CARD]`. Ready results share one hidden custom message and one new turn. There is no polling or model call for waiting. Explicit waits were removed later by `[D-AUTO-WAIT-EVERYWHERE]`. Auto-wait follows a completed model turn, so its final answer stays visible while intermediate text folds under `[D-UI-WORKED-FOR]`. Owner chose «1» for this behavior. Idle progress notices wait for user input instead of waking the model.
@@ -484,7 +477,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   codemode. Coordinator text (historical unverified attribution): "eval нахуй не нужен, lsp ... ast-grep ...
   выбросить всё это на помойку". Carrier: their absence from `extensions/`. Since: `ee0421a`.
 - **Postponed features** `[D-SCOPE-POSTPONED]`. Postponed, not dropped: `custom`, the
-  `define-goal` skill and work orders, and the task list with the check before stopping (later switched on by a skill).
+  `define-goal` skill and work orders.
   Coordinator text (historical unverified attribution): "мы их не упраздняем, а откладываем". Status of each item:
   [BACKLOG.md](BACKLOG.md). The agent runtime and reviewer profiles are separate decisions:
   [Agent](#agent), [Review](#review). Since: `d28ae41`.

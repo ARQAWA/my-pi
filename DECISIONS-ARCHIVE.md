@@ -7951,3 +7951,16 @@ Verbatim replaced text:
 >   Claude `ultra` is above every listed level and maps like `max`, per the owner's «выше чем икс хай» and «опус хай и выше».
 >
 >   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
+
+## A-0494 · archived 2026-11-04 · Todo panel · deleted
+
+Status: REMOVED by owner, 2026-11-04: «да и туду хуйню надо удалить из нашего my-pi паралельная задача». Source: `884706374a9bddc78f6eab46a43375ed720fffae:DECISIONS.md`; product removal task commit: `b0f69619deddc8f834f97a360987e578e294dac7`. The archive commit is recoverable with `git log -S'A-0494' -- DECISIONS-ARCHIVE.md`.
+
+Verbatim replaced text:
+
+> ## Todo panel
+>
+> - **Todo working memory and panel** `[D-TODO-PANEL]`. The independent `RQW-todo` extension works in the main chat and offers a private always-enabled list to every subagent, including nested agents. The dev-only coordinator guard disables todo in the coordinator's main session through `rqw-todo:disable:v1`; it asks Main to instruct workers when they should use their lists. The `todo` skill enables the mode until it is switched off; `todo` updates items together and stores branch state in tool-result details. An open list supplies a request-only summary and a three-line panel above the editor. The panel shows the current item, its current substep and the next item. `/todo` opens a full-screen view of items, substeps, reasons and closed lists. `blocked` requires a reason, shows a yellow `!` and is not done. Escape does not restart work. Before a completed turn, pending or active items receive at most one reminder per user message; blocked items do not trigger it. The extension follows RQW-statusbar in the package manifest.
+>   Owner: «Надо убрать туду в если работает координатор режим, но тудушки можно ставить саб агентам работникам координатора подумай над этим». Asked whether all subagents of every chat should get todo or only coordinator workers, the owner answered «1» for all subagents.
+>   Owner answers in the delegated task, verbatim: Q1 «по туду 1»; Q2 «1»; mockup «макет подшагов принял»; Q3 «1»; Q4 «1». Q1 selects the name `todo`, session-long mode and the request «выключи список» to turn it off. Q2 selects current item, current substep, then next item. Q3 selects the full-screen `/todo` view. Q4 selects one blocker status with a required reason and the reminder and Escape behaviour above.
+>   Reason: maintain the task as working memory without imposing planning on every conversation. Design: `my-pi-evidence/designs/todo-panel/PLAN.md`. Carriers: `extensions/RQW-todo/`, `package.json`, `test/extensions/RQW-todo/`, `test/synthetic-todo.test.ts`.
