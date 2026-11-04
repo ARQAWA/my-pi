@@ -228,8 +228,12 @@ async function callChain(tab: Tab, chain: Step[], call: Call): Promise<unknown> 
 }
 
 export function createBrowserExtension(deps: BrowserDependencies = {}) {
-	return (pi: ExtensionAPI) => {
-		const tabs = new Map<string, Tab>();
+	const tabs = new Map<string, Tab>();
+	const factory = (pi: ExtensionAPI) => {
+		pi.events?.on("rqw-agent:subagent-extension-factories", (request: unknown) => {
+			const offer = (request as { offer?: (factory: ReturnType<typeof createBrowserExtension>, names: string[]) => void })?.offer;
+			if (typeof offer === "function") offer(createBrowserExtension(deps), ["browser"]);
+		});
 		let queue: Promise<unknown> = Promise.resolve();
 		let shuttingDown = false;
 		const active = new Set<AbortController>();
@@ -477,6 +481,7 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 			await Promise.all(pendingCleanup);
 		});
 	};
+	return Object.assign(factory, { busy: () => tabs.size > 0 });
 }
 
 export default createBrowserExtension();

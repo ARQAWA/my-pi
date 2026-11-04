@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { it } from "node:test";
 import { WebSocketServer } from "ws";
+import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { createBrowserExtension } from "../../../extensions/RQW-browser/index.ts";
 
 function deferred<T>() {
@@ -22,6 +23,7 @@ function deferred<T>() {
 
 function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<unknown>; spawnStall?: boolean; titleWait?: Promise<string>; downloadWait?: Promise<unknown>; systemChrome?: string; realSystem?: boolean; launchError?: Error; downloadError?: Error } = {}) {
 	let tool: any;
+	const events = createEventBus();
 	let shutdown: () => Promise<void> = async () => {};
 	let loads = 0;
 	let downloads = 0;
@@ -79,12 +81,21 @@ function setup(options: { launchWait?: Promise<unknown>; viewportWait?: Promise<
 			Browser: { CHROME: "chrome" },
 			install: async (args: unknown) => { installs.push(args); downloads++; if (options.downloadError) throw options.downloadError; if (options.downloadWait) await options.downloadWait; return { executablePath: "/fake/chrome" }; },
 		}) as never,
-	})({ registerTool: (value: unknown) => { tool = value; }, on: (event: string, handler: typeof shutdown) => { if (event === "session_shutdown") shutdown = handler; } } as never);
+	})({ events, registerTool: (value: unknown) => { tool = value; }, on: (event: string, handler: typeof shutdown) => { if (event === "session_shutdown") shutdown = handler; } } as never);
 	async function call(input: unknown, signal?: AbortSignal) {
 		const result = await tool.execute("id", input, signal, undefined, {});
 		return result.details.value;
 	}
-	return { call, shutdown: () => shutdown(), launches, connects, applicationConnects, browsers, spawned, installs, loads: () => loads, downloads: () => downloads };
+	function child() {
+		let factory: any;
+		let names: string[] = [];
+		events.emit("rqw-agent:subagent-extension-factories", { offer: (value: any, tools: string[]) => { factory = value; names = tools; } });
+		let childTool: any;
+		let childShutdown: () => Promise<void> = async () => {};
+		factory({ events: createEventBus(), registerTool: (value: unknown) => { childTool = value; }, on: (event: string, handler: typeof shutdown) => { if (event === "session_shutdown") childShutdown = handler; } });
+		return { names, busy: () => factory.busy(), call: async (input: unknown) => (await childTool.execute("id", input, undefined, undefined, {})).details.value, shutdown: () => childShutdown() };
+	}
+	return { call, child, shutdown: () => shutdown(), launches, connects, applicationConnects, browsers, spawned, installs, loads: () => loads, downloads: () => downloads };
 }
 
 it("does not import browser dependencies at extension load or registration", async () => {
@@ -108,6 +119,28 @@ it("registers the public browser tool and answers through its entry", async () =
 	const result = await tool.execute("id", { action: "tabs" }, undefined, undefined, {});
 	assert.deepEqual(result.details.value, []);
 	assert.deepEqual(result.content, [{ type: "text", text: "[]" }]);
+});
+
+it("offers independent browser instances to children and tracks their tabs", async () => {
+	const env = setup({ systemChrome: "/installed/chrome" });
+	const first = env.child();
+	const second = env.child();
+	assert.deepEqual(first.names, ["browser"]);
+	assert.equal(first.busy(), false);
+	await env.call({ action: "open", name: "main" });
+	await first.call({ action: "open", name: "child" });
+	await second.call({ action: "open", name: "other" });
+	assert.equal(first.busy(), true);
+	assert.deepEqual((await first.call({ action: "tabs" })).map((tab: any) => tab.name), ["child"]);
+	await first.shutdown();
+	assert.equal(first.busy(), false);
+	assert.equal(second.busy(), true);
+	assert.deepEqual((await env.call({ action: "tabs" })).map((tab: any) => tab.name), ["main"]);
+	assert.deepEqual((await second.call({ action: "tabs" })).map((tab: any) => tab.name), ["other"]);
+	await second.call({ action: "close", name: "other" });
+	assert.equal(second.busy(), false);
+	await second.shutdown();
+	await env.shutdown();
 });
 
 it("loads lazily and launches separate profiles with path and display settings", async () => {
