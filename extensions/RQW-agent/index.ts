@@ -1796,9 +1796,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					// Steering: delivered after the child's current tool call, before its next request; nothing is aborted.
 					const batch = queueSend(a, params.task); persist(a);
 					try {
-						if (a.core.on) {
-							a.session.agent.steer({ role: "user", content: [{ type: "text", text: params.task }], timestamp: Date.now() });
-						} else await untilAborted(a.session.steer(params.task), signal);
+						await untilAborted(a.session.steer(params.task), signal);
 					} catch (error) { a.sends = a.sends.filter(item => item !== batch); persist(a); throw error; }
 					a.nudge?.();
 					a.progress.reset();
