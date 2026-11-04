@@ -12,6 +12,9 @@ import { acquire, holds, lockDir, release, topOwner, type Owner } from "./owners
 import { type Entry, listChats, listEntries, type Live, nodeSessionFs, resolveChat, type SessionFs, safeId, stateDir, writeEntry } from "./registry.ts";
 import { confirmOwner, type NetLike, request, type Server, startServer } from "./transport.ts";
 import { attachVisibility, CHAT_TOOL_NAMES } from "./visibility.ts";
+
+/** A child's tool list must allow the tools, but a plain name also activates them. A wildcard only allows, so they stay deferred. */
+const CHILD_ALLOWED_TOOLS = CHAT_TOOL_NAMES.map(name => `${name}*`);
 import { createAnswerWaiter } from "./wait-answer.ts";
 import { steeringWait } from "./steering-wait.ts";
 import { waitReason } from "./wait-reason.ts";
@@ -191,7 +194,7 @@ export function createTabsLink(deps: Deps) {
 			attachVisibility(child, () => true);
 		};
 		pi.events.on(SUBAGENT_EXTENSION_FACTORIES, request => {
-			(request as { offer?: (factory: typeof childFactory, tools: string[]) => void })?.offer?.(childFactory, CHAT_TOOL_NAMES);
+			(request as { offer?: (factory: typeof childFactory, tools: string[]) => void })?.offer?.(childFactory, CHILD_ALLOWED_TOOLS);
 		});
 
 		/**
