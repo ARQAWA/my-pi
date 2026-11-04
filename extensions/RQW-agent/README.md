@@ -181,6 +181,22 @@ restart. Without a task, restart remains idle.
   the child's registry (after 12 s it goes to the background as a whole script, like main's). Without an offer it is registered exactly as
   Pi's built-in factory does. The offer is asked for during the child's loader reload when it has codemode, otherwise
   right after the reload.
+- MCP: a child gets Pi's built-in MCP client (`createMcpExtension`) when its caller runs it, that is when main's
+  `/mcp` comes from `builtin:mcp`; a child that has it passes it to its own children. A caller with `mcp` disabled
+  (`-builtin:mcp`, `--no-mcp`) or replaced by an extension that registers `/mcp` gives its children no MCP. The
+  client reads the same `mcp.json` files with the same rules (project file only in a trusted project, exposure,
+  `toolExposure`, `enabled`, OAuth credentials in `mcp-auth.json`), plus the servers extensions registered in main
+  (`pi.registerMcpServer`) as they are when the child starts, and opens its own connections. A child session emits no `session_start` or
+  `session_shutdown`, so RQW-agent keeps the client's handlers: the start one runs with the child's context once the
+  session exists and connects in the background, as in main; the shutdown one runs on the child's release (stop, hibernation, failed creation) and closes the connections and
+  stdio servers. The first prompt waits only for servers with `direct` tools, at most 10 s, as Pi does. The child's
+  tool allowlist adds `mcp__*` and the three resource tools, so `direct` tools are declared as in main. The child's
+  forced prompt gets Pi's `<mcp_servers>` section, which lists the `codemode` and `deferred` servers. Not carried:
+  main's run flags `--tools` and `--exclude-tools`, as for every other child tool, and servers an extension registers
+  or removes after the child started, and session-only `/mcp` changes of such registered servers in main (Pi keeps
+  them inside its MCP client, with no public API). File-configured servers match, since `/mcp` saves their changes
+  to `mcp.json`. Neither main nor the child gets an RQW-agent `mcp_servers_change` handler, so Pi still warns about
+  registered servers nothing connects.
 - Profiles: nested callers use the same profile discovery and `agent_type` selection as main. RQW-review offers
   role files through `rqw-agent:profiles`, not another tool or child runtime.
 - Settings: every child's in-memory `SettingsManager` copies the caller's effective `shellPath`, `shellCommandPrefix`,

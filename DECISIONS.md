@@ -965,6 +965,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Agent
 
+- **Children use MCP like the caller** `[D-AGENT-MCP]`. A child gets Pi's built-in MCP client, the same
+  `mcp.json` servers with the same exposure and config rules, the servers extensions registered in main when the child starts and the
+  `<mcp_servers>` prompt section, when its caller runs the built-in client; disabled or replaced `mcp` gives children
+  none. Each child has its own connections, started in the background and closed with the child.
+  Owner: «эти помощники должны уметь, так же как и основные агенты пользоваться мср. что за хуйня?»
+  Carrier: `extensions/RQW-agent/index.ts` (`callerMcp`, `childMcp`); contract:
+  [RQW-agent README](extensions/RQW-agent/README.md#child-tools-and-settings); tests: `test/extensions/RQW-agent/mcp.test.ts`.
+
 - **History repair direction** `[D-AGENT-HISTORY-REPAIR]`. Owner: «Слушай, смотри, если у нас падает агент, и там история грязная, то есть там типа история кривая, но выброси ты, блядь, пару этих сломанных строк и запусти с того места, где есть история. Зачем запускать с нуля? агентов. Надо в будущем предусмотреть такую систему восстановления, чтобы не перезапускать заново все и токены не сжигать на эту хуйню. То есть там, где мы можем починить, надо чинить, но надо это все продумать так, чтобы это было.. Супер легковес, но максимально минимально». Implemented as one pure function `repairHistory` applied to every child request and to the resume projection: results without a call, repeated results and results of another turn are dropped; a call without a result is cut out of its message, the other blocks and sound pairs stay, a message left without text or call is dropped; same-id calls in one message are an error, not a guess. The session file is never changed and no tool call is repeated. `repairInterrupted` no longer appends synthetic results or refuses an unanswered call before later conversation.
   Approval of the design with the temporary continue line, answering option 1 (when the repaired history ends with an assistant message, the short user line «continue; the removed call was not repeated» is added to the request only, never written to the file): «дв запускай со строкой продолжаем».
   Reason: restart from the history that is still sound instead of from zero, without burning tokens.

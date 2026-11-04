@@ -40,7 +40,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   supported fields, explicit overrides and saved provenance: [RQW-agent README](extensions/RQW-agent/README.md#codex-profiles).
   The counts source also offers the children's background processes and the number of idle agents as `idleAgents` (`[D-STATUSBAR-WAITS]`).
   The optional `title` appears in status and results. Every child has recursive `agent` delegation without a depth
-  limit. Children get codemode/tool_search as the caller has them, the caller's session settings and the same profile
+  limit. Children get codemode/tool_search and Pi's built-in MCP client as the caller has them (`[D-AGENT-MCP]`), the caller's session settings and the same profile
   catalog. With RQW-tools, codemode uses the child's background-job registry.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers diagnostic status;
   final results arrive automatically as one hidden message (main chat: RQW-auto-wait; a child's loop sleeps while its helpers and jobs run and wakes on their results), not waiting receipts or `child_wait` wakeups (`[D-AUTO-WAIT-EVERYWHERE]`). Native idle input starts immediately even while background work remains; no follow-up hold remains. The `rqw:stop-background:v1` notice interrupts children. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.

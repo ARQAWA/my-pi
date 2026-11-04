@@ -9,6 +9,7 @@ import {
 	type AgentSession,
 	createAgentSession,
 	createCodemodeExtension,
+	createMcpExtension,
 	createToolSearchExtension,
 	DefaultResourceLoader,
 	getAgentDir,
@@ -41,6 +42,57 @@ import { ACCEPT_ENTRY, BASE_ENTRY, CHILD_ENTRY, deliveredRuns, createChildManage
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 /** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
 const BUILTIN_TOOLS = ["codemode", "tool_search"] as const;
+/** MCP tools a child may declare: every server tool and the resource tools (Pi's `isMcpToolName`). */
+const MCP_TOOLS = ["mcp__*", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
+/** The MCP servers extensions registered in the main session (`pi.registerMcpServer`). */
+type McpSource = () => ReturnType<ExtensionAPI["getMcpServers"]>;
+/** Children running Pi's built-in MCP client, with the source they read, so their own children get both too. */
+const mcpSources = new WeakMap<ExtensionAPI, McpSource>();
+/**
+ * The MCP client's handlers a child session never fires itself; `childMcp` runs the first two. `mcp_servers_change`
+ * is never run: left on the child's runner, it would hide Pi's warning about registered servers nothing connects.
+ */
+const MCP_CAPTURED = new Set(["session_start", "session_shutdown", "mcp_servers_change"]);
+
+/**
+ * The registered MCP servers for a child when its caller runs Pi's built-in MCP client: main's `/mcp` comes from
+ * `builtin:mcp`, so it is neither disabled (`-builtin:mcp`, `--no-mcp`) nor replaced by an extension that registers
+ * `/mcp`. A child caller passes on its own source.
+ */
+function callerMcp(pi: ExtensionAPI): McpSource | undefined {
+	const inherited = mcpSources.get(pi);
+	if (inherited) return inherited;
+	if (pi.getCommands?.().find(command => command.name === "mcp")?.sourceInfo.source !== "builtin") return undefined;
+	return () => pi.getMcpServers?.() ?? [];
+}
+
+/**
+ * Pi's built-in MCP client for a child, reading the same `mcp.json` files with the same rules as main and main's
+ * registered servers as they are when the child starts. A child's session never emits `session_start` or
+ * `session_shutdown`, so the client's handlers for them are kept here: `start` loads the config and connects in the
+ * background, `stop` closes the connections and stdio servers.
+ */
+function childMcp(source: McpSource) {
+	const handlers = new Map<string, (event: unknown, ctx?: ExtensionContext) => unknown>();
+	const factory = (sub: ExtensionAPI) => createMcpExtension()(Object.assign(Object.create(sub), {
+		on: (name: string, handler: (event: unknown, ctx?: ExtensionContext) => unknown) => {
+			if (MCP_CAPTURED.has(name)) handlers.set(name, handler);
+			else sub.on(name as "tool_call", handler as never);
+		},
+		getMcpServers: source,
+	}));
+	const start = (session: AgentSession) => {
+		// Shape check: without the runner's context the child starts without MCP, as before.
+		if (typeof session.extensionRunner?.createContext !== "function") return;
+		handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, session.extensionRunner.createContext());
+	};
+	const stop = () => {
+		const shutdown = handlers.get("session_shutdown");
+		handlers.clear();
+		void Promise.resolve(shutdown?.({ type: "session_shutdown", reason: "quit" })).catch(() => {});
+	};
+	return { factory, start, stop, source };
+}
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Thinking = (typeof THINKING)[number];
 
@@ -1108,6 +1160,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const builtins = config.builtins ?? BUILTIN_TOOLS.filter(name => active.has(name));
 		const settingsManager = SettingsManager.inMemory(config.settings ?? childSettings(pi.getSettings()));
 		settingsManager.setProjectTrusted(ctx.isProjectTrusted());
+		// MCP as the caller has it: Pi's built-in client only when the caller runs it.
+		const mcpSource = callerMcp(pi);
+		const mcp = mcpSource ? childMcp(mcpSource) : undefined;
 		// With RQW-tools, the child's codemode uses its job registry, like the main session's: Pi's own
 		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
 		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
@@ -1115,6 +1170,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		let offer: ToolOffer | undefined;
 		let codemode: ToolDefinition | undefined;
 		let childApi!: ExtensionAPI;
+		let prompt = config.system;
 		const withCodemode = (sub: ExtensionAPI) => {
 			offer = controller.signal.aborted || signal.aborted ? undefined : offeredFactory();
 			// The built-in factory only calls `registerTool`; the rest of the API stays the child's for its callbacks.
@@ -1132,18 +1188,23 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			extensionFactories: [
 				...(builtins.includes("codemode") ? [withCodemode] : []),
 				...(builtins.includes("tool_search") ? [createToolSearchExtension()] : []),
+				...(mcp ? [mcp.factory] : []),
 				(sub: ExtensionAPI) => {
 					childApi = sub;
+					if (mcp) mcpSources.set(sub, mcp.source);
 					fastGpt(sub, () => fast.on);
 					sub.on("model_select", () => progress?.discard());
 					sub.on("context_with_system", event => {
 						if (!core.on) return;
 						const tools = getCurrentTools(event.messages.filter(m => m.role === "system"));
-						return { messages: [{ role: "system", content: config.system, toolsAdded: tools, timestamp: Date.now() }, ...event.messages.filter(m => m.role !== "system")] };
+						return { messages: [{ role: "system", content: prompt, toolsAdded: tools, timestamp: Date.now() }, ...event.messages.filter(m => m.role !== "system")] };
 					});
-					sub.on("before_agent_start", () => {
+					sub.on("before_agent_start", event => {
 						check();
-						return { systemPrompt: config.system };
+						// The forced prompt drops Pi's sections; the MCP client's server list stays, as in main's prompt.
+						const servers = event.systemPromptOptions.sections?.["mcp_servers"];
+						prompt = servers ? `${config.system}\n\n<mcp_servers>\n${servers}\n</mcp_servers>` : config.system;
+						return { systemPrompt: prompt };
 					});
 					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
 					web?.(sub);
@@ -1168,7 +1229,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-				tools: [...new Set([...names, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins, ...extensionTools])],
+				tools: [...new Set([...names, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins, ...extensionTools, ...(mcp ? MCP_TOOLS : [])])],
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {
@@ -1180,6 +1241,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				// The child's factory forces config.system as its prompt (before_agent_start returns it), so the prompt is forced.
 				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true, childApi);
 				if (signal.aborted) { jobs?.dispose(); policy.release(); session.dispose(); signal.throwIfAborted(); }
+				mcp?.start(session);
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 				progress = new ProgressReports(toolEvents, childName, manager.getSessionId(), (message, current, delivered) => {
 					const delivery = randomUUID();
@@ -1236,7 +1298,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						if (!activity?.isRunning()) armSleep(a);
 					}
 				}, { alert_after_ms: config.alert_after_ms });
-				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: () => { releaseRequests?.(); policy.release(); }, captureRun: policy.capture, core, bridge };
+				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: () => { releaseRequests?.(); policy.release(); mcp?.stop(); }, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
