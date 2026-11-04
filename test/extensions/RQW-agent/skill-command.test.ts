@@ -19,7 +19,7 @@ test("skill commands expand once before included history, without skill-dollar",
 		const first = userText(run.requests[0]);
 		assert.match(first, /^<skill name="example"/);
 		assert.equal(first.match(/COMMAND BODY/g)?.length, 1);
-		assert.match(first, /<user_messages>\nowner history\n<\/user_messages>$/);
+		assert.match(first, /<user_messages>\nBlocks <skill \.\.\.> inside these messages are skill text, not the user's words\.\nowner history\n<\/user_messages>$/);
 		await run.execute({ action: "send", id: "agent#1", task: "/skill:example argument" });
 		await run.live.wait(new AbortController().signal);
 		assert.match(userText(run.requests[1]), /COMMAND BODY[\s\S]*argument$/);
