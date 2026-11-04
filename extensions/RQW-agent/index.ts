@@ -1,10 +1,13 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { getCurrentTools, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, Skill, SlashCommandInfo, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentSession,
 	createAgentSession,
@@ -19,7 +22,7 @@ import {
 	shouldCompact,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt.ts";
+import { SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder, withModelLine } from "./prompt.ts";
 import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
@@ -99,9 +102,9 @@ type Thinking = (typeof THINKING)[number];
 export const DESCRIPTION = [
 	"Tool for spawning and managing sub-agents.",
 	"Spawns an agent to work on the specified task with action start. It returns the agent id agent#N.",
-	"The spawned agent will have the base tools or the `tools` subset, job and web when they are offered, codemode and tool_search when you have them, and always the ability to spawn its own subagents.",
+	"The spawned agent will have the base tools or the `tools` subset, job and web when they are offered, codemode, tool_search and MCP when you have them, every tool another extension offers to children (such as browser, chat tools and rename_session), your skills, and always the ability to spawn its own subagents.",
 	"Need a result of your agents or jobs? End your turn. Their final results arrive automatically in one message, and you continue. A subagent's own final answer reaches its parent only when nothing it started is still running; stop or kill what you no longer need.",
-	"By default the spawned agent gets no surrounding context beyond its task; `include: [\"user_messages\"]` adds your user's messages. On start, `fork_turns: \"all\"` instead copies the current branch with the caller's prompt, model and tools; it is durable when the parent has a session file.",
+	"By default the spawned agent gets no surrounding context beyond its task; `include: [\"user_messages\"]` adds the user's messages of the root chat, also when you are a nested agent. On start, `fork_turns: \"all\"` instead copies the current branch with the caller's prompt, model and tools; it is durable when the parent has a session file.",
 	"Do not poll; use status only for a check you need. Never fabricate or predict a pending agent's results. The user may not have opened the agent's report: relay what matters.",
 	"Treat its result as finished work; don't redo its searches, reads or runs. When you hand its work to another agent or cite it, use source links or verbatim quotes, never a bare retelling, and cite only what you have seen in a source, opening just that spot if you have not. Check a claim only when it has no path and line, contradicts what you have seen, shows an obvious failure or misses a significant edge case, comes from a failed or incomplete run, or is a significant behavioral change no one has verified by a test or run; then check just that claim or send the same agent a short follow-up, and still run any check the user or a skill asks for.",
 	"",
@@ -120,7 +123,7 @@ export const DESCRIPTION = [
 	"stop: Close an agent and any open descendants when they are no longer needed. Completed agents remain open and keep their history until closed. Don't keep agents open for too long if they are not needed anymore.",
 	"resume: Resume a previously interrupted or failed agent by id so it retries its last request from saved history, without a new message. Child sessions survive Pi restarts with the same caller-local id.",
 	"start/restart: system_file or role_file loads exact UTF-8 text relative to the caller cwd instead of matching inline text; system and role choices are mutually exclusive. Restart inherits the file choice and re-reads it before replacing the child. Result details record prompt_file {kind, path (absolute), sha256 (file bytes)} in the result display details.",
-	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
+	"include: [user_messages] on start/restart appends user-role text verbatim in a <user_messages> block after the task, from the current branch of the root chat, also when called from a nested agent; images and non-user messages are omitted. It is not inherited on restart.",
 	"agent_type on start/restart selects a named Codex TOML profile from the catalogue below. Its developer_instructions are a role after the root prompt and reminder, not a sandbox. Profile model, effort and instructions are defaults; explicit model, thinking, role, role_file, system and system_file use ordinary API semantics. Unset fields use ordinary defaults. Profiles keep the same tools and recursive delegation as generic agents.",
 	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session; a selected agent_type is inherited and re-read unless changed.",
 	"Defaults: your system prompt with the reminder, this session's thinking, all tools.",
@@ -143,7 +146,7 @@ const PARAMETERS = Type.Object({
 	role: Type.Optional(Type.String({ description: "Short role text added after the default prompt; start, restart" })),
 	system_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 whole-prompt file, relative to caller cwd; conflicts with system and either role option" })),
 	role_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 role file, relative to caller cwd; conflicts with role and either system option" })),
-	include: Type.Optional(Type.Array(StringEnum(["user_messages"]), { description: "start, restart: append verbatim user-role text from this caller's current session branch after the task" })),
+	include: Type.Optional(Type.Array(StringEnum(["user_messages"]), { description: "start, restart: append verbatim user-role text from the current branch of the root chat after the task" })),
 	title: Type.Optional(Type.String({ description: "Short title, 3-5 words, shown in status and result headers; start, restart. Make it concrete and distinct, consider recent titles to avoid reuse." })),
 	agent_type: Type.Optional(Type.String({ description: "Agent type override for the new agent. Omit unless explicitly asked. Restart inherits and revalidates the selected agent_type. The roles are listed at the end of the tool description." })),
 	task: Type.Optional(Type.String({ description: "Initial plain-text task for the new agent, or the message text to send to the target agent with send or restart." })),
@@ -159,7 +162,14 @@ type Params = Omit<Static<typeof PARAMETERS>, "tools"> & { tools?: string[] };
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
  * `custom` the caller's full override, `role` its resolved role text, `profile` the loaded profile's provenance.
  */
-type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; fork_turns?: "all"; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; reviewer?: boolean; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; fork_turns?: "all"; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+const REVIEWER_PATH = fileURLToPath(new URL("../RQW-review/REVIEWER.md", import.meta.url));
+const REVIEW_PROFILES = ["spotty", "bossy"].map(name => fileURLToPath(new URL(`../RQW-review/profiles/${name}.toml`, import.meta.url)));
+function legacyReviewer(config: Config): boolean {
+	return config.prompt_file?.kind === "role" && config.prompt_file.path === REVIEWER_PATH
+		|| !!config.profile && REVIEW_PROFILES.includes(config.profile.path) && config.profile_defaults?.role === true
+			&& config.prompt_file === undefined && config.custom === undefined;
+}
 /** Commands the child accepted: `tasks` become one user message, the `n`-th user message of its history. */
 type SendBatch = { n: number; tasks: string[] };
 /** `delivery` is the id its message carries; the saved result is the outbox, so a restore sends the same id. Older records have none. */
@@ -242,7 +252,7 @@ class NotificationBridge {
 }
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean; backgroundCount?(): number; subscribeActivity?(listener: () => void): () => void; autoSource?(): { source: AutoSource; close(): void } };
-type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
+type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; busy: () => boolean; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -340,7 +350,20 @@ type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?
 type ToolCatalogue = { names: string[]; aliases: Record<string, string> };
 type ToolOffer = { factory: ToolsFactory; catalogue?: ToolCatalogue };
 
-type ExtensionFactory = (child: ExtensionAPI) => void;
+type ExtensionFactory = ((child: ExtensionAPI) => void) & { busy?: () => boolean };
+
+const shutdowns = new WeakMap<AgentSession, Promise<void>>();
+function shutdownSession(session: AgentSession): Promise<void> {
+	let shutdown = shutdowns.get(session);
+	if (!shutdown) {
+		shutdown = (async () => {
+			const runner = session.extensionRunner;
+			if (typeof runner?.emit === "function") await runner.emit({ type: "session_shutdown", reason: "quit" });
+		})().catch(() => {});
+		shutdowns.set(session, shutdown);
+	}
+	return shutdown;
+}
 const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
 
 /** Inline extensions explicitly offered for each child, without enabling resource discovery. */
@@ -412,7 +435,7 @@ type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kin
 
 /**
  * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
- * a refused request disposes the session and throws. `childName` is the child's actual label, `kind#id`.
+ * a refused request throws. `childName` is the child's actual label, `kind#id`.
  */
 function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string, startupSystemPromptForced: boolean, childApi: ExtensionAPI): { release: () => void; capture: (callerThreadId?: string) => void } {
 	const request: SessionPolicyRequest = { session, parentThreadId, kind, startupSystemPrompt, startupSystemPromptForced, childName };
@@ -434,7 +457,6 @@ function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession
 	} catch (error) { failed = true; failure = error; }
 	if (!failed && request.error === undefined) return { release, capture };
 	release();
-	session.dispose();
 	const reason = failed ? (failure instanceof Error ? failure.message : String(failure)) : String(request.error);
 	throw new Error(`Session policy refused: ${reason.split("\n")[0].slice(0, 200)}`);
 }
@@ -509,7 +531,7 @@ export default function agent(pi: ExtensionAPI) {
  * depth limit. `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a
  * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
  */
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost, rootCommands: () => SlashCommandInfo[] = () => pi.getCommands?.() ?? [], rootBranch: (ctx: ExtensionContext) => ReturnType<SessionManager["getBranch"]> = ctx => ctx.sessionManager.getBranch()): RuntimeHandle {
 	const coordinator = new Coordinator(pi, host?.send);
 	continueOnLength(pi);
 	// The main screen only; a child has none.
@@ -517,7 +539,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
 	const counts = top ? createCountsProducer(() => runtime.runningCounts(), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, notify, basePrompt, labelPrefix, host);
+	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, notify, basePrompt, labelPrefix, host, rootCommands, rootBranch);
 	if (top) pi.registerCommand("resume-agents", {
 		description: "Resume unfinished children without sending a message to the main model",
 		handler: async (_args, ctx) => { const count = await runtime.resume?.(ctx.signal ?? new AbortController().signal) ?? 0; ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
@@ -564,7 +586,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 }
 
 /** Caller-local state. Nested callers and their children settle independently. */
-export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, _backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, _backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost, rootCommands: () => SlashCommandInfo[] = () => pi.getCommands?.() ?? [], rootBranch: (ctx: ExtensionContext) => ReturnType<SessionManager["getBranch"]> = ctx => ctx.sessionManager.getBranch()): RuntimeHandle {
 	const name = "agent";
 	const payloads = forkPayloads();
 	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/agent#2". */
@@ -588,6 +610,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	let mainAborted = false;
 	const unansweredProgress = new Set<string>();
 	const catalogue = new ProfileCatalogue();
+	const skills = () => {
+		const loaded: Skill[] = rootCommands().flatMap(command => command.source === "skill" && command.name.startsWith("skill:") ? [{
+			name: command.name.slice(6), description: command.description ?? "", filePath: command.sourceInfo.path,
+			baseDir: dirname(command.sourceInfo.path), sourceInfo: command.sourceInfo, disableModelInvocation: false,
+		}] : []);
+		let filter: ((skills: Skill[], submit?: boolean) => Skill[]) | undefined;
+		toolEvents.emit("rqw-skill-dollar:filter", { offer: (value: (skills: Skill[], submit?: boolean) => Skill[]) => { filter = value; } });
+		return filter ? filter(loaded, true) : loaded;
+	};
 
 	async function refreshProfiles(ctx: ExtensionContext) {
 		const extensionPaths: string[] = [];
@@ -797,7 +828,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			|| a.state !== "completed" || !a.result || a.run || a.next?.length || a.activity.isRunning()
 			|| a.session.agent.state.isStreaming || a.session.agent.hasQueuedMessages()
 			|| a.session.getSteeringMessages().length || a.session.getFollowUpMessages().length
-			|| a.bridge.pending() || a.children?.pending() || a.children?.runningCounts().agents || a.jobs?.hasJobs?.()
+			|| a.bridge.pending() || a.children?.pending() || a.children?.runningCounts().agents || a.children?.busy?.() || a.busy() || a.jobs?.hasJobs?.()
 			|| coordinator.undelivered(`${name}#${a.id}`)) return false;
 		// A queued Pi message is not durable delivery yet. Wait for its actual branch entry.
 		const delivered = main?.sessionManager.getBranch().some(entry => {
@@ -1014,6 +1045,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const model = ctx.modelRegistry.find(c.model.provider, c.model.id);
 			if (!model) throw new Error(`Cannot restore ${name}#${data.id}: model ${c.model.provider}/${c.model.id} is unavailable`);
 			const config: Config = { ...c, model, system: withCurrentReminder(c.system) };
+			const migratedReviewer = config.reviewer === undefined;
+			if (migratedReviewer) config.reviewer = legacyReviewer(config);
+			if (inheritsCallerPrompt(c)) { config.system = withModelLine(config.system, model); config.base = withModelLine(config.base, model); }
 			const neverRunIdle = data.state === "idle" && data.runNumber === 0 && data.task === undefined;
 			// No history yet when saved: its file may be absent, and the accepted task still waits in `pending_sends`.
 			const unflushed = data.history === false;
@@ -1037,6 +1071,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				written: { config: JSON.stringify(data.config), task: data.task }, history: data.history !== false, recovers: data.recovers, sends: legacySends(data) };
 			if (signal.aborted) { close(a); signal.throwIfAborted(); }
 			agents.set(a.id, a);
+			if (migratedReviewer) persist(a);
 			savedSlots.delete(a.id);
 			// A paused child with an accepted command that never arrived starts by itself; other paused children wait.
 			if (initialRecovery && ctx.sessionManager.getSessionFile() && (a.state === "interrupted" || (a.state === "paused" && unsent(a).length))) recoveryPending.add(a.id);
@@ -1181,7 +1216,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const childExtensions = collectExtensionFactories(toolEvents, extensionTools);
 		const resourceLoader = new DefaultResourceLoader({
 			cwd, agentDir: getAgentDir(), settingsManager,
-			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+			noExtensions: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+			skillsOverride: () => ({ skills: skills(), diagnostics: [] }),
 			systemPromptOverride: () => config.system,
 			appendSystemPromptOverride: () => [],
 			// Only a forced prompt avoids Pi's appended sections, such as <cwd>.
@@ -1206,7 +1242,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						prompt = servers ? `${config.system}\n\n<mcp_servers>\n${servers}\n</mcp_servers>` : config.system;
 						return { systemPrompt: prompt };
 					});
-					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
+					children = registerCaller(sub, toolEvents, true, false, () => fast.on, () => {
+						onRunning();
+						const a = agents.get(localNumber(childName)!);
+						if (a && a.session === childSession) queueSleep(a);
+					}, () => config.base, `${label}/`, childHost, rootCommands, () => rootBranch(ctx));
 					web?.(sub);
 				},
 				...childExtensions,
@@ -1233,14 +1273,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {
+				try {
 				childSession = session;
 				if (core.on) await session.bindExtensions({ mode: "tui" });
 				// Before any prompt. A late create after an abort is released here too.
 				let parent: string;
-				try { parent = ctx.sessionManager.getSessionId(); } catch (error) { session.dispose(); throw error; }
+				parent = ctx.sessionManager.getSessionId();
 				// The child's factory forces config.system as its prompt (before_agent_start returns it), so the prompt is forced.
 				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true, childApi);
-				if (signal.aborted) { jobs?.dispose(); policy.release(); session.dispose(); signal.throwIfAborted(); }
+				if (signal.aborted) { policy.release(); signal.throwIfAborted(); }
 				mcp?.start(session);
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 				progress = new ProgressReports(toolEvents, childName, manager.getSessionId(), (message, current, delivered) => {
@@ -1298,14 +1339,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						if (!activity?.isRunning()) armSleep(a);
 					}
 				}, { alert_after_ms: config.alert_after_ms });
-				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, release: () => { releaseRequests?.(); policy.release(); mcp?.stop(); }, captureRun: policy.capture, core, bridge };
+				return { session, progress, controller, guard, children, activity, jobs, jobsAuto, busy: () => childExtensions.some(factory => typeof factory.busy === "function" && factory.busy()), release: () => { releaseRequests?.(); policy.release(); mcp?.stop(); }, captureRun: policy.capture, core, bridge };
+				} catch (error) {
+					await shutdownSession(session);
+					session.dispose();
+					throw error;
+				}
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
 			controller.abort();
 			if (!retainedBridge) bridge.close();
 			jobs?.dispose();
-			void creating?.then(({ session, release }) => { release(); session.dispose(); }).catch(() => {});
+			void creating?.then(async ({ session, release }) => { release(); await shutdownSession(session); session.dispose(); }).catch(() => {});
 			throw error;
 		}
 	}
@@ -1426,7 +1472,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					await pending;
 					a.bridge.reconcile();
 					a.children?.settle?.(a.guard.signal?.aborted ?? false);
-				} else if (task !== undefined) await session.prompt(task, { preflightResult: accept });
+				} else if (task !== undefined) await session.prompt(task, { preflightResult: accept, expandPromptTemplates: !a.config.reviewer });
 				else {
 					const notifications = a.bridge.messages();
 					accept();
@@ -1571,6 +1617,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		a.session.agent.abort();
 		void (async () => {
 			await Promise.all([a.session.abort().catch(() => {}), a.session.agent.waitForIdle()]);
+			await shutdownSession(a.session);
 			a.session.dispose();
 			afterClose?.();
 		})();
@@ -1616,6 +1663,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		if (matches.length !== 1) throw new Error(`${matches.length > 1 ? "Ambiguous" : "Unknown"} model: ${value}. Use provider/id from the model registry.`);
 		return matches[0]!;
 	}
+
+	/** Own system, system_file, role_file and fork children keep their prompt as it is. */
+	const inheritsCallerPrompt = (c: Pick<Config, "custom" | "prompt_file" | "fork_turns">) => c.custom === undefined && c.prompt_file === undefined && c.fork_turns === undefined;
 
 	async function resolveConfig(params: Params, ctx: ExtensionContext, signal: AbortSignal, base?: Config): Promise<Config> {
 		signal.throwIfAborted();
@@ -1669,7 +1719,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(runtimeOf(ctx).checkAuth(model.provider, { signal }), signal)))
 			throw new Error(`No credentials for provider ${model.provider}`);
 		signal.throwIfAborted();
-		return { system, base: root, cwd: ctx.cwd, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
+		const reviewerText = role === undefined ? undefined : await readFile(REVIEWER_PATH, "utf8").catch(() => undefined);
+		const inherits = inheritsCallerPrompt({ custom, prompt_file: promptFile });
+		return { system: inherits ? withModelLine(system, model) : system, base: inherits ? withModelLine(root, model) : root, cwd: ctx.cwd, reviewer: role !== undefined && reviewerText !== undefined && role === reviewerText, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
 			...(promptFile ? { prompt_file: promptFile } : {}), ...(profile ? { profile: { name: profile.name, path: profile.path, sha256: profile.sha256 },
 				profile_defaults: { model: profileModel, thinking: profileThinking, role: profileRole } } : {}),
 			model, thinking, tools: selectors(params.tools ?? fallback?.tools ?? [...TOOLS], offeredFactory()?.catalogue),
@@ -1726,8 +1778,21 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		if ((params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined || params.agent_type !== undefined) && params.action !== "start" && params.action !== "restart")
 			throw new Error("system_file, role_file, include and agent_type are only supported on start/restart");
 		if (params.agent_type !== undefined || (params.action === "restart" && (lostFork ? lostFork.config.profile : find(params.id).config.profile))) await refreshProfiles(ctx);
-		const task = params.include?.includes("user_messages") && params.task !== undefined
-			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
+		const prepare = (task: string, config: Config, session: AgentSession) => {
+			let expand: ((text: string) => string) | undefined;
+			if (!config.reviewer) toolEvents.emit("rqw-skill-dollar:expand", { offer: (value: (text: string) => string) => { expand = value; } });
+			let prepared = expand ? expand(task) : task;
+			if (config.reviewer || !prepared.startsWith("/skill:")) return params.include?.includes("user_messages") ? appendUserMessages(prepared, rootBranch(ctx)) : prepared;
+			let select: ((event: { text: string }, context: ExtensionContext) => { action: "handled" } | { action: "transform"; text: string } | undefined) | undefined;
+			toolEvents.emit("rqw-skill-dollar:filter", { offer: () => {}, offerCommand: (handler: typeof select) => { select = handler; } });
+			const selection = select?.({ text: prepared }, ctx);
+			if (selection?.action === "transform") prepared = selection.text;
+			const current = session.resourceLoader.getSkills().skills;
+			current.splice(0, current.length, ...skills());
+			const native = (session as unknown as { _expandSkillCommand?: (text: string) => string })._expandSkillCommand;
+			if (typeof native === "function") prepared = native.call(session, prepared);
+			return params.include?.includes("user_messages") ? appendUserMessages(prepared, rootBranch(ctx)) : prepared;
+		};
 		switch (params.action) {
 			case "status": touch(targetIds(params.ids)); return jsonResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), statusDepth(params.depth)) });
 			case "start": {
@@ -1751,14 +1816,16 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => (fork?.tools ?? pi.getActiveTools()).includes(name));
 				const manager = await createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork && await forkBranch(ctx.sessionManager, fork.leaf));
-				const firstPayload = fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api) && fork.payload ? { source: fork.payload, task: task! } : undefined;
+				const firstPayload = fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api) && fork.payload ? { source: fork.payload, task: params.task } : undefined;
 				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager, false, undefined, firstPayload);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				agents.set(id, a);
 				try {
 					signal.throwIfAborted();
+					const task = prepare(params.task, config, a.session);
+					if (firstPayload) firstPayload.task = task;
 					a.captureRun(ctx.sessionManager.getSessionId());
-					await startRun(a, task!, signal);
+					await startRun(a, task, signal);
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(id, a);
@@ -1777,6 +1844,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			case "send": {
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
+				const task = prepare(params.task, a.config, a.session);
 				if (a.run?.quiet && !params.interrupt && !a.next) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
 				a.captureRun(ctx.sessionManager.getSessionId());
 				if (params.fast_gpt !== undefined) { a.fast.on = params.fast_gpt; persist(a); }
@@ -1785,8 +1853,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					// finally of its run), after any earlier pending sends. No time limit: an uncooperative tool just delays it.
 					if (!a.run.quiet) requestInterrupt(a, a.run);
 					const joined = !!a.next?.length;
-					(a.next ??= []).push(params.task);
-					queueSend(a, params.task, joined); persist(a);
+					(a.next ??= []).push(task);
+					queueSend(a, task, joined); persist(a);
 					a.progress.reset();
 					// The interrupt dropped the old limit; the accepted send has its own while the old run is still stopping.
 					if (a.config.fork_turns !== "all") a.progress.start();
@@ -1794,17 +1862,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				}
 				if (a.run) {
 					// Steering: delivered after the child's current tool call, before its next request; nothing is aborted.
-					const batch = queueSend(a, params.task); persist(a);
+					const batch = queueSend(a, task); persist(a);
 					try {
-						if (a.core.on) {
-							a.session.agent.steer({ role: "user", content: [{ type: "text", text: params.task }], timestamp: Date.now() });
-						} else await untilAborted(a.session.steer(params.task), signal);
+						if (a.config.reviewer) {
+							const queue = (a.session as unknown as { _queueSteer?: (text: string) => Promise<void> })._queueSteer;
+							if (typeof queue === "function") await untilAborted(queue.call(a.session, task), signal);
+							else await untilAborted(a.session.steer(task), signal);
+						} else await untilAborted(a.session.steer(task), signal);
 					} catch (error) { a.sends = a.sends.filter(item => item !== batch); persist(a); throw error; }
 					a.nudge?.();
 					a.progress.reset();
 					return ok(`${name}#${a.id}: queued after the current tool call`);
 				}
-				await startRun(a, params.task, signal, { communication: true });
+				await startRun(a, task, signal, { communication: true });
 				signal.throwIfAborted();
 				a.guard.signal = (a.run as unknown as Agent["run"])?.controller.signal;
 				return ok(`${name}#${a.id}: sent`);
@@ -1864,6 +1934,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				if (savedConfigValue && !model) throw new Error(`Cannot restart ${name}#${lostFork!.id}: model ${savedConfigValue.model.provider}/${savedConfigValue.model.id} is unavailable`);
 				const previous = old?.config ?? { ...savedConfigValue!, model: model! };
 				const config = await resolveConfig(params, ctx, signal, previous);
+				const preparedTask = params.task && old ? prepare(params.task, config, old.session) : undefined;
 				signal.throwIfAborted();
 				const id = old?.id ?? lostFork!.id;
 				if (old) { old.state = "stopped"; old.sends = []; persist(old); agents.delete(id); }
@@ -1887,7 +1958,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				try {
 					signal.throwIfAborted();
 					a.captureRun(ctx.sessionManager.getSessionId());
-					if (params.task) await startRun(a, task!, signal);
+					if (params.task) await startRun(a, preparedTask ?? prepare(params.task, config, a.session), signal);
 					else coordinator.add(target(a));
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
@@ -1991,6 +2062,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (depth > 0) for (const a of agents.values()) await a.children?.prepareStatus?.(depth - 1, signal);
 		},
 		runningCounts,
+		busy: () => [...agents.values()].some(a => a.busy() || a.children?.busy?.()),
 		stopBackground() {
 			const count = runningCounts().agents;
 			mainAborted = true;

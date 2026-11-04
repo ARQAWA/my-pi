@@ -11,7 +11,7 @@ import { readChat } from "./history.ts";
 import { acquire, holds, lockDir, release, topOwner, type Owner } from "./ownership.ts";
 import { type Entry, listChats, listEntries, type Live, nodeSessionFs, resolveChat, type SessionFs, safeId, stateDir, writeEntry } from "./registry.ts";
 import { confirmOwner, type NetLike, request, type Server, startServer } from "./transport.ts";
-import { attachVisibility } from "./visibility.ts";
+import { attachVisibility, CHAT_TOOL_NAMES } from "./visibility.ts";
 import { createAnswerWaiter } from "./wait-answer.ts";
 import { steeringWait } from "./steering-wait.ts";
 import { waitReason } from "./wait-reason.ts";
@@ -50,6 +50,7 @@ const sendParameters = Type.Object({
 	prompt: Type.String({ minLength: 1, maxLength: 1000, description: "Maximum 1,000 UTF-8 bytes." }),
 	model: Type.Optional(Type.String({ minLength: 1 })),
 }, { additionalProperties: false });
+const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
 const DEFAULT_WAIT_MS = 300_000;
 const waitParameters = Type.Object({
 	chatId: Type.String({ minLength: 1 }),
@@ -113,7 +114,7 @@ export function createTabsLink(deps: Deps) {
 			return fail("unknown", chatId, "The state of this chat could not be confirmed. Ask the user whether it is open.");
 		}
 
-		const tools = [
+		const buildTools = (events: ExtensionAPI["events"]) => [
 			defineTool({
 				name: "list_chats", label: "List chats", description: LIST_DESCRIPTION, parameters: listParameters, exposure: "deferred",
 				execute: async (_id, params) => text(await listChats(deps.dir, live, params)),
@@ -150,7 +151,7 @@ export function createTabsLink(deps: Deps) {
 					const { chatId, afterEntryId, timeout_ms: timeoutMs = DEFAULT_WAIT_MS } = params;
 					const reason = waitReason(ctx, id);
 					if (reason) return text({ chatId, reason });
-					const steering = steeringWait(ctx, pi.events, id);
+					const steering = steeringWait(ctx, events, id);
 					const combined = signal ? AbortSignal.any([signal, steering.signal]) : steering.signal;
 					const interrupted = () => text({ chatId, reason: steering.signal.aborted ? "steered" : "aborted" });
 					let abort: (() => void) | undefined;
@@ -180,6 +181,18 @@ export function createTabsLink(deps: Deps) {
 				},
 			}),
 		];
+
+		const tools = buildTools(pi.events);
+
+		// Every child gets the same four tools as a client only: no channel, lock or registry entry of its own.
+		// The sender of a message is the child's session id. The root bus serves children of every depth.
+		const childFactory = (child: ExtensionAPI): void => {
+			for (const tool of buildTools(child.events)) child.registerTool(tool);
+			attachVisibility(child, () => true);
+		};
+		pi.events.on(SUBAGENT_EXTENSION_FACTORIES, request => {
+			(request as { offer?: (factory: typeof childFactory, tools: string[]) => void })?.offer?.(childFactory, CHAT_TOOL_NAMES);
+		});
 
 		/**
 		 * Marks this generation's chat closed (metadata only). The closed entry is written while the lock is still held

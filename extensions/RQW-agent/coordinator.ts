@@ -22,6 +22,7 @@ export type RuntimeHandle = {
 	prepareStatus?(depth: number, signal: AbortSignal): Promise<void>;
 	/** Native running children, including descendants. Pending results count zero. */
 	runningCounts(): RunningCounts;
+	busy?(): boolean;
 	resume?(signal: AbortSignal, recoveredOnly?: boolean): Promise<number>;
 	settle?(aborted: boolean): void;
 	abortAll(): void;

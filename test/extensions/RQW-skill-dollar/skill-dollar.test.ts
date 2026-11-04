@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
-import { AgentSession, type ExtensionAPI, type ExtensionContext, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import { AgentSession, createEventBus, type ExtensionAPI, type ExtensionContext, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { SelectList, type AutocompleteProvider, type AutocompleteSuggestions } from "@earendil-works/pi-tui";
 import skillDollar from "../../../extensions/RQW-skill-dollar/index.ts";
 
@@ -48,7 +48,7 @@ async function setup(t: any, skillNames = names, offerFilter?: (skills: any[]) =
 			if (!catalog.available) throw new Error("skill catalog unavailable");
 			return commands;
 		},
-		events: { emit(channel: string, request: any) { if (offerFilter && channel === "rqw-skill-dollar:filter") request.offer(offerFilter); } },
+		events: { on() { return () => {}; }, emit(channel: string, request: any) { if (offerFilter && channel === "rqw-skill-dollar:filter") request.offer(offerFilter); } },
 	};
 	skillDollar(pi as unknown as ExtensionAPI);
 	t.after(() => { for (const handler of handlers.get("session_shutdown")!) handler({}, {}); });
@@ -89,6 +89,20 @@ const selectTheme = {
 	scrollInfo: identity,
 	noMatch: identity,
 };
+
+it("offers the same mention expansion for subagent tasks", async t => {
+	const { commands } = await setup(t, ["alpha"]);
+	const events = createEventBus();
+	const handlers = new Map<string, (event: any, ctx: any) => unknown>();
+	skillDollar({ events, on: (name: string, handler: any) => handlers.set(name, handler), getCommands: () => commands } as unknown as ExtensionAPI);
+	t.after(() => handlers.get("session_shutdown")?.({}, {}));
+	let expand: ((text: string) => string) | undefined;
+	events.emit("rqw-skill-dollar:expand", { offer: (fn: (text: string) => string) => { expand = fn; } });
+	assert.ok(expand);
+	assert.equal(expand("use $alpha"), expanded(commands, ["alpha"], "use"));
+	assert.equal(expand(`use [$alpha](skill://${commands[0].sourceInfo.path})`), expanded(commands, ["alpha"], "use"));
+	assert.equal(expand("plain"), "plain");
+});
 
 it("mid-line dollar completes a skill and submit expands it like Pi", async (t) => {
 	const { provider, input, commands } = await setup(t);

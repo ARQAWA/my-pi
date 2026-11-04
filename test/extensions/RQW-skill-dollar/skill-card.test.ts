@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 import {
+	createEventBus,
 	initTheme,
 	InteractiveMode,
 	SessionManager,
@@ -46,7 +47,7 @@ function load(theme?: unknown) {
 	if (theme) (globalThis as any)[key] = new Proxy(original, { get(target, property) {
 		return property === "fg" || property === "bg" ? (theme as any)[property] : Reflect.get(target, property, target);
 	} });
-	skillDollar({ on: (name: string, handler: any) => handlers.set(name, handler), getCommands: () => [] } as unknown as ExtensionAPI);
+	skillDollar({ events: createEventBus(), on: (name: string, handler: any) => handlers.set(name, handler), getCommands: () => [] } as unknown as ExtensionAPI);
 	const host: any = Object.create(InteractiveMode.prototype);
 	host.runtimeHost = { session: { settingsManager: { getShowCacheMissNotices: () => false }, resourceLoader: { getExtensions: () => ({ extensions: [{ resolvedPath: fileURLToPath(new URL("../../../extensions/RQW-skill-dollar/index.ts", import.meta.url)) }] }) } } };
 	host.pendingTools = new Map();

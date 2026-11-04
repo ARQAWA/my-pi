@@ -61,6 +61,19 @@ it("/skill:name picks the same skill as $name, and Pi expands alone when it woul
 	assert.equal(await pi.fire("input", { text: "hello", source: "interactive" }, ctx), undefined);
 });
 
+it("offers command selection to child tasks and throws for disabled skills", async t => {
+	const { pi, ctx, repo } = await twin(t, () => '[[skills.config]]\nname = "solo"\nenabled = false\n');
+	let select: ((event: { text: string }, ctx: any) => any) | undefined;
+	pi.pi.events.emit("rqw-skill-dollar:filter", { offerCommand: (handler: typeof select) => { select = handler; } });
+	assert.ok(select);
+	const chosen = select({ text: "/skill:same do it" }, ctx);
+	assert.equal(chosen.action, "transform");
+	assert.ok(chosen.text.includes(`location="${repo}"`));
+	assert.match(chosen.text, /same body[\s\S]*do it$/);
+	assert.throws(() => select!({ text: "/skill:solo" }, ctx), /Skill solo is disabled/);
+	assert.equal(select({ text: "/skill:missing" }, ctx), undefined);
+});
+
 it("/skill:name of a disabled skill is not expanded and says why", async (t) => {
 	const { pi, ctx, notes } = await twin(t, () => '[[skills.config]]\nname = "solo"\nenabled = false\n');
 	assert.deepEqual(await pi.fire("input", { text: "/skill:solo go", source: "interactive" }, ctx), { action: "handled" });

@@ -1,5 +1,5 @@
 // RQW-codex-compat: Codex skill roots, skill rules and project instructions on Pi's public extension APIs.
-import { getAgentDir, parseArgs, stripFrontmatter, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseArgs, stripFrontmatter, type ExtensionAPI, type ExtensionContext, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { byteOrder, disabledPaths, fitBudget, real, scopeOf, scopeRank, skillRules, skillSettings, type SkillLike } from "./catalog.ts";
 import { defaultEnv, loadContext, type CodexContext, type Env } from "./config.ts";
 import { instructionFiles } from "./instructions.ts";
@@ -125,13 +125,8 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 		ordered = { key, result };
 		return result;
 	};
-	// RQW-skill-dollar asks for a skill filter; `offer` takes `(skills) => skills` (literal, no import).
-	pi.events.on(SKILL_FILTER, request => {
-		(request as { offer?: (filter: (skills: Skill[], submit?: boolean) => Skill[]) => void })?.offer?.((skills, submit) => selectable(skills, undefined, submit) ?? skills);
-	});
-
 	// `/skill:name` picks from the same list; Pi's own expansion still runs when it would pick the same skill.
-	pi.on("input", (event, ctx) => {
+	const skillCommand = (event: { text: string }, ctx: ExtensionContext, throwOnDisabled = false) => {
 		if (!event.text.startsWith("/skill:")) return undefined;
 		const space = event.text.indexOf(" ");
 		const name = space === -1 ? event.text.slice(7) : event.text.slice(7, space);
@@ -141,7 +136,9 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 		const chosen = selectable(own, ctx.cwd, true)?.find(skill => skill.name === name);
 		if (!chosen) {
 			if (own.length === 0) return undefined;
-			ctx.ui.notify(`Skill ${name} is disabled by the Codex config`, "warning");
+			const warning = `Skill ${name} is disabled by the Codex config`;
+			ctx.ui.notify(warning, "warning");
+			if (throwOnDisabled) throw new Error(warning);
 			return { action: "handled" as const };
 		}
 		if (chosen.filePath === own[0]?.filePath) return undefined;
@@ -150,7 +147,13 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 			const block = `<skill name="${name}" location="${chosen.filePath}">\nReferences are relative to ${dirname(chosen.filePath)}.\n\n${body}\n</skill>`;
 			return { action: "transform" as const, text: args ? `${block}\n\n${args}` : block };
 		} catch { return undefined; }
+	};
+	pi.events.on(SKILL_FILTER, request => {
+		const offer = request as { offer?: (filter: (skills: Skill[], submit?: boolean) => Skill[]) => void; offerCommand?: (handler: typeof skillCommand) => void };
+		offer?.offer?.((skills, submit) => selectable(skills, undefined, submit) ?? skills);
+		offer?.offerCommand?.((event, ctx) => skillCommand(event, ctx, true));
 	});
+	pi.on("input", skillCommand);
 
 	// The idle prewarm builds its prompt from a cloned options object; it gets the same result.
 	let unsubscribe: (() => void) | undefined;

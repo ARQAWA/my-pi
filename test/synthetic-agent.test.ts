@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, it } from "node:test";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { call, fail, isTask, reportTimings, text, world } from "./synthetic/world.ts";
 import { untilWake } from "./synthetic/wake.ts";
 
@@ -87,4 +88,37 @@ it("send to a running child steers it: the message joins its next request after 
 	assert.match(JSON.stringify(secondRequest.context.messages), /also check b/);
 
 	await w.settle();
+});
+
+it("send to a running child restored after a restart is queued in its session, like a fresh child's", async (t) => {
+	const w = await world(t);
+	w.model.when(isTask("fix"), fail("network down"));
+	w.model.script(call("agent", { action: "start", task: "fix", title: "Fix" }, "c1"), text("started"), text("the child failed"));
+	await w.submit("go");
+	assert.match(await untilWake(w), /network down/);
+
+	const w2 = await w.restart();
+	const child = w2.model.hold(isTask("fix"));
+	w2.model.script(call("agent", { action: "resume", id: "agent#1" }, "c2"), text("resumed"));
+	await w2.submit("retry");
+	await w2.until(() => child.arrived, "the restored child's request");
+
+	// The public steer of the child's session is the one entry that announces the queued message to every listener.
+	const steered: string[] = [];
+	const steer = AgentSession.prototype.steer;
+	t.mock.method(AgentSession.prototype, "steer", function (this: AgentSession, message: string, ...rest: unknown[]) { steered.push(message); return (steer as any).call(this, message, ...rest); });
+	w2.model.script(call("agent", { action: "send", id: "agent#1", task: "also check docs" }, "c3"), text("sent"));
+	await w2.submit("steer it");
+	assert.deepEqual(steered, ["also check docs"]);
+
+	// Delivered once, after the child's current tool call, nothing aborted.
+	w2.model.when(isTask("fix"), text("fixed"));
+	child.reply(call("agent", { action: "status", ids: ["agent#99"] }, "k1"));
+	await w2.until(() => w2.requests.filter(isTask("fix")).length === 2, "the restored child's second request");
+	const [firstRequest, secondRequest] = w2.requests.filter(isTask("fix"));
+	assert.equal(firstRequest.options?.signal?.aborted, false, "send aborts nothing");
+	assert.doesNotMatch(JSON.stringify(firstRequest.context.messages), /also check docs/);
+	assert.equal(JSON.stringify(secondRequest.context.messages).split("also check docs").length - 1, 1);
+	await w2.settle();
+	assert.deepEqual(w2.errors, []);
 });
