@@ -69,7 +69,7 @@ export function runtime(cwd: string, root: string, thinking = "off", extraModels
 	const model = core.getModel("model")!;
 	const models = new Map([["model", model], ["other", core.getModel("other")!], ...extraModels.map(id => [id, core.getModel(id)!] as const)]);
 	// The faux core drops thinkingLevelMap; give the extra models the xhigh level the real Codex models have.
-	for (const id of extraModels) (models.get(id) as any).thinkingLevelMap = { xhigh: "xhigh" };
+	for (const id of extraModels) (models.get(id) as any).thinkingLevelMap = { xhigh: "xhigh", max: "max" };
 	const efforts: any[] = [];
 	core.setResponses(Array.from({ length: 8 }, () => async (context: any, options: any) => { requests.push(context); efforts.push(options?.reasoning); return fauxAssistantMessage("answer", { timestamp: 1 }); }));
 	const modelRuntime = {

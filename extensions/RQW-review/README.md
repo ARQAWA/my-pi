@@ -5,21 +5,21 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 
 | Skill | Level | `agent_type` | Default model | Default reasoning |
 |---|---|---|---|---|
-| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | medium |
-| `highreview` | high | `bossy` | `gpt-6.1-terra` | xhigh |
+| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | high |
+| `highreview` | high | `bossy` | `gpt-6.1-terra` | max |
 
 `selfcheck` is the executor's shell around the same loop: the finished executor starts a fork of itself with
 `agent` `fork_turns: "all"` (no model, thinking, profile, role or `include`) and ends its turn; the one report
-arrives automatically, and the object stays unedited meanwhile. The fork checks against the owner's words, runs the affected tests and, where allowed, the product, fixes,
-then runs the blind loop of the reviewer skill until `CLEAN` and returns one report: problems, fixes, checks run and
-their results, unrun checks, rounds, `CLEAN` or the reason. The fork never starts another selfcheck fork; its blind
-reviewers are ordinary fresh agents without `fork_turns`. The package offers the skill; the repository PROCESS
-requires it.
+arrives automatically, and the object stays unedited meanwhile. The fork checks against the owner's words, runs the affected tests and, where allowed, the product, reusing checks that already passed on the unchanged object, fixes,
+then runs the reviewer loop at the requested level, blind by default, until `CLEAN` and returns one report: problems, fixes, checks run and
+their results, unrun checks, rounds, `CLEAN` or the reason. The fork never starts another selfcheck fork; its
+reviewers are ordinary fresh agents without `fork_turns`. The package offers the skill; the reviewer skill requires it
+for the executor's own finished work when changes are authorized.
 
 The blind and high wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
 start a fresh ordinary `agent` with the selected `agent_type`, `role_file` set to the absolute package `REVIEWER.md`
-path, `include: ["user_messages"]` and a task containing `<agreement>` when needed, `<object>`, `<criterion>` and
-`<rejected_earlier>` when applicable. The explicit role file preserves the package review contract when a same-name
+path, `include: ["user_messages"]` and a task in the one literal template of `skills/reviewer/SKILL.md`
+(`<agreement>`, `<object>`, `<criterion>`, `<rejected_earlier>`). The explicit role file preserves the package review contract when a same-name
 personal or project profile overrides the offered profile's instructions; model, effort and profile-discovery
 precedence stay unchanged. Agent appends raw user messages in `<user_messages>` after the task; Main does not copy
 them. A complete `CLEAN` needs concise concrete
@@ -32,12 +32,12 @@ and the required evidence is complete.
 The verdict is the first line: `CLEAN` or `FINDINGS: N`, N being the number of findings; the agent card reads N from it.
 Findings need exact source evidence, `SEVERITY`, a concrete `TRIGGER` and `RESULT_IF_UNFIXED` in the ordered result.
 P0 is critical, P1 high and P2 medium, including real regression-detection gaps. Data, security and destructive-action
-risks are at least P2. Grade missed owner conditions and unagreed additions by their impact, not automatically critical.
+risks are at least P2. Missed requirements and unagreed additions are each at least P2, higher by impact; `REVIEWER.md` defines both and what is not an addition.
 Grade doc and record gaps by their real impact; gaps that make the ordered result wrong or break an owner decision
 are P0-P2. Report low-impact P3 wording, doc or record gaps, rare low-risk edges and test style only alongside admitted P0-P2 findings;
 the executor fixes the mixed batch together. A P3-only pass is `CLEAN`, with its P3 dropped and not mentioned.
 Never report P4, taste or no-impact hypotheticals. Matching quotes alone do not admit a finding.
-An unagreed element must change the ordered result, expand scope or add material risk, subject to this gate.
+Agreement and coverage need verbatim source quotes; a quote not found proves nothing, and an unavailable source is `UNCHECKED`.
 
 `REVIEWER.md` is the canonical reviewer role. `profiles/spotty.toml` and `profiles/bossy.toml` retain byte-identical
 `developer_instructions` for direct profile use, while the common skill explicitly loads the file through `role_file`.
