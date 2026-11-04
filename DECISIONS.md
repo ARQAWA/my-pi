@@ -1307,15 +1307,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Earlier owner message in the same conversation, the source of the latest-word rule:
   «опора должна быть еще более строгой, то есть он должен опираться именно на цитаты прямые и кумулятивные решения пользователя на прямые цитаты. кумулятивные решения пользоваться, чтобы не было такого, что какое-то старое решение, которое было отменено в будущем, сработало»
   Owner answers at approval:
-  Q1, question and options from `my-pi-evidence/designs/strict-scope/FINAL.md:31-33`:
-  **Q1. M9: пропуск требования из правила процесса тоже минимум P2?**
-  1. Да, рекомендую. Правило цитируется дословно, как требование. За: «нельзя ничего забыть сделать проебать требования» не сужает требования до слов владельца; роль уже велит читать «applicable governing rules» и сверять «the in-scope requirements and decisions one by one»; 8 из 10. Цена: больше находок P2, когда правило, например «максимум семь слов в предложении», прямо относится к объекту. Шум ограничен: дословная цитата, правило в scope, действует сейчас.
-  2. Нет. Нарушение правила оценивается по последствиям, как сейчас (S9, S10). Цена: такое нарушение может стать P3 и исчезнуть в CLEAN без упоминания.
-  Recorded answer: «да» on items 8 and 15, both marked «Q1 = yes» and «Согласование: «да»» in
-  `my-pi-evidence/designs/strict-scope/OWNER-DIFFS.md`. The owner's raw Q1 reply wording is not in these evidence files; this is the recorded relay.
-  Q2, source `my-pi-evidence/designs/strict-scope/PLAN.md:22`:
-  Main спросил, заменить ли одобренный R3 строгим правилом. Владелец: «что я правку восемь не одобрил, заменить её строгим правилом. я согласен заменить, если это отвечает моим последним запросам, если это кумулятивно выполняет мои требования»
-  Затем Main показал пункт 8 как «главное строгое правило. заменяет старую правку 8, которую ты одобрял», владелец ответил «да».
+  Source file for the next four quotes: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-11-02T20-50-49-716Z_01a19e07-6ef4-71d3-9b22-3020617aa765.jsonl`.
+  Q1, Main's question, assistant message at line 9823: «1. нарушение правила процесса с дословной цитатой считать важной находкой? 8 из 10 за. советуют да.»
+  Q2, Main's question, same message, line 9823: «2. правку 8 отозвать и заменить строгим правилом? советуют да.»
+  The owner's reply to both, one user message at line 10029, contiguous and verbatim; the terminal mouse escape bytes stored inside it are marked [terminal noise removed], nothing else is changed:
+  «объясни более подробно первый вопрос и второй вопрос. знаешь, я думаю, надо работу нашего reviewer согласовать с нашим workflow, чтобы наш процесс сейчас отражал идеальный процесс работы над задачами. надо, чтобы reviewer полностью поддерживал, был консистентен с этим процессом. надо понять, из того плана, который сейчас есть, какой есть diff и как мы его закроем, предложить diff этого gap. нарушение правил процесса — важная находка. подожди. правила процесса — это что такое? это правила процесса в этом репозитории. а мы же делаем reviewer не для этого репозитория, а вообще overall для любой работы. насчёт второго вопроса, что я правку восемь не одобрил, заменить её строгим правилом. я согласен заменить, если это отвечает моим последним запросам, если [terminal noise removed]это кумулятивно выполняет мои требования. правку 11 я принимаю»
+  Q1 outcome: the reply asks that «правила процесса» mean the rules of the reviewed work's own project, not of this repository. The rule is worded that way (`REVIEWER.md`: governing rules are the instructions and process rules that apply to the reviewed work in its own project), and the owner approved the texts with «да»: items 8 and 15 of `my-pi-evidence/designs/strict-scope/OWNER-DIFFS.md`, both marked «Q1 = yes» and «Согласование: «да»».
+  Q2 outcome: the owner agreed to replace edit 8 if it meets his latest requests cumulatively. The cumulative check is `my-pi-evidence/designs/strict-scope/WORKFLOW-GAP.md` section 5; Main then showed the new item 8 as «главное строгое правило. заменяет старую правку 8, которую ты одобрял» and the owner answered «да» (`my-pi-evidence/designs/strict-scope/PLAN.md:22`, `OWNER-DIFFS.md` item 8).
   Replaced text: `DECISIONS-ARCHIVE.md` A-0495.
   Reason: catch every lost requirement and every unordered element without invented agreement or requirements.
   Evidence: `my-pi-evidence/designs/strict-scope/FINAL.md`.
