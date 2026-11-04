@@ -1,5 +1,7 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
@@ -159,7 +161,14 @@ type Params = Omit<Static<typeof PARAMETERS>, "tools"> & { tools?: string[] };
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
  * `custom` the caller's full override, `role` its resolved role text, `profile` the loaded profile's provenance.
  */
-type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; fork_turns?: "all"; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; reviewer?: boolean; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; fork_turns?: "all"; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+const REVIEWER_PATH = fileURLToPath(new URL("../RQW-review/REVIEWER.md", import.meta.url));
+const REVIEW_PROFILES = ["spotty", "bossy"].map(name => fileURLToPath(new URL(`../RQW-review/profiles/${name}.toml`, import.meta.url)));
+function legacyReviewer(config: Config): boolean {
+	return config.prompt_file?.kind === "role" && config.prompt_file.path === REVIEWER_PATH
+		|| !!config.profile && REVIEW_PROFILES.includes(config.profile.path) && config.profile_defaults?.role === true
+			&& config.prompt_file === undefined && config.custom === undefined;
+}
 /** Commands the child accepted: `tasks` become one user message, the `n`-th user message of its history. */
 type SendBatch = { n: number; tasks: string[] };
 /** `delivery` is the id its message carries; the saved result is the outbox, so a restore sends the same id. Older records have none. */
@@ -1014,6 +1023,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const model = ctx.modelRegistry.find(c.model.provider, c.model.id);
 			if (!model) throw new Error(`Cannot restore ${name}#${data.id}: model ${c.model.provider}/${c.model.id} is unavailable`);
 			const config: Config = { ...c, model, system: withCurrentReminder(c.system) };
+			const migratedReviewer = config.reviewer === undefined;
+			if (migratedReviewer) config.reviewer = legacyReviewer(config);
 			const neverRunIdle = data.state === "idle" && data.runNumber === 0 && data.task === undefined;
 			// No history yet when saved: its file may be absent, and the accepted task still waits in `pending_sends`.
 			const unflushed = data.history === false;
@@ -1037,6 +1048,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				written: { config: JSON.stringify(data.config), task: data.task }, history: data.history !== false, recovers: data.recovers, sends: legacySends(data) };
 			if (signal.aborted) { close(a); signal.throwIfAborted(); }
 			agents.set(a.id, a);
+			if (migratedReviewer) persist(a);
 			savedSlots.delete(a.id);
 			// A paused child with an accepted command that never arrived starts by itself; other paused children wait.
 			if (initialRecovery && ctx.sessionManager.getSessionFile() && (a.state === "interrupted" || (a.state === "paused" && unsent(a).length))) recoveryPending.add(a.id);
@@ -1669,7 +1681,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(runtimeOf(ctx).checkAuth(model.provider, { signal }), signal)))
 			throw new Error(`No credentials for provider ${model.provider}`);
 		signal.throwIfAborted();
-		return { system, base: root, cwd: ctx.cwd, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
+		const reviewerText = role === undefined ? undefined : await readFile(REVIEWER_PATH, "utf8").catch(() => undefined);
+		return { system, base: root, cwd: ctx.cwd, reviewer: role !== undefined && reviewerText !== undefined && role === reviewerText, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
 			...(promptFile ? { prompt_file: promptFile } : {}), ...(profile ? { profile: { name: profile.name, path: profile.path, sha256: profile.sha256 },
 				profile_defaults: { model: profileModel, thinking: profileThinking, role: profileRole } } : {}),
 			model, thinking, tools: selectors(params.tools ?? fallback?.tools ?? [...TOOLS], offeredFactory()?.catalogue),
@@ -1726,13 +1739,18 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		if ((params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined || params.agent_type !== undefined) && params.action !== "start" && params.action !== "restart")
 			throw new Error("system_file, role_file, include and agent_type are only supported on start/restart");
 		if (params.agent_type !== undefined || (params.action === "restart" && (lostFork ? lostFork.config.profile : find(params.id).config.profile))) await refreshProfiles(ctx);
-		const task = params.include?.includes("user_messages") && params.task !== undefined
-			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
+		const prepare = (task: string, config: Config) => {
+			let expand: ((text: string) => string) | undefined;
+			if (!config.reviewer) toolEvents.emit("rqw-skill-dollar:expand", { offer: (value: (text: string) => string) => { expand = value; } });
+			const prepared = expand ? expand(task) : task;
+			return params.include?.includes("user_messages") ? appendUserMessages(prepared, ctx.sessionManager.getBranch()) : prepared;
+		};
 		switch (params.action) {
 			case "status": touch(targetIds(params.ids)); return jsonResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), statusDepth(params.depth)) });
 			case "start": {
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
+				const task = prepare(params.task, config);
 				if (fork) {
 					config.fork_turns = "all";
 					if (!fork.model) throw new Error("No caller model for fork");
@@ -1777,6 +1795,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			case "send": {
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
+				const task = prepare(params.task, a.config);
 				if (a.run?.quiet && !params.interrupt && !a.next) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
 				a.captureRun(ctx.sessionManager.getSessionId());
 				if (params.fast_gpt !== undefined) { a.fast.on = params.fast_gpt; persist(a); }
@@ -1785,8 +1804,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					// finally of its run), after any earlier pending sends. No time limit: an uncooperative tool just delays it.
 					if (!a.run.quiet) requestInterrupt(a, a.run);
 					const joined = !!a.next?.length;
-					(a.next ??= []).push(params.task);
-					queueSend(a, params.task, joined); persist(a);
+					(a.next ??= []).push(task);
+					queueSend(a, task, joined); persist(a);
 					a.progress.reset();
 					// The interrupt dropped the old limit; the accepted send has its own while the old run is still stopping.
 					if (a.config.fork_turns !== "all") a.progress.start();
@@ -1794,15 +1813,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				}
 				if (a.run) {
 					// Steering: delivered after the child's current tool call, before its next request; nothing is aborted.
-					const batch = queueSend(a, params.task); persist(a);
+					const batch = queueSend(a, task); persist(a);
 					try {
-						await untilAborted(a.session.steer(params.task), signal);
+						await untilAborted(a.session.steer(task), signal);
 					} catch (error) { a.sends = a.sends.filter(item => item !== batch); persist(a); throw error; }
 					a.nudge?.();
 					a.progress.reset();
 					return ok(`${name}#${a.id}: queued after the current tool call`);
 				}
-				await startRun(a, params.task, signal, { communication: true });
+				await startRun(a, task, signal, { communication: true });
 				signal.throwIfAborted();
 				a.guard.signal = (a.run as unknown as Agent["run"])?.controller.signal;
 				return ok(`${name}#${a.id}: sent`);
@@ -1862,6 +1881,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				if (savedConfigValue && !model) throw new Error(`Cannot restart ${name}#${lostFork!.id}: model ${savedConfigValue.model.provider}/${savedConfigValue.model.id} is unavailable`);
 				const previous = old?.config ?? { ...savedConfigValue!, model: model! };
 				const config = await resolveConfig(params, ctx, signal, previous);
+				const task = params.task === undefined ? undefined : prepare(params.task, config);
 				signal.throwIfAborted();
 				const id = old?.id ?? lostFork!.id;
 				if (old) { old.state = "stopped"; old.sends = []; persist(old); agents.delete(id); }

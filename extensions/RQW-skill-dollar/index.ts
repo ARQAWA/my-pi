@@ -175,6 +175,12 @@ export default function skillDollar(pi: ExtensionAPI): void {
 		const loaded = loadedSkills(pi.getCommands());
 		return filter ? filter(loaded, submit) : loaded;
 	};
+	pi.events.on("rqw-skill-dollar:expand", request => {
+		(request as { offer?: (expand: (text: string) => string) => void })?.offer?.(text => {
+			if (!text.includes("$") || (text.startsWith("/") && !text.startsWith("/skill:"))) return text;
+			return expandMentions(text, getSkills(true)) ?? text;
+		});
+	});
 	let tui: TUI | undefined;
 	let limitedEditor: RowEditor | undefined;
 	let previousRows: number | undefined;
