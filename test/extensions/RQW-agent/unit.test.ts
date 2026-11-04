@@ -879,6 +879,36 @@ test("nested fork inherits its direct caller branch, prompt and selected tools",
 	live.runtime.close();
 });
 
+test("nested include reads the live root branch before and after compaction and restore", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	const firstMessage = parent.appendMessage({ role: "user", content: "owner unique", timestamp: 1 });
+	const respond = (context: any) => {
+		const users = userTexts(context);
+		const task = users.at(-1);
+		const lastUser = context.messages.findLastIndex((message: any) => message.role === "user");
+		if (context.messages.slice(lastUser + 1).some((message: any) => message.role === "toolResult")) return "done";
+		if (task === "outer" || task === "again") return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "middle", tools: [] }, { id: "middle-call" })], { stopReason: "toolUse" });
+		if (task === "middle") return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "review", include: ["user_messages"], tools: [] }, { id: "review-call" })], { stopReason: "toolUse" });
+		return "reviewed";
+	};
+	const first = runtimeFixture(parent, root, respond, 24);
+	await first.execute({ action: "start", task: "outer", tools: [] });
+	await first.runtime.wait(new AbortController().signal);
+	const review = (requests: any[]) => requests.find(request => userTexts(request).some((text: string) => text.startsWith("review\n\n<user_messages>")));
+	assert.deepEqual(userTexts(review(first.requests)), ["review\n\n<user_messages>\nowner unique\n</user_messages>"]);
+	assert.ok(first.requests.filter(request => userTexts(request).includes("middle")).every(request => !JSON.stringify(request.messages).includes("owner unique")));
+	parent.appendCompaction("summary", firstMessage, 100);
+	parent.appendMessage({ role: "user", content: "owner later", timestamp: 2 });
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, respond, 24);
+	await restored.execute({ action: "send", id: "agent#1", task: "again" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(review(restored.requests)), ["review\n\n<user_messages>\nowner unique\nowner later\n</user_messages>"]);
+	restored.runtime.close();
+});
+
 test("a child without a tool subset gets the entire offered catalogue", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);

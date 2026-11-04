@@ -519,7 +519,7 @@ export default function agent(pi: ExtensionAPI) {
  * depth limit. `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a
  * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
  */
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost, rootCommands: () => SlashCommandInfo[] = () => pi.getCommands?.() ?? []): RuntimeHandle {
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost, rootCommands: () => SlashCommandInfo[] = () => pi.getCommands?.() ?? [], rootBranch: (ctx: ExtensionContext) => ReturnType<SessionManager["getBranch"]> = ctx => ctx.sessionManager.getBranch()): RuntimeHandle {
 	const coordinator = new Coordinator(pi, host?.send);
 	continueOnLength(pi);
 	// The main screen only; a child has none.
@@ -527,7 +527,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
 	const counts = top ? createCountsProducer(() => runtime.runningCounts(), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, notify, basePrompt, labelPrefix, host, rootCommands);
+	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, notify, basePrompt, labelPrefix, host, rootCommands, rootBranch);
 	if (top) pi.registerCommand("resume-agents", {
 		description: "Resume unfinished children without sending a message to the main model",
 		handler: async (_args, ctx) => { const count = await runtime.resume?.(ctx.signal ?? new AbortController().signal) ?? 0; ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
@@ -574,7 +574,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 }
 
 /** Caller-local state. Nested callers and their children settle independently. */
-export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, _backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost, rootCommands: () => SlashCommandInfo[] = () => pi.getCommands?.() ?? []): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, _backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost, rootCommands: () => SlashCommandInfo[] = () => pi.getCommands?.() ?? [], rootBranch: (ctx: ExtensionContext) => ReturnType<SessionManager["getBranch"]> = ctx => ctx.sessionManager.getBranch()): RuntimeHandle {
 	const name = "agent";
 	const payloads = forkPayloads();
 	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/agent#2". */
@@ -1229,7 +1229,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						prompt = servers ? `${config.system}\n\n<mcp_servers>\n${servers}\n</mcp_servers>` : config.system;
 						return { systemPrompt: prompt };
 					});
-					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost, rootCommands);
+					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost, rootCommands, () => rootBranch(ctx));
 					web?.(sub);
 				},
 				...childExtensions,
@@ -1754,7 +1754,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			let expand: ((text: string) => string) | undefined;
 			if (!config.reviewer) toolEvents.emit("rqw-skill-dollar:expand", { offer: (value: (text: string) => string) => { expand = value; } });
 			let prepared = expand ? expand(task) : task;
-			if (config.reviewer || !prepared.startsWith("/skill:")) return params.include?.includes("user_messages") ? appendUserMessages(prepared, ctx.sessionManager.getBranch()) : prepared;
+			if (config.reviewer || !prepared.startsWith("/skill:")) return params.include?.includes("user_messages") ? appendUserMessages(prepared, rootBranch(ctx)) : prepared;
 			let select: ((event: { text: string }, context: ExtensionContext) => { action: "handled" } | { action: "transform"; text: string } | undefined) | undefined;
 			toolEvents.emit("rqw-skill-dollar:filter", { offer: () => {}, offerCommand: (handler: typeof select) => { select = handler; } });
 			const selection = select?.({ text: prepared }, ctx);
@@ -1763,7 +1763,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			current.splice(0, current.length, ...skills());
 			const native = (session as unknown as { _expandSkillCommand?: (text: string) => string })._expandSkillCommand;
 			if (typeof native === "function") prepared = native.call(session, prepared);
-			return params.include?.includes("user_messages") ? appendUserMessages(prepared, ctx.sessionManager.getBranch()) : prepared;
+			return params.include?.includes("user_messages") ? appendUserMessages(prepared, rootBranch(ctx)) : prepared;
 		};
 		switch (params.action) {
 			case "status": touch(targetIds(params.ids)); return jsonResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), statusDepth(params.depth)) });
