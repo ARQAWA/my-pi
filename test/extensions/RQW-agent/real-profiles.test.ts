@@ -19,13 +19,13 @@ const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 
 /** sha256 of a UTF-8 text with LF endings (git may check files out with CRLF on Windows); the pinned values below are of origin/release, never of the files under test. */
 const digest = (text: string) => createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
-const REVIEW_SHA = "310f0dd1de0148fc5b0a388dafbbbac3b6511691d4bafec11467c08eeef21c07";
+const REVIEW_SHA = "a161c70997a9bc9fbf3f5d328bc33f39e8989a1190583baac4f5c5b0d9fa2645";
 
 type Expected = { model: string; effort: string; prefix: string; sha256?: string };
 // origin/release: model, effort and the start of each role text, per profile.
 const PACKAGE: Record<string, Expected> = {
-	spotty: { model: TERRA, effort: "medium", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
-	bossy: { model: TERRA, effort: "xhigh", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
+	spotty: { model: TERRA, effort: "high", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
+	bossy: { model: TERRA, effort: "max", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
 };
 const REPO_PROFILES: Record<string, Expected> = {
 	"code-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only code reviewer on the implementation team's side. Find real defects", sha256: "ffdfe5ac236c4a3a568b3d850aa676f5ebe097d241ddd22c7211471dbbd23118" },

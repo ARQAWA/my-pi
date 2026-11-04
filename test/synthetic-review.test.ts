@@ -25,7 +25,7 @@ it("a spotty start gives the child the profile's model, effort and reviewer role
 
 	const child = w.requests.find(isTask("check it"))!;
 	assert.equal(`${child.model.provider}/${child.model.id}`, "openai-codex/gpt-6.1-terra");
-	assert.equal((child.options as { reasoning?: string }).reasoning, "medium");
+	assert.equal((child.options as { reasoning?: string }).reasoning, "high");
 	assert.ok(JSON.stringify(child.context.messages[0]).includes(ROLE), "the profile's role is in the child's system prompt");
 	const childFile = w.jsonl(w.childFiles(1)[0]);
 	assert.deepEqual(childFile.filter((entry) => entry.type === "model_change").map((entry) => `${entry.provider}/${entry.modelId}`), ["openai-codex/gpt-6.1-terra"]);
@@ -43,6 +43,6 @@ it("a bossy start runs the same model at the strongest effort", async (t) => {
 
 	const child = w.requests.find(isTask("check it"))!;
 	assert.equal(`${child.model.provider}/${child.model.id}`, "openai-codex/gpt-6.1-terra");
-	assert.equal((child.options as { reasoning?: string }).reasoning, "xhigh");
+	assert.equal((child.options as { reasoning?: string }).reasoning, "max");
 	assert.ok(JSON.stringify(child.context.messages[0]).includes(ROLE));
 });
