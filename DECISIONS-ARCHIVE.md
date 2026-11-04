@@ -8115,3 +8115,12 @@ Status: SUPERSEDED in part by `[D-WORK-FINAL-CHECK]`. Introducing commit: `a7981
 >   Owner: «Ревьюеров циклических надо будет переработать, чтобы они работали так же, как слепые ревьюеры: чтобы они не по одной находке находили и цикл перезапускали, а чтобы они находили сразу все косяки и отдавали их пачкой, и потом заново перепроверяли.» `code-reviewer` and `test-reviewer` return every finding of a pass at once; a re-review checks the fixes and changed lines and returns all remaining findings at once.
 >   Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`,
 >   `.pi/agents/test-reviewer.toml`, `extensions/RQW-review/`.
+
+## A-SRP-CALLER-MESSAGES · archived 2026-11-04 · Agent · caller messages
+
+Status: SUPERSEDED by `[D-AGENT-CALLER-MESSAGES]`. Source: `5bab0743:DECISIONS.md`, lines 1032-1035; earlier wording introduced by `3430f322dcba9e4c9b0b672306c78758863a5cdd`. Replacement reflects `f2c05e93` and `6d80b5a5`. Verbatim replaced entry:
+
+> - **Verbatim caller messages** `[D-AGENT-CALLER-MESSAGES]`. Agent start/restart may pass `include: ["user_messages"]` to append a `<user_messages>` block after the task. It contains user-role text from the caller's selected branch, including entries before compaction, in branch order; text parts are joined with newlines, images and non-user messages are omitted. Nested callers contribute their own session messages, not the root session's. Inclusion is not inherited on restart, and restart without task stays idle; the required start task remains the inline `task` field.
+>   Coordinator text: technical realization of the native-input agreement in `[D-AGENT-PROMPT-FILES]`.
+>   Reason: forward actual caller messages rather than summaries or retyped quotations.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts` (`appendUserMessages`). Since: `dc4f32e`.
