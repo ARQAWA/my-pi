@@ -1320,6 +1320,20 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/*.toml`, `skills/reviewer/SKILL.md`,
   [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
 
+- **Global system-prompt principles in review** `[D-REVIEW-GLOBAL-PRINCIPLES]`. Governing rules explicitly include
+  applicable principles already in the reviewer's system prompt, as rules of the reviewed work, not only of its own
+  conduct. This applies in any project, without new reads, passes, prompt sections or runtime mechanisms.
+  The existing scope, verbatim evidence, severity and unavailable-source rules stay unchanged under
+  `[D-REVIEW-STRICT-SCOPE]` and `[D-REVIEW-IMPACT]`; subjective preferences are not findings.
+  Owner, supplied verbatim in the reviewer-principles task, 2026-11-05:
+  «мы базово внутри ревьюера эти проверки делаем не в этом репозитории, а глобально. у нас есть глобальные принципы, глобальные правила системного промта, на базе которых работает агент. надо, чтобы ревьюер эти правила поддерживал тоже. если это не усложнит механику ревьюера и не замедлит его»
+  «чтобы это всё соответствовало всем предыдущим правкам, которые были до этого. чтобы это всё было супер просто, супер надёжно, супер быстро, реактивно, легко, легковесно, коротко и работало эффективно и максимально быстро и производительно».
+  Approval: «да» to `my-pi-evidence/designs/reviewer-principles/DESIGN.md`, confirmed in the shipping order.
+  Reason: make global applicability explicit by replacing the existing definition, without a parallel check rule.
+  Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/spotty.toml`, `profiles/bossy.toml`;
+  `test/extensions/RQW-agent/real-profiles.test.ts` keeps the synchronized `REVIEW_SHA`.
+  The independently running reviewer benchmark and its role copies are unchanged. Runtime speed was not measured.
+
 - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message starts with `CLEAN` followed by concise concrete
   `CHECKED:` evidence for the inspected object and criterion, or with `FINDINGS: N` alone on the first line, N being the
   number of findings, followed by numbered finding blocks. The agent card reads N from that line and counts nothing.
