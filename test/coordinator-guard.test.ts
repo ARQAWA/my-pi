@@ -164,7 +164,7 @@ test("a slot is freed when the agent is stopped, also after its final was delive
 
 test("a reviewer start counts on its fixed model and is refused when that model is full", () => {
 	const call = fixture(() => 0);
-	const spotty = { action: "start", agent_type: "spotty", model: TERRA, thinking: "high", task: "synthetic" };
+	const spotty = { action: "start", agent_type: "spotty", model: TERRA, thinking: "medium", task: "synthetic" };
 	for (let i = 0; i < 10; i++) call.started(spotty);
 	const { result } = call(spotty);
 	assert.equal(result.block, true);
