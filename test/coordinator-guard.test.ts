@@ -294,7 +294,7 @@ test("concurrent sends to one ended agent share one slot", () => {
 test("the slot limits of PROCESS.md are in the rules block", () => {
 	const loaded = loadRules(`${root}PROCESS.md`);
 	assert.equal(loaded.ok, true);
-	assert.deepEqual(loaded.ok && loaded.rules.slots, { [SOL]: 20, [OPUS]: 20, [TERRA]: 20, [SONNET]: 20 });
+	assert.deepEqual(loaded.ok && loaded.rules.slots, { [SOL]: 5, [OPUS]: 5, [TERRA]: 10, [SONNET]: 10 });
 });
 
 test("a bad slots entry is a rules error", () => {

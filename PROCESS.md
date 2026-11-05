@@ -112,10 +112,10 @@
     "requirements-test-reviewer": ["openai-codex/gpt-6.1-terra", "high"]
   },
   "slots": {
-    "openai-codex/gpt-6.1-sol": 20,
-    "anthropic/claude-opus-5-5": 20,
-    "openai-codex/gpt-6.1-terra": 20,
-    "anthropic/claude-sonnet-5-5": 20
+    "openai-codex/gpt-6.1-sol": 5,
+    "anthropic/claude-opus-5-5": 5,
+    "openai-codex/gpt-6.1-terra": 10,
+    "anthropic/claude-sonnet-5-5": 10
   }
 }
 ```
