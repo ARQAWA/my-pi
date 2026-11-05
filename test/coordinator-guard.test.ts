@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
@@ -9,6 +12,13 @@ import { Slots } from "../.pi/extensions/coordinator-guard/slots.ts";
 import { registerSessionRuntime } from "../extensions/RQW-agent/index.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+
+// The slot tests fill small limits; PROCESS.md may carry larger temporary ones.
+const slotRoot = mkdtempSync(join(tmpdir(), "guard-slots-"));
+writeFileSync(
+	join(slotRoot, "PROCESS.md"),
+	readFileSync(`${root}PROCESS.md`, "utf8").replace(/"slots": \{[^}]*\}/, '"slots": {"openai-codex/gpt-6.1-sol": 5, "anthropic/claude-opus-5-5": 5, "openai-codex/gpt-6.1-terra": 10, "anthropic/claude-sonnet-5-5": 10}'),
+);
 
 const SOL = "openai-codex/gpt-6.1-sol";
 const OPUS = "anthropic/claude-opus-5-5";
@@ -25,7 +35,7 @@ function fixture(randomInt: (max: number) => number, callerModel?: { provider: s
 		registerTool: (definition: ToolDefinition) => { tool = definition; },
 	}, { get: (target, key) => target[key as keyof typeof target] ?? noop }) as unknown as ExtensionAPI;
 	registerSessionRuntime(pi);
-	createCoordinatorGuard({ root, randomInt, slots: new Slots() })(pi);
+	createCoordinatorGuard({ root: slotRoot, randomInt, slots: new Slots() })(pi);
 	let calls = 0;
 	let agents = 0;
 	const call = (input: { action: string; task?: string; model?: string; thinking?: string; fork_turns?: string; id?: string; agent_type?: string }) => {
@@ -284,7 +294,7 @@ test("concurrent sends to one ended agent share one slot", () => {
 test("the slot limits of PROCESS.md are in the rules block", () => {
 	const loaded = loadRules(`${root}PROCESS.md`);
 	assert.equal(loaded.ok, true);
-	assert.deepEqual(loaded.ok && loaded.rules.slots, { [SOL]: 5, [OPUS]: 5, [TERRA]: 10, [SONNET]: 10 });
+	assert.deepEqual(loaded.ok && loaded.rules.slots, { [SOL]: 20, [OPUS]: 20, [TERRA]: 20, [SONNET]: 20 });
 });
 
 test("a bad slots entry is a rules error", () => {
