@@ -25,7 +25,7 @@ const OPUS = "anthropic/claude-opus-5-5";
 const TERRA = "openai-codex/gpt-6.1-terra";
 const SONNET = "anthropic/claude-sonnet-5-5";
 
-function fixture(randomInt: (max: number) => number, callerModel?: { provider: string; id: string }) {
+function fixture(randomInt: (max: number) => number, callerModel?: { provider: string; id: string }, rulesRoot = slotRoot) {
 	const handlers = new Map<string, (...args: any[]) => any>();
 	let tool: ToolDefinition;
 	const noop = () => {};
@@ -35,7 +35,7 @@ function fixture(randomInt: (max: number) => number, callerModel?: { provider: s
 		registerTool: (definition: ToolDefinition) => { tool = definition; },
 	}, { get: (target, key) => target[key as keyof typeof target] ?? noop }) as unknown as ExtensionAPI;
 	registerSessionRuntime(pi);
-	createCoordinatorGuard({ root: slotRoot, randomInt, slots: new Slots() })(pi);
+	createCoordinatorGuard({ root: rulesRoot, randomInt, slots: new Slots() })(pi);
 	let calls = 0;
 	let agents = 0;
 	const call = (input: { action: string; task?: string; model?: string; thinking?: string; fork_turns?: string; id?: string; agent_type?: string }) => {
@@ -294,13 +294,53 @@ test("concurrent sends to one ended agent share one slot", () => {
 test("the slot limits of PROCESS.md are in the rules block", () => {
 	const loaded = loadRules(`${root}PROCESS.md`);
 	assert.equal(loaded.ok, true);
-	assert.deepEqual(loaded.ok && loaded.rules.slots, { [SOL]: 5, [OPUS]: 5, [TERRA]: 10, [SONNET]: 10 });
+	assert.deepEqual(loaded.ok && loaded.rules.slots, { [SOL]: 10, [OPUS]: 0, [TERRA]: 10, [SONNET]: 10 });
+});
+
+test("zero Opus slots select Sol for every affected category and refuse a full pair", () => {
+	const call = fixture(max => max - 1, undefined, root);
+	for (const [category, thinking] of [["analysis", "medium"], ["hardest", "medium"], ["design", "high"]]) {
+		const { result, args, toolCallId } = call({ action: "start", model: category, task: "synthetic" });
+		assert.equal(result, undefined);
+		assert.deepEqual([args.model, args.thinking], [SOL, thinking]);
+		call.end(toolCallId, "failed", {}, true);
+	}
+	for (let i = 0; i < 10; i++) assert.equal(call.started(analysis), SOL);
+	for (const category of ["analysis", "hardest", "design"]) {
+		const { result } = call({ action: "start", model: category, task: "synthetic" });
+		assert.equal(result.block, true);
+		assert.match(result.reason, /slots full: openai-codex\/gpt-6\.1-sol 10\/10, anthropic\/claude-opus-5-5 0\/0/);
+	}
+});
+
+test("zero Opus slots block explicit executor and inherited fork starts", () => {
+	const call = fixture(() => 0, { provider: "anthropic", id: "claude-opus-5-5" }, root);
+	const explicit = call({ action: "start", model: OPUS, thinking: "medium", task: "synthetic" });
+	assert.equal(explicit.result.block, true);
+	assert.match(explicit.result.reason, /pass the category name as model/);
+	const fork = call({ action: "start", fork_turns: "all", task: "synthetic" });
+	assert.equal(fork.result.block, true);
+	assert.match(fork.result.reason, /slots full: anthropic\/claude-opus-5-5 0\/0/);
+});
+
+test("a fixed reviewer profile on a zero-slot model is refused", () => {
+	const rulesRoot = mkdtempSync(join(tmpdir(), "guard-zero-profile-"));
+	const rules = readFileSync(`${root}PROCESS.md`, "utf8").replace(
+		'"reviewerProfiles": {',
+		`"reviewerProfiles": { "test-reviewer-opus": ["${OPUS}", "medium"],`,
+	);
+	writeFileSync(join(rulesRoot, "PROCESS.md"), rules);
+	const call = fixture(() => 0, undefined, rulesRoot);
+	const { result } = call({ action: "start", agent_type: "test-reviewer-opus", model: OPUS, thinking: "medium", task: "synthetic" });
+	assert.equal(result.block, true);
+	assert.match(result.reason, /slots full: anthropic\/claude-opus-5-5 0\/0/);
 });
 
 test("a bad slots entry is a rules error", () => {
 	const block = (slots: string) => '```json coordinator-rules\n{"agentModels":{"a":[["p/m","low"]]},"slots":' + slots + "}\n```";
 	assert.deepEqual(parseRules(block('{"p/m":2}')).slots, { "p/m": 2 });
-	for (const bad of ['{"p/m":0}', '{"p/m":1.5}', '{"m":1}', "[]"]) assert.throws(() => parseRules(block(bad)), /slots/);
+	assert.deepEqual(parseRules(block('{"p/m":0}')).slots, { "p/m": 0 });
+	for (const bad of ['{"p/m":-1}', '{"p/m":1.5}', '{"m":1}', "[]"]) assert.throws(() => parseRules(block(bad)), /slots/);
 });
 
 test("the prompt says Main performs no action itself and works only with tasks, BACKLOG.md, context and subagents", () => {
