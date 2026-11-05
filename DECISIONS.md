@@ -1236,8 +1236,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `fix-reviewer-evidence-output`.
 
 - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
-  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "high"`;
-  `profiles/bossy.toml` defaults to the same model with `"max"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
+  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "medium"`;
+  `profiles/bossy.toml` defaults to the same model with `"high"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
   without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
@@ -1259,6 +1259,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
   Coordinator note: the Spotty and Bossy levels in this quote were replaced by the later medium and xhigh choice.
   Owner, 2026-10-31: «Я хочу что бы ревьюер блайнд был medium, а хай - xhigh».
+  Coordinator note: the xhigh level in this quote was replaced by the owner's final choice of 2026-11-05.
+  Owner, 2026-11-05, final: «нет, давай так: medium и high. конечный вариант». Blind review is `spotty` at medium, high review is `bossy` at high, both on `openai-codex/gpt-6.1-terra`; `profiles/*.toml`, tests, READMEs, skills, AGENTS.md and PROCESS.md (rule 20 and `reviewerProfiles`) carry these pairs. Release commit `bfaf81bf`.
   Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra high. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже». Coordinator note: the Terra Medium level in this quote was replaced by the accepted matrix in [PROCESS.md](PROCESS.md#subagent-models). Owner: «переделай исполнителя с terra с high на xhi, подними всех терра на один уровеньи покажи как изменится матрица» «и покажи предполагаемую новую матрицу после принятия мной изменений потенциальных» «по матрице 1».
   Reason: one profile mechanism rather than a parallel reviewer execution stack.
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
@@ -1276,7 +1278,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   fresh changed-object passes until CLEAN, then returns one report with problems, fixes and CLEAN status.
   Changed-object passes check fixes, changed lines and affected paths, not the whole object again. Format slips
   are corrected locally without a new pass; missing material evidence still prevents acceptance and is completed
-  with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty high, high Bossy max.
+  with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty medium, high Bossy high (`[D-REVIEW-PROFILES]`).
   The self-check fork is implemented under `[D-AGENT-FORK-SELFCHECK]`.
   Owner, verbatim and in order, supplied in the reviewer-p2-gate brief, 2026-10-31:
   «Надо оптимизировать, ускорить процесс приемки, но при этом не потерять в контроле качества вообще никак. Выбросить только то, что не относится к контролю качества напрямую»

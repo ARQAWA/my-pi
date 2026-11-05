@@ -8124,3 +8124,39 @@ Status: SUPERSEDED by `[D-AGENT-CALLER-MESSAGES]`. Source: `5bab0743:DECISIONS.m
 >   Coordinator text: technical realization of the native-input agreement in `[D-AGENT-PROMPT-FILES]`.
 >   Reason: forward actual caller messages rather than summaries or retyped quotations.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts` (`appendUserMessages`). Since: `dc4f32e`.
+
+## A-0499 · archived 2026-11-05 · Reviewers are ordinary profiles (spotty high, bossy max) · superseded
+
+Status: SUPERSEDED by the owner's final order, 2026-11-05: «нет, давай так: medium и high. конечный вариант». Replacement: `[D-REVIEW-PROFILES]` in `DECISIONS.md` (spotty medium, bossy high). Source: `8e5e5188d196de8d3a943699156b45140755d362:DECISIONS.md`; the replacing release commit is `bfaf81bf3e62a816670529106694121b5c461056`. The archive commit is recoverable with `git log -S'A-0499' -- DECISIONS-ARCHIVE.md`.
+
+Verbatim replaced text:
+
+> - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
+>   or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "high"`;
+>   `profiles/bossy.toml` defaults to the same model with `"max"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
+>   without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
+>   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
+>   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
+>   review section of the owner's `skills/subagents/SKILL.md`; wrappers select Spotty or Bossy.
+>   Every pass starts a fresh ordinary `agent` with `agent_type`, the absolute package `role_file` and
+>   `include: ["user_messages"]`. Read-only is
+>   instruction only: no separate tool filter, git-state guard or sandbox. There is no separate reviewer runner,
+>   verdict delivery, Fast/cache implementation, review count producer or child-review offer. A verdict is an ordinary
+>   `agent#N` result, counted and rendered as an agent; lifecycle, tools, settings, cancellation, credentials, Fast,
+>   caching, persistence and exactly-once delivery are RQW-agent's existing contracts.
+>   Disabling RQW-review removes its offered profiles and skills, not user-owned profile files. Without RQW-agent
+>   there is no reviewer execution or fallback route. The common skill reports missing runtime/profile resources.
+>   Owner rename (`16-27-59:6489`, entry `96fcf727`), coordinator summary: the blind profile is Spotty (`spotty`);
+>   the high profile keeps its name.
+>   Owner approval and exact messages: `[D-AGENT-PROFILES]`.
+>   Source of the existing reviewer text and skills, read-only external archive:
+>   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
+>   Owner, current task `reviewers-terra`, 2026-10-27:
+>   «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
+>   Coordinator note: the Spotty and Bossy levels in this quote were replaced by the later medium and xhigh choice.
+>   Owner, 2026-10-31: «Я хочу что бы ревьюер блайнд был medium, а хай - xhigh».
+>   Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra high. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже». Coordinator note: the Terra Medium level in this quote was replaced by the accepted matrix in [PROCESS.md](PROCESS.md#subagent-models). Owner: «переделай исполнителя с terra с high на xhi, подними всех терра на один уровеньи покажи как изменится матрица» «и покажи предполагаемую новую матрицу после принятия мной изменений потенциальных» «по матрице 1».
+>   Reason: one profile mechanism rather than a parallel reviewer execution stack.
+>   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
+>   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
+>   Since: subagent-profiles.
