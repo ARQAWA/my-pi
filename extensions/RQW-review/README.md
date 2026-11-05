@@ -5,8 +5,8 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 
 | Skill | Level | `agent_type` | Default model | Default reasoning |
 |---|---|---|---|---|
-| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | high |
-| `highreview` | high | `bossy` | `gpt-6.1-terra` | max |
+| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | medium |
+| `highreview` | high | `bossy` | `gpt-6.1-terra` | high |
 
 `selfcheck` is the executor's shell around the same loop: the finished executor starts a fork of itself with
 `agent` `fork_turns: "all"` (no model, thinking, profile, role or `include`) and ends its turn; the one report

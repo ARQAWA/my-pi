@@ -57,7 +57,7 @@
    проверка не завершена. вызывающему верни один отчёт: проблемы, исправления, CLEAN. сверх заказа ничего не исправляй.
 
    закончил работу и обычные проверки? запусти навык selfcheck: форк себя с fork_turns all. форк делает шаги 18 и 19 сам и возвращает один отчёт. ты ждёшь, не правишь объект и не запускаешь blind до форка. форк не запускает второй форк.
-20. выпуск с кодом: отдельно проверь код и тесты. code-reviewer проверяет код, test-reviewer проверяет тесты. spotty: gpt-6.1-terra medium. bossy: gpt-6.1-terra xhigh. остальные проверяющие: gpt-6.1-terra high.
+20. выпуск с кодом: отдельно проверь код и тесты. code-reviewer проверяет код, test-reviewer проверяет тесты. spotty: gpt-6.1-terra medium. bossy: gpt-6.1-terra high. остальные проверяющие: gpt-6.1-terra high.
 
 <a id="delivery"></a>
 **доставка**
@@ -106,7 +106,7 @@
   },
   "reviewerProfiles": {
     "spotty": ["openai-codex/gpt-6.1-terra", "medium"],
-    "bossy": ["openai-codex/gpt-6.1-terra", "xhigh"],
+    "bossy": ["openai-codex/gpt-6.1-terra", "high"],
     "code-reviewer": ["openai-codex/gpt-6.1-terra", "high"],
     "test-reviewer": ["openai-codex/gpt-6.1-terra", "high"],
     "requirements-test-reviewer": ["openai-codex/gpt-6.1-terra", "high"]
