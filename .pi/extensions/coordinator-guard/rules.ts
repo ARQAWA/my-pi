@@ -62,7 +62,7 @@ function parseSlots(value: any): Record<string, number> {
 	const slots: Record<string, number> = {};
 	for (const [model, limit] of Object.entries(value)) {
 		if (!/^[^/\s]+\/\S+$/.test(model)) throw new Error(`slots.${model}: model must be "provider/id"`);
-		if (!Number.isSafeInteger(limit) || (limit as number) < 1) throw new Error(`slots.${model} must be a positive integer`);
+		if (!Number.isSafeInteger(limit) || (limit as number) < 0) throw new Error(`slots.${model} must be a non-negative integer`);
 		slots[model] = limit as number;
 	}
 	return slots;
