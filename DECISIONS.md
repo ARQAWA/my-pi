@@ -24,6 +24,12 @@ Provenance:
 - Only the quoted lines are copied from the sessions; no full transcript and no credential is copied into this
   repository.
 
+## Board and cancelled integrations
+
+- **Board implementation frozen; YouTrack and DeepSeek via OpenCode Go cancelled** `[D-BOARD-FROZEN]`. The active board implementation task is completed at its current state; no further implementation is planned. Keep the existing board installation, server and data as they are. Cancel all planned YouTrack-related work and DeepSeek via OpenCode Go; do not remove provider catalogs or credentials. The owner says he disabled the YouTrack MCP; this is an owner statement, not a verified runtime observation. RV2 and reviewer discussion remain open, with no final acceptance of measurements implied.
+  Owner, verbatim, in the delegated task, 2026-11-05: «по доске задач, короче, ну, внедрение останавливаем, на этом задача завершается в данный момент, замораживаем в том виде, где она есть сейчас. deepseak через open code go отменяется, ю-трак отменяется. любые решения с ним я его выключил за дизейбленным cp вот че еще, короче, по слотам завершай доставку и давай обсуждать ревьюеров».
+  Earlier board research and owner sources: `BACKLOG.md` PLAN-SITE at commit `dec89e80`, and `my-pi-evidence/designs/plan-site/`. The trial board was recorded at `/Users/arkadijcukavin/ai-project/my-pi-board`. Open RV2: [BACKLOG.md](BACKLOG.md#subagent-review-parity).
+
 ## Auto-wait
 
 - **Automatic wait in the main chat** `[D-AUTO-WAIT]`. After a settled turn, the independently disableable `RQW-auto-wait` shows a context-free wait card while direct agents or main jobs are live. The card counts the full active tree as specified in `[D-AUTO-WAIT-CARD]`. Ready results share one hidden custom message and one new turn. There is no polling or model call for waiting. Explicit waits were removed later by `[D-AUTO-WAIT-EVERYWHERE]`. Auto-wait follows a completed model turn, so its final answer stays visible while intermediate text folds under `[D-UI-WORKED-FOR]`. Owner chose «1» for this behavior. Idle progress notices wait for user input instead of waking the model.
