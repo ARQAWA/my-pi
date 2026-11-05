@@ -64,13 +64,13 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Tests: `npm test`.
 - `extensions/RQW-auto-wait/`: independent main-chat automatic wait for agent and job results. It is the only delivery of agent and job results (no `wait` action): a local wait card, a wake for final results in tui and rpc, and a hold of the end of the turn in print and json. Tests: `test/extensions/RQW-auto-wait/`.
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
-  `profiles/spotty.toml` defaults to `gpt-6.1-terra` high; `profiles/bossy.toml` defaults to the same model max. Both embed the same
+  `profiles/spotty.toml` defaults to `gpt-6.1-terra` medium; `profiles/bossy.toml` defaults to the same model high. Both embed the same
   reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through
   `role_file`, so personal or project same-name profiles cannot replace the package review contract. `rqw-agent:profiles` offers their paths to RQW-agent; public
   `resources_discover` supplies `skills/reviewer`, `skills/blindreview` and `skills/highreview`. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
   starts a fresh ordinary `agent` with `agent_type`, the package `role_file` and `include: ["user_messages"]`; results are `agent#N` results.
-  The `selfcheck` skill (`skills/selfcheck`) lets the executor run its own self-check and this review loop at the requested level inside one `fork_turns: "all"` fork and return one report; each reviewer stays a fresh clean agent (`[D-AGENT-FORK-SELFCHECK]`).
+  The `selfcheck` skill (`skills/selfcheck`) lets the executor run its own self-check and this blind loop inside one `fork_turns: "all"` fork and return one report; each blind reviewer stays a fresh clean agent (`[D-AGENT-FORK-SELFCHECK]`).
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are
   RQW-agent's. Without RQW-agent the reviewer cannot run; disabling RQW-review removes its own profiles and skills.
   Contract: `DECISIONS.md` section Review, `extensions/RQW-review/README.md`. Tests: `npm test`.
